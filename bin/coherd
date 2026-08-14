@@ -177,7 +177,7 @@ info "布局: coordinator=$COORD_PANE reviewer=$REV_PANE executor=$EXEC_PANE"
 # 三条 pane run 并行发出(轮流重试各自 pane 就绪, 共享 DETECT_TIMEOUT), 随后单一循环
 # 同时检测三 pane 的 agent_status 非 null 并 rename — 最坏总超时 = DETECT_TIMEOUT, 不叠加
 start_roles() { # 无参; 用全局 COORD/EXEC/REV_PANE 与 *_CMD
-  local deadline=$((SECONDS + DETECT_TIMEOUT)) i done=0 out
+  local deadline=$((SECONDS + DETECT_TIMEOUT)) i all_sent=0 out
   local names=(coordinator executor reviewer)
   local panes=("$COORD_PANE" "$EXEC_PANE" "$REV_PANE")
   local cmds=("$COORD_CMD" "$EXEC_CMD" "$REV_CMD")
@@ -185,17 +185,17 @@ start_roles() { # 无参; 用全局 COORD/EXEC/REV_PANE 与 *_CMD
   info "启动 coordinator/executor/reviewer (共享超时 ${DETECT_TIMEOUT}s)"
   # 阶段 1: 三条 pane run 并行发出 (pane 未就绪则 2s 后重试, 共享同一 deadline)
   while [ "$SECONDS" -lt "$deadline" ]; do
-    done=1
+    all_sent=1
     for i in 0 1 2; do
       if [ "${run_ok[$i]}" = 0 ]; then
-        done=0
+        all_sent=0
         if herdr pane run "${panes[$i]}" "${cmds[$i]}" >/dev/null 2>&1; then
           run_ok[$i]=1
           info "pane run ${names[$i]} 已发出"
         fi
       fi
     done
-    [ "$done" = 1 ] && break
+    [ "$all_sent" = 1 ] && break
     sleep 2
   done
   for i in 0 1 2; do
@@ -215,7 +215,6 @@ start_roles() { # 无参; 用全局 COORD/EXEC/REV_PANE 与 *_CMD
       fi
     done
     [ "${ids[0]}" = 1 ] && [ "${ids[1]}" = 1 ] && [ "${ids[2]}" = 1 ] && break
-    [ "$SECONDS" -lt "$deadline" ] || die "识别超时 (workspace $WS) — 确认 CMD 是被 herdr 识别的 agent CLI (见 docs/agents.md)"
     sleep 2
   done
   # 兜底: deadline 耗尽时循环可能一次未进(阶段 1 已用完预算), 未识别完成则必失败
