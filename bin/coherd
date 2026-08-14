@@ -145,23 +145,23 @@ else
   # 故取 null 时重试 ≤3 次 (每次 sleep 1), 仍 null 才回退横屏并 WARN 供诊断
   PW="" PH=""
   for _try in 1 2 3; do
-    GEOM="$(herdr pane layout --pane "$ROOT")"
+    GEOM="$(herdr pane layout --pane "$ROOT" 2>/dev/null)" || GEOM="{}"
     PW="$(jqr '.result.layout.area.width'  "$GEOM")"
     PH="$(jqr '.result.layout.area.height' "$GEOM")"
-    [ -n "$PW" ] && [ -n "$PH" ] && break    # 只以取到几何为成功
+    [ "${PW:-0}" -gt 0 ] 2>/dev/null && [ "${PH:-0}" -gt 0 ] 2>/dev/null && break
     sleep 1
   done
-  if [ -n "$PW" ] && [ -n "$PH" ] && [ "$PH" -gt 0 ] 2>/dev/null \
-       && [ "$PH" -gt $((PW / 2)) ] 2>/dev/null; then
+  if [ "${PW:-0}" -gt 0 ] 2>/dev/null && [ "${PH:-0}" -gt 0 ] 2>/dev/null \
+       && [ "$PH" -gt $((PW / 2)) ]; then
     PORTRAIT=1
     DETECT_SRC="cell ${PW}x${PH}"
   else
     PORTRAIT=0
-    if [ -n "$PW" ] && [ -n "$PH" ]; then
-      DETECT_SRC="cell ${PW}x${PH} (横屏)"   # 几何可得(含 PH=0) → 横屏, 不 WARN
+    if [ "${PH:-0}" -gt 0 ] 2>/dev/null; then
+      DETECT_SRC="cell ${PW}x${PH} (横屏)"
     else
       DETECT_SRC="cell ${PW:-?}x${PH:-?} (几何不可得→回退横屏)"
-      echo "coherd: WARN: $ROOT 三次取几何仍空, 回退横屏布局 — 若实为竖屏请检查终端几何或设 COHERD_LAYOUT=portrait" >&2
+      echo "coherd: WARN: $ROOT 三次取几何仍无正数, 回退横屏布局 — 若实为竖屏请检查终端几何或设 COHERD_LAYOUT=portrait" >&2
     fi
   fi
 fi
