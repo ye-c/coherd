@@ -34,28 +34,6 @@ die()  { echo "coherd: $*" >&2; exit 1; }
 info() { echo "coherd: $*"; }
 jqr()  { jq -r "$1" <<<"$2"; }
 
-# per-cluster agent 名派生: LABEL → 合法 herdr 名前缀 (≤20, 匹配 [a-z][a-z0-9_-]*)
-# 规则: basename → 小写 → 非 [a-z0-9] 替换为 '-' → 首尾去 '-' → 截断 ≤20
-#       空/以非字母开头时补 'c' 前缀, 保证满足 herdr 名约束 [a-z][a-z0-9_-]{0,31}
-slug_of() { # label → 前缀
-  local s="$1" slug
-  # 取 basename: 纯 shell (去尾斜杠→去路径), 避免 GNU basename 把 '-' 开头参数当选项
-  while :; do
-    case "$s" in
-      *[/]) s="${s%/}" ;;
-      *) break ;;
-    esac
-  done
-  s="${s##*/}"
-  slug="$(printf '%s' "$s" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -e 's/^-*//' -e 's/-*$//')"
-  slug="${slug:0:20}"
-  case "$slug" in
-    [a-z]*) ;;
-    *) slug="c${slug}" ;;
-  esac
-  printf '%s' "$slug"
-}
-
 command -v herdr >/dev/null || die "herdr CLI 不在 PATH — 见 docs/configuration.md"
 command -v jq    >/dev/null || die "需要 jq — 见 docs/configuration.md"
 
@@ -129,13 +107,6 @@ done < <(herdr workspace list 2>/dev/null \
                and (.agent_status == "unknown" or .agent_status == null))
       | .workspace_id')
 
-# ── 2.75. per-cluster agent 名 (由 LABEL 派生, 避免多集群裸单词撞名 → 后者 rename 全败 → null agent) ──
-SLUG="$(slug_of "$LABEL")"
-COORD_NAME="${SLUG}-coordinator"
-EXEC_NAME="${SLUG}-executor"
-REV_NAME="${SLUG}-reviewer"
-info "agent 命名: $COORD_NAME / $EXEC_NAME / $REV_NAME"
-
 # ── 3. 创建 workspace ──
 WS_JSON="$(herdr workspace create --cwd "$REPO" --label "$LABEL" --no-focus)"
 WS="$(jqr '.result.workspace.workspace_id'  "$WS_JSON")"
@@ -143,6 +114,15 @@ ROOT="$(jqr '.result.root_pane.pane_id'     "$WS_JSON")"
 [ -n "$WS" ]   && [ "$WS"   != "null" ] || die "workspace create 返回异常: $WS_JSON"
 [ -n "$ROOT" ] && [ "$ROOT" != "null" ] || die "workspace create 未返回 root pane: $WS_JSON"
 info "workspace=$WS root=$ROOT repo=$REPO label=$LABEL"
+
+# ── 3.5. per-cluster agent 名 (由 workspace 短号小写派生, 避免多集群裸单词撞名
+#     → 后者 rename 全败 → null agent)。herdr 名只收 [a-z][a-z0-9_-]{0,31}, 大写被拒
+#     (e.g. WS=wG → 前缀 wg → wg-coordinator); 旧 basename 派生命名废弃 ──
+WS_SLUG="$(printf '%s' "$WS" | tr '[:upper:]' '[:lower:]')"
+COORD_NAME="${WS_SLUG}-coordinator"
+EXEC_NAME="${WS_SLUG}-executor"
+REV_NAME="${WS_SLUG}-reviewer"
+info "agent 命名: $COORD_NAME / $EXEC_NAME / $REV_NAME"
 
 cleanup_hint() { info "失败/中断残留清理: herdr workspace close $WS"; }
 trap cleanup_hint ERR
