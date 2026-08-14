@@ -250,14 +250,16 @@ start_roles
 
 # ── 7. 角色事实源 + 启动 brief ──
 # ROLES.md 放全局 (~/.config/coherd/), 不污染项目 git; 所有 herdr agent 共享
-brief() { # name text — 断言送达: prompt 失败(目标不存在/未就绪)响亮 WARN, 不再软吞
-  if ! herdr agent prompt "$1" "$2"; then
-    echo "coherd: WARN: brief $1 发送失败, 检查 agent 是否就绪" >&2
+# 先 focus: 不可见 pane 的 plain prompt 会文本残留不自动提交 (herdr issue#2063),
+# 故在 brief 前聚焦 workspace 使 pane 可见, 配合 --wait 保证提交生效
+herdr workspace focus "$WS" >/dev/null 2>&1 || true
+brief() { # name text — 断言送达: --wait 阻塞至目标确认接收(进入 working)或超时, 否则 WARN 提示手动回车
+  if ! herdr agent prompt "$1" "$2" --wait --until working --timeout 10000 2>/dev/null; then
+    echo "coherd: WARN: brief $1 未确认(发送失败或 10s 超时) — 请在其 pane 手动回车确认接收" >&2
   fi
 }
-brief "$COORD_NAME" "你是协调者 coordinator。集群角色与协作契约见 $ROLES (先读)。你的 herdr agent 名称: $COORD_NAME; 联系 executor: herdr agent prompt $EXEC_NAME; 联系 reviewer: herdr agent prompt $REV_NAME; 对方回复以 [executor]:/[reviewer]: 前缀可读; 无前缀 = 用户。职责: 把用户意图拆解为任务, 分派给 executor(执行)与 reviewer(审查); 可与 reviewer 讨论技术方案; 整合结果向用户交付。你的消息加 [coordinator]: 前缀; 收到 [executor]:/[reviewer]: = 同级对话。开机握手: 启动后先对两 peer 各探活一次 — 运行 herdr agent wait $EXEC_NAME --until idle --timeout 20000 与 herdr agent wait $REV_NAME --until idle --timeout 20000; 两个都确认就绪后才向用户报 [coordinator]: 集群就绪并开始分派; 任一超时则 WARN(注明该 peer 未确认)但不死等, 已确认者照常继续。两 peer 的 [executor]:/[reviewer]: 主动 ping 是独立后续消息, 不作为你的就绪判定依据。"
-brief "$EXEC_NAME" "你是执行者 executor。集群角色与协作契约见 $ROLES (先读)。你的 herdr agent 名称: $EXEC_NAME; 联系 coordinator: herdr agent prompt $COORD_NAME; 联系 reviewer: herdr agent prompt $REV_NAME; 对方回复以 [coordinator]:/[reviewer]: 前缀可读。你的消息加 [executor]: 前缀; 收到 [coordinator]: = 分派, [reviewer]: = 审查反馈; 无前缀 = 用户。就绪后向 coordinator 报告。"
-brief "$REV_NAME" "你是审查者 reviewer。集群角色与协作契约见 $ROLES (先读)。你的 herdr agent 名称: $REV_NAME; 联系 coordinator: herdr agent prompt $COORD_NAME; 联系 executor: herdr agent prompt $EXEC_NAME; 对方回复以 [coordinator]:/[executor]: 前缀可读。你的消息加 [reviewer]: 前缀; 收到 [coordinator]: = 分派/讨论, [executor]: = 待审查产出; 无前缀 = 用户。就绪后向 coordinator 报告。"
+brief "$COORD_NAME" "你是协调者 coordinator。集群角色与协作契约见 $ROLES (先读)。你的 herdr agent 名称: $COORD_NAME; 联系 executor: herdr agent prompt $EXEC_NAME; 联系 reviewer: herdr agent prompt $REV_NAME; 对方回复以 [executor]:/[reviewer]: 前缀可读; 无前缀 = 用户。职责: 把用户意图拆解为任务, 分派给 executor(执行)与 reviewer(审查); 可与 reviewer 讨论技术方案; 整合结果向用户交付。你的消息加 [coordinator]: 前缀; 收到 [executor]:/[reviewer]: = 同级对话。就绪握手(事件驱动): 不主动探活, 等待 executor/reviewer 主动上报就绪(消息以 [executor]:/[reviewer]: 前缀), 两方就绪消息都收到即判定集群就绪, 报 [coordinator]: 集群就绪并开始分派; 等待期间不阻塞, 久候未收(>60s)则 WARN 注明未确认 peer, 已确认者照常继续。"
+brief "$EXEC_NAME" "你是执行者 executor。集群角色与协作契约见 $ROLES (先读)。你的 herdr agent 名称: $EXEC_NAME; 联系 coordinator: herdr agent prompt $COORD_NAME; 联系 reviewer: herdr agent prompt $REV_NAME; 对方回复以 [coordinator]:/[reviewer]: 前缀可读。你的消息加 [executor]: 前缀; 收到 [coordinator]: = 分派, [reviewer]: = 审查反馈; 无前缀 = 用户。就绪握手: 启动即读 ROLES.md 确认身份与 peer 名, 完成后主动向 coordinator 发送 '[executor]: <就绪消息>'(herdr agent prompt $COORD_NAME '[executor]: 就绪...'), 由 coordinator 判定集群就绪(不等待任何人探活)。完成分派任务后转为待命态, 不主动轮询或 herdr agent wait 观察他方, 后续动作由 [coordinator]:/[reviewer]: 消息驱动。"
+brief "$REV_NAME" "你是审查者 reviewer。集群角色与协作契约见 $ROLES (先读)。你的 herdr agent 名称: $REV_NAME; 联系 coordinator: herdr agent prompt $COORD_NAME; 联系 executor: herdr agent prompt $EXEC_NAME; 对方回复以 [coordinator]:/[executor]: 前缀可读。你的消息加 [reviewer]: 前缀; 收到 [coordinator]: = 分派/讨论, [executor]: = 待审查产出; 无前缀 = 用户。就绪握手: 启动即读 ROLES.md 确认身份与 peer 名, 完成后主动向 coordinator 发送 '[reviewer]: <就绪消息>'(herdr agent prompt $COORD_NAME '[reviewer]: 就绪...'), 由 coordinator 判定集群就绪(不等待任何人探活)。完成审查上报后转为待命态, 不主动轮询或 herdr agent wait 观察他方, 后续动作由 [coordinator]:/[executor]: 消息驱动。"
 
-herdr workspace focus "$WS" >/dev/null 2>&1 || true
 info "集群就绪: workspace=$WS  coordinator=$COORD_PANE  reviewer=$REV_PANE  executor=$EXEC_PANE  (角色见 $ROLES; 依赖 herdr ≥ 需支持上述 pane/agent 操作)"
