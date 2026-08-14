@@ -16,16 +16,18 @@ info() { echo "install.sh: $*"; }
 command -v herdr >/dev/null || die "未找到 herdr — coherd 的运行时依赖。安装: brew install herdr (或见 herdr.dev); 配置见 docs/configuration.md"
 command -v jq    >/dev/null || die "未找到 jq — 安装: brew install jq / apt install jq; 配置见 docs/configuration.md"
 
-# ── 拷贝 bin/coherd ──
+# ── 安装 bin/coherd (symlink → repo; repo 更新即时反映, 免重跑) ──
 [ -f "$HERE/bin/coherd" ] || die "缺失 $HERE/bin/coherd (请在 repo 内运行 install.sh)"
 mkdir -p "$BIN_DIR"
-if [ -e "$BIN_DIR/coherd" ]; then
+# 迁移: 旧 cp 副本是普通文件(非 symlink) → 先备份保用户旧二进制, 再 ln
+if [ -e "$BIN_DIR/coherd" ] && [ ! -L "$BIN_DIR/coherd" ]; then
   cp "$BIN_DIR/coherd" "$BIN_DIR/coherd.bak.$(date +%s)"
   info "已备份原有 $BIN_DIR/coherd → coherd.bak.*"
 fi
-cp "$HERE/bin/coherd" "$BIN_DIR/coherd"
-chmod +x "$BIN_DIR/coherd"
-info "已安装 $BIN_DIR/coherd"
+# target 用绝对路径(symlink 以 link 所在目录解析, 相对路径会断); 已是 symlink 直接重指不备份
+ln -sf "$HERE/bin/coherd" "$BIN_DIR/coherd"
+chmod +x "$HERE/bin/coherd"   # 幂等: 确保 target 可执行(不 chmod symlink 本身)
+info "已安装 $BIN_DIR/coherd → $HERE/bin/coherd (symlink)"
 
 # ── 拷贝 roles/ROLES.md ──
 [ -f "$HERE/roles/ROLES.md" ] || die "缺失 $HERE/roles/ROLES.md"
