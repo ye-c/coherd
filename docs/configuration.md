@@ -23,7 +23,7 @@ coherd 的配置面很小：三个槽位的启动命令 + 布局。所有配置�
 | `COHERD_EXECUTOR_CMD` | `omp` | 同上 |
 | `COHERD_REVIEWER_CMD` | `cc` | 同上 |
 
-回退是兼容旧集群 CLI 命名（pi/omp/cc）的便利，不是 coherd 对特定 CLI 的依赖。
+回退是兼容旧集群 CLI 命名（pi/omp/cc）的便利，不是 coherd 对特定 CLI 的依赖。注意 `cc` 有**双重含义**：它既是旧集群的 CLI 名，也是 Claude Code 的常见别名——PATH 里的 `cc` 通常就是用户的 Claude Code。fallback 表 `cc` → reviewer 指"名为 `cc` 的命令"，不指定具体实现；该命令的语言/行为由 CLI 自身决定（brief 是中文，CLI 默认语言可能不同——见 README 语言说明）。
 
 ## coherd.conf
 
@@ -45,7 +45,7 @@ COHERD_LAYOUT=auto
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
-| `COHERD_LAYOUT` | `auto` | `portrait` / `landscape` / `auto`（auto = xrandr 像素 → cell 近似） |
+| `COHERD_LAYOUT` | `auto` | `portrait` / `landscape` / `auto`（auto = pane cell 几何近似） |
 | `COHERD_CONF` | `~/.config/coherd/coherd.conf` | conf 路径；可在运行前覆盖 |
 
 ## FAQ：coherd 报"未找到 xx 的启动命令"

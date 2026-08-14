@@ -53,7 +53,7 @@ export COHERD_EXECUTOR_CMD=~/bin/my-executor-cli
 export COHERD_REVIEWER_CMD=~/bin/my-reviewer-cli
 ```
 
-都不设置时，回退找 PATH 中的 `pi` / `omp` / `cc`（旧集群的 CLI 名）；再找不到就报错并指向 docs/configuration.md。
+都不设置时，回退找 PATH 中的 `pi` / `omp` / `cc`（旧集群的 CLI 名；其中 `cc` 有双重含义——既是旧集群 CLI 名，通常也是指你的 Claude Code）；再找不到就报错并指向 docs/configuration.md。
 
 ## 用法
 
@@ -93,6 +93,7 @@ COHERD_LAYOUT=portrait coherd ~/code/myapp mylabel  # 竖屏 + 自定义标签
 ## 局限与扩展
 
 - 冷门 agent CLI 不在 herdr 内置识别的 21 种之内就无法用（见 docs/agents.md）——诚实说，不是所有 CLI 都被识别。
+- **有界不一致（bounded incoherence）**：reviewer 审查的可能是 executor 编辑**进行中**的树，不是原子快照——"fresh-eyes"（独立干净树审查）本轮不可达，完整树隔离列入 v2 待办（独立于跨集群隔离议题）。缓解：reviewer 验证前以 `git status`/`diff` 感知进行中改动，DoD 尽量定义在可复现状态。
 - 当前固定 coordinator/executor/reviewer 三角色。未来可扩展更多角色/agent：多个执行者并行、专职测试 agent——架构上只是加 pane + spawn 的事。
 
 https://github.com/org/repo  ← 占位 repo 链接
