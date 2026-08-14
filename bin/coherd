@@ -11,8 +11,8 @@
 #     未设置时回退 PATH 中的 pi / omp / cc; 均缺则 die 指向 docs/configuration.md
 #   agent 私有配置 (env/flag/wrapper 内容) 由用户自备, 本脚本不注入不修改
 #
-# 布局:  自动检测横竖屏, 优先级: ① COHERD_LAYOUT=portrait|landscape|auto
-#        (手动指定, 默认 auto) ② xrandr 像素分辨率 (高>宽=竖屏) ③ cell 近似
+# 布局:  自动检测横竖屏: ① COHERD_LAYOUT=portrait|landscape|auto (手动指定,
+#        默认 auto) ② cell 几何近似 (高>半宽=竖屏, 以 pane 实际形状为准)
 #   竖屏: coordinator 上 / reviewer 中 / executor 下 (均分三行)
 #   横屏: reviewer 左上 / executor 右上 / coordinator 下全宽
 #
@@ -20,6 +20,8 @@
 # 失败:  set -euo pipefail, ERR 时提示 workspace_id 供手动清理
 # 依赖:  herdr, jq; 兼容 bash 3.2 (不用 bash4 专属特性); 见 docs/configuration.md
 set -euo pipefail
+
+bash -n "$0" # 启动自检: 本脚本语法错误即由 set -e 早退, 避免半路挂起
 
 REPO="${1:-$PWD}"
 REPO="$(cd "$REPO" && pwd)" || exit 1
@@ -116,7 +118,7 @@ info "workspace=$WS root=$ROOT repo=$REPO label=$LABEL"
 cleanup_hint() { info "失败/中断残留清理: herdr workspace close $WS"; }
 trap cleanup_hint ERR
 
-# ── 4. 检测横竖屏: 显式参数 > 像素级(xrandr) > cell 近似 ──
+# ── 4. 检测横竖屏: 显式参数 > cell 近似 (pane 实际几何) ──
 LAYOUT="${COHERD_LAYOUT:-auto}"
 case "$LAYOUT" in
   portrait|landscape|auto) ;;
@@ -131,20 +133,14 @@ if [ "$LAYOUT" = "portrait" ]; then
 elif [ "$LAYOUT" = "landscape" ]; then
   PORTRAIT=0
 else
-  PXA="$(xrandr --query 2>/dev/null | grep -oE '^[^ ]+ connected primary [0-9]+x[0-9]+' | head -1 | grep -oE '[0-9]+x[0-9]+' || true)"
-  if [ -z "$PXA" ]; then
-    PXA="$(xrandr --query 2>/dev/null | grep -oE '^[^ ]+ connected [0-9]+x[0-9]+' | head -1 | grep -oE '[0-9]+x[0-9]+' || true)"
-  fi
-  if [ -n "$PXA" ]; then
-    if [ "${PXA#*x}" -gt "${PXA%x*}" ] 2>/dev/null; then PORTRAIT=1; else PORTRAIT=0; fi
-    DETECT_SRC="像素 ${PXA} (xrandr)"
-  elif [ -n "$PW" ] && [ -n "$PH" ] && [ "$PH" -gt 0 ] 2>/dev/null \
+  # 朝向 = pane 实际 cell 几何: 高 > 半宽 → 竖屏; 几何不可得时默认横屏
+  if [ -n "$PW" ] && [ -n "$PH" ] && [ "$PH" -gt 0 ] 2>/dev/null \
        && [ "$PH" -gt $((PW / 2)) ] 2>/dev/null; then
     PORTRAIT=1
-    DETECT_SRC="cell ${PW}x${PH} (近似)"
+    DETECT_SRC="cell ${PW}x${PH}"
   else
     PORTRAIT=0
-    DETECT_SRC="cell ${PW}x${PH} (近似)"
+    DETECT_SRC="cell ${PW}x${PH} (横屏默认)"
   fi
 fi
 if [ "$PORTRAIT" = 1 ]; then
@@ -175,38 +171,66 @@ else
 fi
 info "布局: coordinator=$COORD_PANE reviewer=$REV_PANE executor=$EXEC_PANE"
 
-# ── 6. spawn: 三角色统一 launcher ──
+# ── 6. spawn: 三角色统一 launcher (并行 pane run + 共享 deadline 合并检测) ──
 # 全部走 pane run <CMD> (CMD 由用户 wrapper/CLI 提供, 自带 env 加载) → 探测 herdr
-# 识别出的 agent → rename 成槽位名。无 --kind, 不注入任何 env, 不碰 agent 私有配置
-start_role() { # name pane cmd
-  local name="$1" pane="$2" cmd="$3" out deadline=$((SECONDS + DETECT_TIMEOUT)) run_ok=0
-  info "启动 $name (pane run: $cmd)"
-  # pane run 对未就绪 pane 可能失败, 2s 后重试, 与就绪后识别阶段共享同一 deadline
+# 识别出的 agent → rename 成槽位名。无 --kind, 不注入任何 env, 不碰 agent 私有配置。
+# 三条 pane run 并行发出(轮流重试各自 pane 就绪, 共享 DETECT_TIMEOUT), 随后单一循环
+# 同时检测三 pane 的 agent_status 非 null 并 rename — 最坏总超时 = DETECT_TIMEOUT, 不叠加
+start_roles() { # 无参; 用全局 COORD/EXEC/REV_PANE 与 *_CMD
+  local deadline=$((SECONDS + DETECT_TIMEOUT)) i done=0 out
+  local names=(coordinator executor reviewer)
+  local panes=("$COORD_PANE" "$EXEC_PANE" "$REV_PANE")
+  local cmds=("$COORD_CMD" "$EXEC_CMD" "$REV_CMD")
+  local run_ok=(0 0 0) ids=(0 0 0)
+  info "启动 coordinator/executor/reviewer (共享超时 ${DETECT_TIMEOUT}s)"
+  # 阶段 1: 三条 pane run 并行发出 (pane 未就绪则 2s 后重试, 共享同一 deadline)
   while [ "$SECONDS" -lt "$deadline" ]; do
-    if herdr pane run "$pane" "$cmd" >/dev/null 2>&1; then run_ok=1; break; fi
-    info "pane $pane 尚未就绪, 2s 后重试 $name..."
+    done=1
+    for i in 0 1 2; do
+      if [ "${run_ok[$i]}" = 0 ]; then
+        done=0
+        if herdr pane run "${panes[$i]}" "${cmds[$i]}" >/dev/null 2>&1; then
+          run_ok[$i]=1
+          info "pane run ${names[$i]} 已发出"
+        fi
+      fi
+    done
+    [ "$done" = 1 ] && break
     sleep 2
   done
-  [ "$run_ok" = 1 ] || die "启动 $name 失败 (workspace $WS)"
-  # 用 agent list 查 agent_status 非 null (agent get 在状态跟踪波动时返回 null 假阳性)
-  until herdr agent list 2>/dev/null | jq -e --arg p "$pane" \
-      '.result.agents[]? | select(.pane_id==$p and .agent_status != null)' >/dev/null 2>&1; do
-    [ "$SECONDS" -lt "$deadline" ] || die "识别 $name 超时 (workspace $WS) — 确认 '$cmd' 是被 herdr 识别的 agent CLI (见 docs/agents.md)"
+  for i in 0 1 2; do
+    [ "${run_ok[$i]}" = 1 ] || die "启动 ${names[$i]} 失败 (workspace $WS) — pane 未就绪或命令失败"
+  done
+  # 阶段 2: 合并检测+rename — 一次轮询覆盖三 pane (agent get 状态跟踪波动会返回 null 假阳性, 故用 list)
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    for i in 0 1 2; do
+      [ "${ids[$i]}" = 1 ] && continue
+      if herdr agent list 2>/dev/null | jq -e --arg p "${panes[$i]}" \
+          '.result.agents[]? | select(.pane_id==$p and .agent_status != null)' >/dev/null 2>&1; then
+        ids[$i]=1
+        out="$(herdr agent rename "${panes[$i]}" "${names[$i]}" 2>&1)" || true
+        if [[ "$out" == *agent_name_taken* ]]; then
+          die "agent 名字 '${names[$i]}' 已被占用(疑似残留集群), 请先清理: herdr agent list / 关闭对应 workspace"
+        fi
+      fi
+    done
+    [ "${ids[0]}" = 1 ] && [ "${ids[1]}" = 1 ] && [ "${ids[2]}" = 1 ] && break
+    [ "$SECONDS" -lt "$deadline" ] || die "识别超时 (workspace $WS) — 确认 CMD 是被 herdr 识别的 agent CLI (见 docs/agents.md)"
     sleep 2
   done
-  out="$(herdr agent rename "$pane" "$name" 2>&1)" || true
-  if [[ "$out" == *agent_name_taken* ]]; then
-    die "agent 名字 '$name' 已被占用(疑似残留集群), 请先清理: herdr agent list / 关闭对应 workspace"
-  fi
+  # 兜底: deadline 耗尽时循环可能一次未进(阶段 1 已用完预算), 未识别完成则必失败
+  for i in 0 1 2; do
+    [ "${ids[$i]}" = 1 ] || die "识别 ${names[$i]} 超时 (workspace $WS) — 确认 CMD 是被 herdr 识别的 agent CLI (见 docs/agents.md)"
+  done
 }
-start_role coordinator "$COORD_PANE" "$COORD_CMD"
-start_role executor    "$EXEC_PANE" "$EXEC_CMD"
-start_role reviewer    "$REV_PANE" "$REV_CMD"
+start_roles
 
 # ── 7. 角色事实源 + 启动 brief ──
 # ROLES.md 放全局 (~/.config/coherd/), 不污染项目 git; 所有 herdr agent 共享
-brief() { # name text
-  herdr agent prompt "$1" "$2" || info "brief $1 发送异常(已尝试, agent 将异步处理)"
+brief() { # name text — 断言送达: prompt 失败(目标不存在/未就绪)响亮 WARN, 不再软吞
+  if ! herdr agent prompt "$1" "$2"; then
+    echo "coherd: WARN: brief $1 发送失败, 检查 agent 是否就绪" >&2
+  fi
 }
 brief coordinator "你是协调者 coordinator。集群角色与协作契约见 $ROLES (先读)。职责: 把用户意图拆解为任务, 分派给 executor(执行)与 reviewer(审查); 可与 reviewer 讨论技术方案; 整合结果向用户交付。你的消息加 [coordinator]: 前缀; 收到 [executor]:/[reviewer]: = 同级对话; 无前缀 = 用户。就绪后向用户简要汇报成员与分工。"
 brief executor "你是执行者 executor。集群角色与协作契约见 $ROLES (先读)。职责: 实现 coordinator 分派的任务, 产出可验证结果; 完成或阻塞时向 coordinator 上报, 需要审查可请 reviewer。你的消息加 [executor]: 前缀; 收到 [coordinator]: = 分派, [reviewer]: = 审查反馈; 无前缀 = 用户。就绪后向 coordinator 报告。"
