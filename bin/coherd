@@ -34,6 +34,28 @@ die()  { echo "coherd: $*" >&2; exit 1; }
 info() { echo "coherd: $*"; }
 jqr()  { jq -r "$1" <<<"$2"; }
 
+# per-cluster agent 名派生: LABEL → 合法 herdr 名前缀 (≤20, 匹配 [a-z][a-z0-9_-]*)
+# 规则: basename → 小写 → 非 [a-z0-9] 替换为 '-' → 首尾去 '-' → 截断 ≤20
+#       空/以非字母开头时补 'c' 前缀, 保证满足 herdr 名约束 [a-z][a-z0-9_-]{0,31}
+slug_of() { # label → 前缀
+  local s="$1" slug
+  # 取 basename: 纯 shell (去尾斜杠→去路径), 避免 GNU basename 把 '-' 开头参数当选项
+  while :; do
+    case "$s" in
+      *[/]) s="${s%/}" ;;
+      *) break ;;
+    esac
+  done
+  s="${s##*/}"
+  slug="$(printf '%s' "$s" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | sed -e 's/^-*//' -e 's/-*$//')"
+  slug="${slug:0:20}"
+  case "$slug" in
+    [a-z]*) ;;
+    *) slug="c${slug}" ;;
+  esac
+  printf '%s' "$slug"
+}
+
 command -v herdr >/dev/null || die "herdr CLI 不在 PATH — 见 docs/configuration.md"
 command -v jq    >/dev/null || die "需要 jq — 见 docs/configuration.md"
 
@@ -107,6 +129,13 @@ done < <(herdr workspace list 2>/dev/null \
                and (.agent_status == "unknown" or .agent_status == null))
       | .workspace_id')
 
+# ── 2.75. per-cluster agent 名 (由 LABEL 派生, 避免多集群裸单词撞名 → 后者 rename 全败 → null agent) ──
+SLUG="$(slug_of "$LABEL")"
+COORD_NAME="${SLUG}-coordinator"
+EXEC_NAME="${SLUG}-executor"
+REV_NAME="${SLUG}-reviewer"
+info "agent 命名: $COORD_NAME / $EXEC_NAME / $REV_NAME"
+
 # ── 3. 创建 workspace ──
 WS_JSON="$(herdr workspace create --cwd "$REPO" --label "$LABEL" --no-focus)"
 WS="$(jqr '.result.workspace.workspace_id'  "$WS_JSON")"
@@ -178,7 +207,7 @@ info "布局: coordinator=$COORD_PANE reviewer=$REV_PANE executor=$EXEC_PANE"
 # 同时检测三 pane 的 agent_status 非 null 并 rename — 最坏总超时 = DETECT_TIMEOUT, 不叠加
 start_roles() { # 无参; 用全局 COORD/EXEC/REV_PANE 与 *_CMD
   local deadline=$((SECONDS + DETECT_TIMEOUT)) i all_sent=0 out
-  local names=(coordinator executor reviewer)
+  local names=("$COORD_NAME" "$EXEC_NAME" "$REV_NAME")
   local panes=("$COORD_PANE" "$EXEC_PANE" "$REV_PANE")
   local cmds=("$COORD_CMD" "$EXEC_CMD" "$REV_CMD")
   local run_ok=(0 0 0) ids=(0 0 0)
@@ -208,10 +237,12 @@ start_roles() { # 无参; 用全局 COORD/EXEC/REV_PANE 与 *_CMD
       if herdr agent list 2>/dev/null | jq -e --arg p "${panes[$i]}" \
           '.result.agents[]? | select(.pane_id==$p and .agent_status != null)' >/dev/null 2>&1; then
         ids[$i]=1
-        out="$(herdr agent rename "${panes[$i]}" "${names[$i]}" 2>&1)" || true
-        if [[ "$out" == *agent_name_taken* ]]; then
-          die "agent 名字 '${names[$i]}' 已被占用(疑似残留集群), 请先清理: herdr agent list / 关闭对应 workspace"
-        fi
+        out="$(herdr agent rename "${panes[$i]}" "${names[$i]}" 2>&1)" || {
+          if [[ "$out" == *agent_name_taken* ]]; then
+            die "agent 名 '${names[$i]}' 已被占用(疑似残留/并行集群同名 LABEL?); 先 herdr agent list 查, 再 herdr workspace close 对应 ws"
+          fi
+          die "rename '${names[$i]}' 失败(原始输出): $out"
+        }
       fi
     done
     [ "${ids[0]}" = 1 ] && [ "${ids[1]}" = 1 ] && [ "${ids[2]}" = 1 ] && break
@@ -231,9 +262,9 @@ brief() { # name text — 断言送达: prompt 失败(目标不存在/未就绪)
     echo "coherd: WARN: brief $1 发送失败, 检查 agent 是否就绪" >&2
   fi
 }
-brief coordinator "你是协调者 coordinator。集群角色与协作契约见 $ROLES (先读)。职责: 把用户意图拆解为任务, 分派给 executor(执行)与 reviewer(审查); 可与 reviewer 讨论技术方案; 整合结果向用户交付。你的消息加 [coordinator]: 前缀; 收到 [executor]:/[reviewer]: = 同级对话; 无前缀 = 用户。就绪后向用户简要汇报成员与分工。"
-brief executor "你是执行者 executor。集群角色与协作契约见 $ROLES (先读)。职责: 实现 coordinator 分派的任务, 产出可验证结果; 完成或阻塞时向 coordinator 上报, 需要审查可请 reviewer。你的消息加 [executor]: 前缀; 收到 [coordinator]: = 分派, [reviewer]: = 审查反馈; 无前缀 = 用户。就绪后向 coordinator 报告。"
-brief reviewer "你是审查者 reviewer。集群角色与协作契约见 $ROLES (先读)。职责: 审查 executor 的产出(正确性/安全/可维护性)并跑验证, 给出可执行意见; 可与 coordinator 讨论。你的消息加 [reviewer]: 前缀; 收到 [coordinator]: = 分派/讨论, [executor]: = 待审查产出; 无前缀 = 用户。就绪后向 coordinator 报告。"
+brief "$COORD_NAME" "你是协调者 coordinator。集群角色与协作契约见 $ROLES (先读)。你的 herdr agent 名称: $COORD_NAME; 联系 executor: herdr agent prompt $EXEC_NAME; 联系 reviewer: herdr agent prompt $REV_NAME; 对方回复以 [executor]:/[reviewer]: 前缀可读。职责: 把用户意图拆解为任务, 分派给 executor(执行)与 reviewer(审查); 可与 reviewer 讨论技术方案; 整合结果向用户交付。你的消息加 [coordinator]: 前缀; 收到 [executor]:/[reviewer]: = 同级对话; 无前缀 = 用户。就绪后向用户简要汇报成员与分工。"
+brief "$EXEC_NAME" "你是执行者 executor。集群角色与协作契约见 $ROLES (先读)。你的 herdr agent 名称: $EXEC_NAME; 联系 coordinator: herdr agent prompt $COORD_NAME; 联系 reviewer: herdr agent prompt $REV_NAME; 对方回复以 [coordinator]:/[reviewer]: 前缀可读。你的消息加 [executor]: 前缀; 收到 [coordinator]: = 分派, [reviewer]: = 审查反馈; 无前缀 = 用户。就绪后向 coordinator 报告。"
+brief "$REV_NAME" "你是审查者 reviewer。集群角色与协作契约见 $ROLES (先读)。你的 herdr agent 名称: $REV_NAME; 联系 coordinator: herdr agent prompt $COORD_NAME; 联系 executor: herdr agent prompt $EXEC_NAME; 对方回复以 [coordinator]:/[executor]: 前缀可读。你的消息加 [reviewer]: 前缀; 收到 [coordinator]: = 分派/讨论, [executor]: = 待审查产出; 无前缀 = 用户。就绪后向 coordinator 报告。"
 
 herdr workspace focus "$WS" >/dev/null 2>&1 || true
 info "集群就绪: workspace=$WS  coordinator=$COORD_PANE  reviewer=$REV_PANE  executor=$EXEC_PANE  (角色见 $ROLES; 依赖 herdr ≥ 需支持上述 pane/agent 操作)"

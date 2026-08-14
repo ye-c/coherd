@@ -15,6 +15,7 @@
 ## 2. 通信协议
 
 - agent 间用 `herdr agent prompt <name> "<消息>"` 通信；读取用 `herdr agent read <name>`。
+- 每个集群的 herdr agent 名是 `${LABEL}-<role>`（如 `mycoherd-coordinator`），非裸单词；互寻址用完整名。
 - 消息以 `[<role>]: ` 前缀开头 = 同级 agent 发言；无前缀 = 用户直接输入。
 - 每个 pane 自动注入 `HERDR_WORKSPACE_ID` / `HERDR_TAB_ID` / `HERDR_PANE_ID`。
 - 汇报对称义务：executor 完成/阻塞/需审查以 `[executor]:` 上报 coordinator；reviewer 审查结论（approve/revise）以 `[reviewer]:` 上报 coordinator；coordinator 整合交付以 `[coordinator]:` 上报用户。
