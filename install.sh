@@ -12,9 +12,9 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 die()  { echo "install.sh: $*" >&2; exit 1; }
 info() { echo "install.sh: $*"; }
 
-# ── 前置依赖检查 (仅提示, 不强制, 缺了就装) ──
-command -v herdr >/dev/null || info "警告: 未找到 herdr — 请先安装 herdr (终端多路复用器)"
-command -v jq    >/dev/null || info "警告: 未找到 jq — 请先安装 (brew install jq / apt install jq)"
+# ── 前置依赖检查 (硬阻断: 缺则 die + 安装指引, 不自动装不碰 brew) ──
+command -v herdr >/dev/null || die "未找到 herdr — coherd 的运行时依赖。安装: brew install herdr (或见 herdr.dev); 配置见 docs/configuration.md"
+command -v jq    >/dev/null || die "未找到 jq — 安装: brew install jq / apt install jq; 配置见 docs/configuration.md"
 
 # ── 拷贝 bin/coherd ──
 [ -f "$HERE/bin/coherd" ] || die "缺失 $HERE/bin/coherd (请在 repo 内运行 install.sh)"
