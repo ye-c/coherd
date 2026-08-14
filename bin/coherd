@@ -1,0 +1,216 @@
+#!/usr/bin/env bash
+# coherd — 从零拉起 herdr 多 agent 协作集群
+#
+# 用法: coherd [REPO] [LABEL]
+#   REPO  目标仓库目录 (默认 $PWD)
+#   LABEL workspace 标签   (默认 repo basename)
+#
+# 角色:  coordinator 协调 (可与 reviewer 讨论) / executor 执行 / reviewer 审查
+#   三角色均为「槽位」, 具体 agent CLI 由配置决定, 本脚本不绑定任何特定 CLI:
+#     COHERD_COORDINATOR_CMD / COHERD_EXECUTOR_CMD / COHERD_REVIEWER_CMD
+#     未设置时回退 PATH 中的 pi / omp / cc; 均缺则 die 指向 docs/configuration.md
+#   agent 私有配置 (env/flag/wrapper 内容) 由用户自备, 本脚本不注入不修改
+#
+# 布局:  自动检测横竖屏, 优先级: ① COHERD_LAYOUT=portrait|landscape|auto
+#        (手动指定, 默认 auto) ② xrandr 像素分辨率 (高>宽=竖屏) ③ cell 近似
+#   竖屏: coordinator 上 / reviewer 中 / executor 下 (均分三行)
+#   横屏: reviewer 左上 / executor 右上 / coordinator 下全宽
+#
+# 幂等:  按 workspace label 查重, 已存在则聚焦后退出 (不重建)
+# 失败:  set -euo pipefail, ERR 时提示 workspace_id 供手动清理
+# 依赖:  herdr, jq; 兼容 bash 3.2 (不用 bash4 专属特性); 见 docs/configuration.md
+set -euo pipefail
+
+REPO="${1:-$PWD}"
+REPO="$(cd "$REPO" && pwd)" || exit 1
+LABEL="${2:-$(basename "$REPO")}"
+CONF="${COHERD_CONF:-$HOME/.config/coherd/coherd.conf}"
+ROLES="$HOME/.config/coherd/ROLES.md"
+DETECT_TIMEOUT=120 # pane run 后 herdr 识别 agent + rename 的总超时 (s)
+
+die()  { echo "coherd: $*" >&2; exit 1; }
+info() { echo "coherd: $*"; }
+jqr()  { jq -r "$1" <<<"$2"; }
+
+command -v herdr >/dev/null || die "herdr CLI 不在 PATH — 见 docs/configuration.md"
+command -v jq    >/dev/null || die "需要 jq — 见 docs/configuration.md"
+
+# ── 0. 加载 coherd.conf (若存在); 已显式设置的 COHERD_* 环境变量优先于 conf ──
+if [ -f "$CONF" ]; then
+  _pre="$(env | grep -E '^COHERD_[A-Z_]+=' || true)"
+  set -a; source "$CONF"; set +a
+  while IFS= read -r _kv; do
+    [ -n "$_kv" ] && export "$_kv"
+  done <<<"$_pre"
+  unset _pre _kv
+fi
+
+# ── 0.5. 解析三槽位启动命令: CMD 变量 → PATH 回退(pi/omp/cc) → die ──
+resolve_cmd() { # role 名 → 命令字符串
+  local role="$1" cmd="" fallback
+  case "$role" in
+    coordinator) cmd="${COHERD_COORDINATOR_CMD:-}"; fallback=pi ;;
+    executor)    cmd="${COHERD_EXECUTOR_CMD:-}";    fallback=omp ;;
+    reviewer)    cmd="${COHERD_REVIEWER_CMD:-}";    fallback=cc ;;
+  esac
+  if [ -n "$cmd" ]; then
+    printf '%s' "$cmd"
+    return 0
+  fi
+  if command -v "$fallback" >/dev/null 2>&1; then
+    printf '%s' "$fallback"
+    return 0
+  fi
+  die "未找到 $role 的启动命令: 未设置对应 COHERD_*_CMD 且 PATH 中无 '$fallback' — 见 docs/configuration.md"
+}
+COORD_CMD="$(resolve_cmd coordinator)"
+EXEC_CMD="$(resolve_cmd executor)"
+REV_CMD="$(resolve_cmd reviewer)"
+
+[ -f "$ROLES" ] || die "缺 $ROLES (角色契约) — 先跑 install.sh 或手动拷贝 roles/ROLES.md"
+
+# ── 1. 确保 herdr server (常驻 daemon; bare shell 下 CLI 走 socket) ──
+# 注意: `herdr status` 在 server 未运行时退出码仍是 0, 必须解析 --json
+server_running() { herdr status --json 2>/dev/null | jq -e '.server.status == "running"' >/dev/null 2>&1; }
+if ! server_running; then
+  info "herdr server 未运行, 后台拉起 headless server..."
+  nohup herdr server >/dev/null 2>&1 &
+  for _ in $(seq 1 20); do
+    server_running && break
+    sleep 1
+  done
+fi
+server_running || die "herdr server 未能就绪 (请先手动运行一次 herdr)"
+
+# ── 2. 幂等: label 查重 ──
+EXISTING="$(herdr workspace list 2>/dev/null \
+  | jq -r --arg l "$LABEL" '.result.workspaces[] | select(.label==$l) | .workspace_id' \
+  | head -1 || true)"
+if [ -n "$EXISTING" ]; then
+  info "workspace '$LABEL' 已存在 ($EXISTING), 聚焦后退出"
+  herdr workspace focus "$EXISTING" >/dev/null 2>&1 || true
+  exit 0
+fi
+
+# ── 2.5. 清理 herdr 自动恢复的默认 workspace ──
+# herdr server 启动时会从 session.json 恢复默认 workspace (无 label, 单 pane 空 shell),
+# 不关则与集群 workspace 并存。只关无 label + 单 pane + 无 agent 的, 避免误伤用户 workspace
+while IFS= read -r wid; do
+  [ -n "$wid" ] || continue
+  herdr workspace close "$wid" >/dev/null 2>&1 && info "已关闭默认 workspace $wid"
+done < <(herdr workspace list 2>/dev/null \
+  | jq -r '.result.workspaces[]
+      | select((.label == null or .label == "")
+               and .pane_count == 1
+               and (.agent_status == "unknown" or .agent_status == null))
+      | .workspace_id')
+
+# ── 3. 创建 workspace ──
+WS_JSON="$(herdr workspace create --cwd "$REPO" --label "$LABEL" --no-focus)"
+WS="$(jqr '.result.workspace.workspace_id'  "$WS_JSON")"
+ROOT="$(jqr '.result.root_pane.pane_id'     "$WS_JSON")"
+[ -n "$WS" ]   && [ "$WS"   != "null" ] || die "workspace create 返回异常: $WS_JSON"
+[ -n "$ROOT" ] && [ "$ROOT" != "null" ] || die "workspace create 未返回 root pane: $WS_JSON"
+info "workspace=$WS root=$ROOT repo=$REPO label=$LABEL"
+
+cleanup_hint() { info "失败/中断残留清理: herdr workspace close $WS"; }
+trap cleanup_hint ERR
+
+# ── 4. 检测横竖屏: 显式参数 > 像素级(xrandr) > cell 近似 ──
+LAYOUT="${COHERD_LAYOUT:-auto}"
+case "$LAYOUT" in
+  portrait|landscape|auto) ;;
+  *) die "COHERD_LAYOUT 必须是 portrait|landscape|auto (当前: $LAYOUT)" ;;
+esac
+GEOM="$(herdr pane layout --pane "$ROOT")"
+PW="$(jqr '.result.layout.area.width'  "$GEOM")"
+PH="$(jqr '.result.layout.area.height' "$GEOM")"
+DETECT_SRC="显式 COHERD_LAYOUT=$LAYOUT"
+if [ "$LAYOUT" = "portrait" ]; then
+  PORTRAIT=1
+elif [ "$LAYOUT" = "landscape" ]; then
+  PORTRAIT=0
+else
+  PXA="$(xrandr --query 2>/dev/null | grep -oE '^[^ ]+ connected primary [0-9]+x[0-9]+' | head -1 | grep -oE '[0-9]+x[0-9]+' || true)"
+  if [ -z "$PXA" ]; then
+    PXA="$(xrandr --query 2>/dev/null | grep -oE '^[^ ]+ connected [0-9]+x[0-9]+' | head -1 | grep -oE '[0-9]+x[0-9]+' || true)"
+  fi
+  if [ -n "$PXA" ]; then
+    if [ "${PXA#*x}" -gt "${PXA%x*}" ] 2>/dev/null; then PORTRAIT=1; else PORTRAIT=0; fi
+    DETECT_SRC="像素 ${PXA} (xrandr)"
+  elif [ -n "$PW" ] && [ -n "$PH" ] && [ "$PH" -gt 0 ] 2>/dev/null \
+       && [ "$PH" -gt $((PW / 2)) ] 2>/dev/null; then
+    PORTRAIT=1
+    DETECT_SRC="cell ${PW}x${PH} (近似)"
+  else
+    PORTRAIT=0
+    DETECT_SRC="cell ${PW}x${PH} (近似)"
+  fi
+fi
+if [ "$PORTRAIT" = 1 ]; then
+  info "布局: ${DETECT_SRC} → 竖屏 (coordinator 上 / reviewer 中 / executor 下)"
+else
+  info "布局: ${DETECT_SRC} → 横屏 (reviewer 左上 / executor 右上 / coordinator 下)"
+fi
+
+# ── 5. 布局 (先布局后 spawn) ──
+SPLIT() { # pane direction [ratio] → 输出新 pane id
+  local p="$1" dir="$2" ratio="${3:-}" out
+  if [ -n "$ratio" ]; then
+    out="$(herdr pane split --pane "$p" --direction "$dir" --ratio "$ratio" --cwd "$REPO" --no-focus)"
+  else
+    out="$(herdr pane split --pane "$p" --direction "$dir" --cwd "$REPO" --no-focus)"
+  fi
+  jqr '.result.pane.pane_id' "$out"
+}
+if [ "$PORTRAIT" = 1 ]; then
+  COORD_PANE="$ROOT"
+  TMP="$(SPLIT "$ROOT" down 0.3333)"     # 下方 2/3
+  REV_PANE="$TMP"
+  EXEC_PANE="$(SPLIT "$TMP" down 0.5)"   # 中间 1/3 → reviewer, 底部 1/3 → executor
+else
+  REV_PANE="$ROOT"
+  COORD_PANE="$(SPLIT "$ROOT" down)"     # coordinator 下全宽
+  EXEC_PANE="$(SPLIT "$ROOT" right)"     # executor 右上
+fi
+info "布局: coordinator=$COORD_PANE reviewer=$REV_PANE executor=$EXEC_PANE"
+
+# ── 6. spawn: 三角色统一 launcher ──
+# 全部走 pane run <CMD> (CMD 由用户 wrapper/CLI 提供, 自带 env 加载) → 探测 herdr
+# 识别出的 agent → rename 成槽位名。无 --kind, 不注入任何 env, 不碰 agent 私有配置
+start_role() { # name pane cmd
+  local name="$1" pane="$2" cmd="$3" out deadline=$((SECONDS + DETECT_TIMEOUT)) run_ok=0
+  info "启动 $name (pane run: $cmd)"
+  # pane run 对未就绪 pane 可能失败, 2s 后重试, 与就绪后识别阶段共享同一 deadline
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if herdr pane run "$pane" "$cmd" >/dev/null 2>&1; then run_ok=1; break; fi
+    info "pane $pane 尚未就绪, 2s 后重试 $name..."
+    sleep 2
+  done
+  [ "$run_ok" = 1 ] || die "启动 $name 失败 (workspace $WS)"
+  # 用 agent list 查 agent_status 非 null (agent get 在状态跟踪波动时返回 null 假阳性)
+  until herdr agent list 2>/dev/null | jq -e --arg p "$pane" \
+      '.result.agents[]? | select(.pane_id==$p and .agent_status != null)' >/dev/null 2>&1; do
+    [ "$SECONDS" -lt "$deadline" ] || die "识别 $name 超时 (workspace $WS) — 确认 '$cmd' 是被 herdr 识别的 agent CLI (见 docs/agents.md)"
+    sleep 2
+  done
+  out="$(herdr agent rename "$pane" "$name" 2>&1)" || true
+  if [[ "$out" == *agent_name_taken* ]]; then
+    die "agent 名字 '$name' 已被占用(疑似残留集群), 请先清理: herdr agent list / 关闭对应 workspace"
+  fi
+}
+start_role coordinator "$COORD_PANE" "$COORD_CMD"
+start_role executor    "$EXEC_PANE" "$EXEC_CMD"
+start_role reviewer    "$REV_PANE" "$REV_CMD"
+
+# ── 7. 角色事实源 + 启动 brief ──
+# ROLES.md 放全局 (~/.config/coherd/), 不污染项目 git; 所有 herdr agent 共享
+brief() { # name text
+  herdr agent prompt "$1" "$2" || info "brief $1 发送异常(已尝试, agent 将异步处理)"
+}
+brief coordinator "你是协调者 coordinator。集群角色与协作契约见 $ROLES (先读)。职责: 把用户意图拆解为任务, 分派给 executor(执行)与 reviewer(审查); 可与 reviewer 讨论技术方案; 整合结果向用户交付。你的消息加 [coordinator]: 前缀; 收到 [executor]:/[reviewer]: = 同级对话; 无前缀 = 用户。就绪后向用户简要汇报成员与分工。"
+brief executor "你是执行者 executor。集群角色与协作契约见 $ROLES (先读)。职责: 实现 coordinator 分派的任务, 产出可验证结果; 完成或阻塞时向 coordinator 上报, 需要审查可请 reviewer。你的消息加 [executor]: 前缀; 收到 [coordinator]: = 分派, [reviewer]: = 审查反馈; 无前缀 = 用户。就绪后向 coordinator 报告。"
+brief reviewer "你是审查者 reviewer。集群角色与协作契约见 $ROLES (先读)。职责: 审查 executor 的产出(正确性/安全/可维护性)并跑验证, 给出可执行意见; 可与 coordinator 讨论。你的消息加 [reviewer]: 前缀; 收到 [coordinator]: = 分派/讨论, [executor]: = 待审查产出; 无前缀 = 用户。就绪后向 coordinator 报告。"
+
+herdr workspace focus "$WS" >/dev/null 2>&1 || true
+info "集群就绪: workspace=$WS  coordinator=$COORD_PANE  reviewer=$REV_PANE  executor=$EXEC_PANE  (角色见 $ROLES; 依赖 herdr ≥ 需支持上述 pane/agent 操作)"

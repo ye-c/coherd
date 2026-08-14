@@ -1,0 +1,5 @@
+# 密钥与本地残留
+*.env
+.certs/
+*.log
+.DS_Store
