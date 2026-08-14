@@ -12,7 +12,8 @@
 #   agent 私有配置 (env/flag/wrapper 内容) 由用户自备, 本脚本不注入不修改
 #
 # 布局:  自动检测横竖屏: ① COHERD_LAYOUT=portrait|landscape|auto (手动指定,
-#        默认 auto) ② cell 几何近似 (高>半宽=竖屏, 以 pane 实际形状为准)
+#        默认 auto) ② cell 几何近似 (高>半宽=竖屏, 以 pane 实际形状为准;
+#        几何首查可能 null, 重试 3 次后仍 null 才回退横屏并 WARN)
 #   竖屏: coordinator 上 / reviewer 中 / executor 下 (均分三行)
 #   横屏: reviewer 左上 / executor 右上 / coordinator 下全宽
 #
@@ -133,23 +134,35 @@ case "$LAYOUT" in
   portrait|landscape|auto) ;;
   *) die "COHERD_LAYOUT 必须是 portrait|landscape|auto (当前: $LAYOUT)" ;;
 esac
-GEOM="$(herdr pane layout --pane "$ROOT")"
-PW="$(jqr '.result.layout.area.width'  "$GEOM")"
-PH="$(jqr '.result.layout.area.height' "$GEOM")"
 DETECT_SRC="显式 COHERD_LAYOUT=$LAYOUT"
 if [ "$LAYOUT" = "portrait" ]; then
   PORTRAIT=1
 elif [ "$LAYOUT" = "landscape" ]; then
   PORTRAIT=0
 else
-  # 朝向 = pane 实际 cell 几何: 高 > 半宽 → 竖屏; 几何不可得时默认横屏
+  # 朝向 = pane 实际 cell 几何: 高 > 半宽 → 竖屏
+  # create 后 pane 几何未必随 workspace 立即可得 (首查可能返回 null → 误判横屏),
+  # 故取 null 时重试 ≤3 次 (每次 sleep 1), 仍 null 才回退横屏并 WARN 供诊断
+  PW="" PH=""
+  for _try in 1 2 3; do
+    GEOM="$(herdr pane layout --pane "$ROOT")"
+    PW="$(jqr '.result.layout.area.width'  "$GEOM")"
+    PH="$(jqr '.result.layout.area.height' "$GEOM")"
+    [ -n "$PW" ] && [ -n "$PH" ] && [ "$PH" -gt 0 ] 2>/dev/null && break
+    sleep 1
+  done
   if [ -n "$PW" ] && [ -n "$PH" ] && [ "$PH" -gt 0 ] 2>/dev/null \
        && [ "$PH" -gt $((PW / 2)) ] 2>/dev/null; then
     PORTRAIT=1
     DETECT_SRC="cell ${PW}x${PH}"
   else
     PORTRAIT=0
-    DETECT_SRC="cell ${PW}x${PH} (横屏默认)"
+    if [ -n "$PW" ] && [ -n "$PH" ] && [ "$PH" -gt 0 ] 2>/dev/null; then
+      DETECT_SRC="cell ${PW}x${PH} (横屏)"
+    else
+      DETECT_SRC="cell ${PW:-?}x${PH:-?} (几何不可得→回退横屏)"
+      echo "coherd: WARN: $ROOT 三次取几何仍空 (PW='${PW:-<空>}' PH='${PH:-<空>}'), 回退横屏布局 — 若实为竖屏请检查终端几何或设 COHERD_LAYOUT=portrait" >&2
+    fi
   fi
 fi
 if [ "$PORTRAIT" = 1 ]; then
