@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # coherd — 从零拉起 herdr 多 agent 协作集群
 #
-# 用法: coherd [REPO] [LABEL]
+# 用法: coherd [init] [REPO] [LABEL]
+#   init  强制(重)建: 该 label 的 workspace 已存在则先关闭再走正常创建; 不存在则等价普通创建
 #   REPO  目标仓库目录 (默认 $PWD)
 #   LABEL workspace 标签   (默认 repo basename)
 #
@@ -17,12 +18,25 @@
 #   竖屏: coordinator 上 / reviewer 中 / executor 下 (均分三行)
 #   横屏: reviewer 左上 / executor 右上 / coordinator 下全宽
 #
-# 幂等:  按 workspace label 查重, 已存在则聚焦后退出 (不重建)
+# 幂等:  按 workspace label 查重, 已存在则聚焦后退出 (不重建); init 子命令除外: 先 close 再重建
 # 失败:  set -euo pipefail, ERR 时提示 workspace_id 供手动清理
 # 依赖:  herdr, jq; 兼容 bash 3.2 (不用 bash4 专属特性); 见 docs/configuration.md
 set -euo pipefail
 
 bash -n "$0" # 启动自检: 本脚本语法错误即由 set -e 早退, 避免半路挂起
+
+# 帮助: 首参为 -h/--help 时打印 usage 后退出, 不触发后续 cd(否则 --help 会被当目录)
+show_usage() { # 打印文件头注释(去 #) + 用法行
+  sed -n '1,30p' "$0" | sed 's/^# \{0,1\}//'
+  printf '
+用法: coherd [init] [REPO] [LABEL]  —  init 强制重建同 label 集群; 普通调用幂等 focus+exit\n'
+}
+case "${1:-}" in
+  -h|--help) show_usage; exit 0 ;;
+esac
+
+INIT=0
+if [ "${1:-}" = "init" ]; then INIT=1; shift; fi
 
 REPO="${1:-$PWD}"
 REPO="$(cd "$REPO" && pwd)" || exit 1
@@ -90,6 +104,13 @@ server_running || die "herdr server 未能就绪 (请先手动运行一次 herdr
 EXISTING="$(herdr workspace list 2>/dev/null \
   | jq -r --arg l "$LABEL" '.result.workspaces[] | select(.label==$l) | .workspace_id' \
   | head -1 || true)"
+# init: 强制重建 — 先关闭已存在的同 label workspace, 并置空 EXISTING 跳过下方 focus+exit, 续走正常创建
+if [ "$INIT" = 1 ] && [ -n "$EXISTING" ]; then
+  info "init: 关闭已存在 workspace '$LABEL' ($EXISTING), 将重建"
+  herdr workspace close "$EXISTING" >/dev/null || die "init: 关闭已存在 workspace $EXISTING 失败 — 手动 herdr workspace close $EXISTING 后重试"
+  EXISTING=""
+fi
+
 if [ -n "$EXISTING" ]; then
   info "workspace '$LABEL' 已存在 ($EXISTING), 聚焦后退出"
   herdr workspace focus "$EXISTING" >/dev/null 2>&1 || true

@@ -58,8 +58,9 @@ export COHERD_REVIEWER_CMD=~/bin/my-reviewer-cli
 ## 用法
 
 ```bash
-coherd [REPO] [LABEL]
+coherd [init] [REPO] [LABEL]
 # REPO 仓库目录（默认当前目录）；LABEL workspace 标签（默认仓库名）
+# init 强制(重)建：同 label 已存在时先关闭再重建（ROLES.md/brief/agent 配置改动后重启用）；不存在则等同普通创建
 ```
 
 - 横屏（默认检测）：reviewer 左上 / executor 右上 / coordinator 下全宽
@@ -70,9 +71,10 @@ coherd [REPO] [LABEL]
 coherd                              # 在当前目录起集群
 coherd ~/code/myapp                 # 指定仓库
 COHERD_LAYOUT=portrait coherd ~/code/myapp mylabel  # 竖屏 + 自定义标签
+coherd init ~/code/myapp            # 强制重建同 label 集群（已存在先关闭）
 ```
 
-重复运行同一 label 不会重建：已存在则聚焦打开。任一路径不通（缺 jq、缺命令行配置）会直接报错退出。
+重复运行同一 label 不会重建：已存在则聚焦打开（`init` 子命令除外，它会先关闭再重建）。任一路径不通（缺 jq、缺命令行配置）会直接报错退出。
 
 ## 三 agent 协作契约
 

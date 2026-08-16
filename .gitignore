@@ -3,3 +3,6 @@
 .certs/
 *.log
 .DS_Store
+# agent 指令文件 (本机私有, 不提交)
+/AGENTS.md
+/CLAUDE.md
