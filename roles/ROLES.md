@@ -14,6 +14,7 @@
 
 ## 2. 通信协议
 
+- 有来有往: 收到 peer 消息即产生回复义务; 执行完毕必须以结论/状态消息回复发起方, 不回消息不算完成。这是事件驱动交接的基础定义。(libero 静默上线期除外, 见 §8。)回复义务按任务闭环计, 不按消息条数计: 同一任务已回过结论, 对其重发或纯确认(ack)消息不再产生新回复义务(防回声环); 是否真为新任务由发起方 herdr agent read 自查。
 - agent 间用 `herdr agent prompt <name> "<消息>"` 通信；读取用 `herdr agent read <name>`。
 - 发 prompt 不用 --wait/--timeout: 分派即发(fire-and-forget), 转 idle 等 peer 主动上报(§7)。--wait 超时路径会 abort-but-delivered, 重发致消息堆积/死循环; 需确认状态用 herdr agent read, 不重发。
 - 防重复成环: 不盲目重发。疑似未达 → 先 herdr agent read 查对端上报/处理证据: 读到任何证据即停(对端已收); 确无证据才可重发, 同一任务重发上限 1 次; 仍无果 → 停止重发并上报 coordinator 仲裁, 不得无限重发。
