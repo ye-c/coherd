@@ -47,7 +47,6 @@ COHERD_LAYOUT=auto
 |------|------|------|
 | `COHERD_LAYOUT` | `auto` | `portrait` / `landscape` / `auto`（auto = pane cell 几何近似） |
 | `COHERD_CONF` | `~/.config/coherd/coherd.conf` | conf 路径；可在运行前覆盖 |
-| `COHERD_ENTER_TUI` | `1` | 集群启动完成后是否自动进入 herdr TUI。`1`=进（需交互终端且不在 herdr 会话内）；`0`=不进，保持现状直接退出 |
 
 ## FAQ：coherd 报"未找到 xx 的启动命令"
 

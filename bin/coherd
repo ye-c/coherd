@@ -35,22 +35,6 @@ die()  { echo "coherd: $*" >&2; exit 1; }
 info() { echo "coherd: $*"; }
 jqr()  { jq -r "$1" <<<"$2"; }
 
-# ── TUI 自动进入 (收尾路径共用) ──
-# 条件: COHERD_ENTER_TUI != 0 && 交互终端 && 不在 herdr 会话内
-enter_tui() {
-  [ "${COHERD_ENTER_TUI:-1}" != "0" ] || return 0
-  if [ -n "${HERDR_ENV:-}" ]; then
-    info "已在 herdr 会话内 (HERDR_ENV=$HERDR_ENV), 跳过 TUI"
-    return 0
-  fi
-  if ! test -t 0 || ! test -t 1; then
-    info "非交互终端, 跳过 TUI"
-    return 0
-  fi
-  info "进入 herdr TUI..."
-  herdr || true
-  exit 0
-}
 
 command -v herdr >/dev/null || die "herdr CLI 不在 PATH — 见 docs/configuration.md"
 command -v jq    >/dev/null || die "需要 jq — 见 docs/configuration.md"
@@ -109,7 +93,6 @@ EXISTING="$(herdr workspace list 2>/dev/null \
 if [ -n "$EXISTING" ]; then
   info "workspace '$LABEL' 已存在 ($EXISTING), 聚焦后退出"
   herdr workspace focus "$EXISTING" >/dev/null 2>&1 || true
-  enter_tui
   exit 0
 fi
 
@@ -281,4 +264,3 @@ brief "$EXEC_NAME" "你是执行者 executor。集群角色与协作契约见 $R
 brief "$REV_NAME" "你是审查者 reviewer。集群角色与协作契约见 $ROLES (先读)。你的 herdr agent 名称: $REV_NAME; 联系 coordinator: herdr agent prompt $COORD_NAME; 联系 executor: herdr agent prompt $EXEC_NAME; 对方回复以 [coordinator]:/[executor]: 前缀可读。你的消息加 [reviewer]: 前缀; 收到 [coordinator]: = 分派/讨论, [executor]: = 待审查产出; 无前缀 = 用户。就绪握手: 启动即读 ROLES.md 确认身份与 peer 名, 完成后主动向 coordinator 发送 '[reviewer]: <就绪消息>'(herdr agent prompt $COORD_NAME '[reviewer]: 就绪...'), 由 coordinator 判定集群就绪(不等待任何人探活)。完成审查上报后转为待命态, 不主动轮询或 herdr agent wait 观察他方, 后续动作由 [coordinator]:/[executor]: 消息驱动。"
 
 info "集群就绪: workspace=$WS  coordinator=$COORD_PANE  reviewer=$REV_PANE  executor=$EXEC_PANE  (角色见 $ROLES; 依赖 herdr ≥ 需支持上述 pane/agent 操作)"
-enter_tui
