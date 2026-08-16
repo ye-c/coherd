@@ -16,7 +16,7 @@
 
 - agent 间用 `herdr agent prompt <name> "<消息>"` 通信；读取用 `herdr agent read <name>`。
 - 发 prompt 不用 --wait/--timeout: 分派即发(fire-and-forget), 转 idle 等 peer 主动上报(§7)。--wait 超时路径会 abort-but-delivered, 重发致消息堆积/死循环; 需确认状态用 herdr agent read, 不重发。
-- 防重复成环: 分派即发(fire-and-forget), 不盲目重发。疑似未达 → 先 herdr agent read 查对端上报/处理证据: 读到任何证据即停(对端已收); 确无证据才可重发, 同一任务重发上限 1 次; 仍无果 → 停止重发并上报 coordinator 仲裁, 不得无限重发。
+- 防重复成环: 不盲目重发。疑似未达 → 先 herdr agent read 查对端上报/处理证据: 读到任何证据即停(对端已收); 确无证据才可重发, 同一任务重发上限 1 次; 仍无果 → 停止重发并上报 coordinator 仲裁, 不得无限重发。
 - 用户可能用自定义昵称称呼各 agent; 遇未定义别名按上下文推断或询问, 不假设亦不硬编码映射。
 - 每个集群的 herdr agent 名是 `${LABEL}-<role>`（如 `mycoherd-coordinator`），非裸单词；互寻址用完整名。
 - 消息以 `[<role>]: ` 前缀开头 = 同级 agent 发言；无前缀 = 用户直接输入。
@@ -85,7 +85,7 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 ## 8. libero（辅助角色）
 
 **定义**：libero 是手动加载的第 4 类角色（对照 §1 三槽位表；§1 表不变）。
-- **是**：用户手动拉起的辅助角色，承接旁路/一次性/辅助需求——交叉复核、补上下文、问答。
+- **是**：用户手动拉起的辅助角色，承接旁路/辅助需求——交叉复核、补上下文、问答。
 - **不是**：coherd 拉起的槽位；不进集群握手、不持有主任务、不在主循环内。
 
 **6 条防污染硬条款**（违反任一条即视为角色污染，须立即停用）：
@@ -94,5 +94,5 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 3. 不出 approve/revise：审查判定权 reviewer 独占（§4），libero 只给观察/建议。
 4. 不分派：分派权 coordinator 独占（§3），不向 executor 派任务。
 5. 不自晋升：不得自称 coordinator/executor/reviewer。
-6. 临时性：完即弃，不持跨轮状态，单向 [libero]: 回报。
-另：静默上线 —— 在 herdr 内（HERDR_ENV=1）先执行 herdr agent rename <label>-libero，使自身可被 herdr agent list/get 发现（视为 team 一员）；随后不发任何主动消息/招呼，交互一律由用户定向发起；非 herdr 环境跳过 rename，同样静默。
+6. 常驻辅助：libero 常驻并存续（非一次性用过即弃），主要服务用户，兼做团队辅助（交叉复核/补上下文/问答）；不持有、不接管 coordinator→executor 主链任务状态与产物（防污染由第 2/3/4 条承担）。
+另：静默上线 —— 在 herdr 内（HERDR_ENV=1）先执行 herdr agent rename <label>-libero，使自身可被 herdr agent list/get 发现（非集群握手，仅可发现性）；随后不发任何主动消息/招呼，交互一律由用户定向发起；非 herdr 环境跳过 rename，同样静默。
