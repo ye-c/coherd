@@ -272,39 +272,27 @@ start_roles
 
 # ── 7. 角色事实源 + 启动 brief ──
 # ROLES.md 放全局 (~/.config/coherd/), 不污染项目 git; 所有 herdr agent 共享
-# 先 focus: 不可见 pane 的 plain prompt 会文本残留不自动提交 (herdr issue#2063),
-# 故在 brief 前聚焦 workspace 使 pane 可见
-# brief 走 fire-and-forget (ROLES §2 禁 --wait): 三份并行发出, 无内部轮询;
-# 送达确认用 wait --until working: brief 到达 → agent 从 idle 进入 working,
-# 该 idle→working 转移是送达唯一真信号 (spawn 后初始皆 idle, 无 working 污染);
-# 就绪判定 = exec/rev 两 peer 进入 working (body 已达, 可安全分派), coord 不自判
-# 兜底 (herdr issue#1869/#2063): wait --until working 超时 → send-keys enter 补提交
-# → 短 wait --until working 再试 → 仍失败仅 WARN (不 die 不循环)
-herdr workspace focus "$WS" >/dev/null 2>&1 || true
-BRIEF_WAIT_TIMEOUT=30000 # 并行 wait exec/rev working 的共享单一 deadline (ms)
-# 三份 brief 并行 fire-and-forget 发出; 分别捕获 PID (bash3.2 裸 wait 吞末条错)
-herdr agent prompt "$COORD_NAME" "你是协调者 coordinator。集群角色与协作契约见 $ROLES (先读)。你的 herdr agent 名称: ${COORD_NAME}; 联系 executor: herdr agent prompt $EXEC_NAME; 联系 reviewer: herdr agent prompt ${REV_NAME}。就绪判定: 等 executor/reviewer 各自进 working 后(body 送达)判集群就绪并开始分派。reviewer approve 后整合交付, revise 超限仲裁。" >/dev/null 2>&1 &
+# brief 走 fire-and-forget (ROLES §2 禁 --wait): 三份并行发出, 无内部轮询, 无送达等待;
+# 统一模板: 只给角色身份 + 自身 agent 名 + ROLES 指路 + 静默 standby 按消息行动 (角色专属行为全归 ROLES.md)
+# 兜底 (herdr issue#2063/#1869): 三份 brief 发出后无条件 send-keys enter 补提交,
+# 防止不可见 pane 的 prompt 文本残留不自动提交; 失败仅 WARN 不 die
+herdr workspace focus "$WS" >/dev/null 2>&1 || echo "coherd: WARN: workspace focus 失败, 某些 pane 可能不可见致 brief 文本残留 — 手动在各 pane 回车确认接收" >&2
+
+# 统一 brief 模板; 三角色仅角色名 + agent 名不同, 行为契约全在 ROLES.md
+_brief() { printf '你是%s。你的 herdr agent 名: %s。集群角色与协作契约见 %s (先读, 含 peer 命名/分派审查规则)。确认身份后静默 standby, 按收到的消息行动。' "$1" "$2" "$ROLES"; }
+herdr agent prompt "$COORD_NAME" "$(_brief coordinator "$COORD_NAME")" >/dev/null 2>&1 &
 _p_coord=$!
-herdr agent prompt "$EXEC_NAME" "你是执行者 executor。集群角色与协作契约见 $ROLES (先读)。你的 herdr agent 名称: $EXEC_NAME; 联系 coordinator: herdr agent prompt $COORD_NAME; 联系 reviewer: herdr agent prompt ${REV_NAME}。完成后直接提交 reviewer 审查(附 DoD + 输出路径), 阻塞上报 coordinator。" >/dev/null 2>&1 &
+herdr agent prompt "$EXEC_NAME" "$(_brief executor "$EXEC_NAME")" >/dev/null 2>&1 &
 _p_exec=$!
-herdr agent prompt "$REV_NAME" "你是审查者 reviewer。集群角色与协作契约见 $ROLES (先读)。你的 herdr agent 名称: $REV_NAME; 联系 coordinator: herdr agent prompt $COORD_NAME; 联系 executor: herdr agent prompt ${EXEC_NAME}。" >/dev/null 2>&1 &
+herdr agent prompt "$REV_NAME" "$(_brief reviewer "$REV_NAME")" >/dev/null 2>&1 &
 _p_rev=$!
 wait "$_p_coord" || echo "coherd: WARN: brief 投递 COORD 失败" >&2
 wait "$_p_exec"  || echo "coherd: WARN: brief 投递 EXEC 失败" >&2
 wait "$_p_rev"   || echo "coherd: WARN: brief 投递 REV 失败" >&2
-# 并行 wait exec/rev 进 working, 共享单一 deadline (coordinator 是主控不判)
-herdr agent wait "$EXEC_NAME" --until working --timeout "$BRIEF_WAIT_TIMEOUT" >/dev/null 2>&1 &
-_w_exec=$!
-herdr agent wait "$REV_NAME" --until working --timeout "$BRIEF_WAIT_TIMEOUT" >/dev/null 2>&1 &
-_w_rev=$!
-# 兜底: wait 超时 → send-keys enter 补提交 → 短 wait --until working 再试 → 仍失败 WARN
-brief_fallback() {
-  local name="$1"
-  herdr agent send-keys "$name" enter >/dev/null 2>&1
-  herdr agent wait "$name" --until working --timeout 5000 >/dev/null 2>&1 && return 0
-  echo "coherd: WARN: brief $name 未达 working (已补提交 Enter) — 请在其 pane 手动回车确认接收" >&2
-}
-wait "$_w_exec" || brief_fallback "$EXEC_NAME"
-wait "$_w_rev"  || brief_fallback "$REV_NAME"
+# 无条件 enter 兜底 (herdr issue#2063): 防止不可见 pane 的 brief 文本残留不自动提交
+for _n in "$COORD_NAME" "$EXEC_NAME" "$REV_NAME"; do
+  herdr agent send-keys "$_n" enter >/dev/null 2>&1 || true
+done
+unset _n _brief
 
 info "集群就绪: workspace=$WS  coordinator=$COORD_PANE  reviewer=$REV_PANE  executor=$EXEC_PANE  (角色见 $ROLES; 依赖 herdr ≥ 需支持上述 pane/agent 操作)"
