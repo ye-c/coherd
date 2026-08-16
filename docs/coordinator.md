@@ -24,7 +24,7 @@
 ## 与其他角色交互
 
 - **流入**：用户意图（无前缀消息）。
-- **流出**：分派任务 → executor `[executor]:`；整合交付 → 用户。
+- **流出**：分派任务 → executor `[executor]:`（分派时指示 executor 完成后直接交 reviewer 审查）；收 reviewer 结论（approve/revise）→ approve 则整合交付 → 用户，revise 超限则仲裁。
 - **横向**：与 reviewer 讨论技术方案/审查结论（`[reviewer]:`），仲裁 revise 循环。
 
 ## 扩展提示

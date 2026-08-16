@@ -22,7 +22,7 @@
 - 每个集群的 herdr agent 名是 `${LABEL}-<role>`（如 `mycoherd-coordinator`），非裸单词；互寻址用完整名。
 - 消息以 `[<role>]:` 前缀开头 = 同级 agent 发言；无前缀 = 用户直接输入。
 - 每个 pane 自动注入 `HERDR_WORKSPACE_ID` / `HERDR_TAB_ID` / `HERDR_PANE_ID`。
-- 汇报对称义务：executor 完成/阻塞/需审查以 `[executor]:` 上报 coordinator；reviewer 审查结论（approve/revise）以 `[reviewer]:` 上报 coordinator；coordinator 整合交付以 `[coordinator]:` 上报用户。
+- 汇报对称义务：executor 完成后直接提交 reviewer 审查（附 DoD + 输出路径，不转发产物正文），并轻量上报 coordinator 已交审（状态级）；阻塞以 `[executor]:` 上报 coordinator（原因 + 已尝试手段）；reviewer 审查结论（approve/revise）以 `[reviewer]:` 上报 coordinator；coordinator 整合交付以 `[coordinator]:` 上报用户。
 
 ## 3. 分派契约模板（A）
 
@@ -83,7 +83,7 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 ## 7. 事件驱动交接
 
 - 基于 herdr idle/done 事件交接：上一环完成 → 下一环主动拉取（`herdr agent read`）。
-- executor 完成 → 通知 coordinator 可审查/可交付；阻塞 → 上报阻塞原因与已尝试手段。
+- executor 完成 → 直接提交 reviewer 审查（reviewer 读产物 / `herdr agent read` 验证），结论 approve/revise 回流 coordinator；阻塞 → 上报 coordinator（原因 + 已尝试手段）；revise 循环 rev→exe→rev 不经 coordinator，超 §4 上限（2 轮）才介入仲裁。
 
 ## 8. libero（辅助角色）
 

@@ -11,7 +11,7 @@
 ## 关键实践
 
 - **达成 DoD**：每条验收标准都是可验证事实，不是"做完了"的自评。
-- **汇报契约**：完成/阻塞一律以 `[executor]:` 上报 coordinator（§7）；阻塞时上报**原因 + 已尝试手段**，让 coordinator 能直接决策。
+- **汇报契约**：完成后直接提交 reviewer 审查（附 DoD + 输出路径，不转发产物正文），并轻量上报 coordinator 已交审（状态级，§2/§7）；阻塞以 `[executor]:` 上报 coordinator（**原因 + 已尝试手段**），让 coordinator 能直接决策。
 - **不越任务工具边界**：分派里的边界字段写到哪就读写哪；不改配置/秘密文件（§3/§5）。
 - **写权限自知**：你的槽位天然带写权限，只在受控仓库/沙箱运行（§5 警示）。
 - **revise 循环**：收到 reviewer 的 revise 清单 → 逐条修订 → 重新提交；**不自评**——自己说"好了"不算数，审查是 reviewer 的事。
@@ -23,8 +23,8 @@
 ## 与其他角色交互
 
 - **流入**：coordinator 分派（`[coordinator]:`，4 字段契约）、reviewer revise（`[reviewer]:`，§4 循环）。
-- **流出**：完成/阻塞上报 → coordinator；修订重提 → reviewer（§4 循环）。
-- 与 reviewer 有 提交→revise 通道（§4 循环）；审查结论（approve/revise）上报经 coordinator（§2）。
+- **流出**：完成 → 提交 reviewer 审查（附 DoD + 输出路径）+ 轻量上报 coordinator 已交审；阻塞 → 上报 coordinator；修订重提 → reviewer（§4 循环）。
+- 与 reviewer 有 直接提交→revise 通道（§4 循环，不经 coordinator）；reviewer 审查结论（approve/revise）上报 coordinator（§2）。
 
 ## 扩展提示
 

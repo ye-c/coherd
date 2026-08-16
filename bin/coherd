@@ -283,9 +283,9 @@ start_roles
 herdr workspace focus "$WS" >/dev/null 2>&1 || true
 BRIEF_WAIT_TIMEOUT=30000 # 并行 wait exec/rev working 的共享单一 deadline (ms)
 # 三份 brief 并行 fire-and-forget 发出; 分别捕获 PID (bash3.2 裸 wait 吞末条错)
-herdr agent prompt "$COORD_NAME" "你是协调者 coordinator。集群角色与协作契约见 $ROLES (先读)。你的 herdr agent 名称: ${COORD_NAME}; 联系 executor: herdr agent prompt $EXEC_NAME; 联系 reviewer: herdr agent prompt ${REV_NAME}。就绪判定: 等 executor/reviewer 各自进 working 后(body 送达)判集群就绪并开始分派。" >/dev/null 2>&1 &
+herdr agent prompt "$COORD_NAME" "你是协调者 coordinator。集群角色与协作契约见 $ROLES (先读)。你的 herdr agent 名称: ${COORD_NAME}; 联系 executor: herdr agent prompt $EXEC_NAME; 联系 reviewer: herdr agent prompt ${REV_NAME}。就绪判定: 等 executor/reviewer 各自进 working 后(body 送达)判集群就绪并开始分派。reviewer approve 后整合交付, revise 超限仲裁。" >/dev/null 2>&1 &
 _p_coord=$!
-herdr agent prompt "$EXEC_NAME" "你是执行者 executor。集群角色与协作契约见 $ROLES (先读)。你的 herdr agent 名称: $EXEC_NAME; 联系 coordinator: herdr agent prompt $COORD_NAME; 联系 reviewer: herdr agent prompt ${REV_NAME}。" >/dev/null 2>&1 &
+herdr agent prompt "$EXEC_NAME" "你是执行者 executor。集群角色与协作契约见 $ROLES (先读)。你的 herdr agent 名称: $EXEC_NAME; 联系 coordinator: herdr agent prompt $COORD_NAME; 联系 reviewer: herdr agent prompt ${REV_NAME}。完成后直接提交 reviewer 审查(附 DoD + 输出路径), 阻塞上报 coordinator。" >/dev/null 2>&1 &
 _p_exec=$!
 herdr agent prompt "$REV_NAME" "你是审查者 reviewer。集群角色与协作契约见 $ROLES (先读)。你的 herdr agent 名称: $REV_NAME; 联系 coordinator: herdr agent prompt $COORD_NAME; 联系 executor: herdr agent prompt ${EXEC_NAME}。" >/dev/null 2>&1 &
 _p_rev=$!
