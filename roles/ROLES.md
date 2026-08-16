@@ -17,6 +17,7 @@
 - agent 间用 `herdr agent prompt <name> "<消息>"` 通信；读取用 `herdr agent read <name>`。
 - 发 prompt 不用 --wait/--timeout: 分派即发(fire-and-forget), 转 idle 等 peer 主动上报(§7)。--wait 超时路径会 abort-but-delivered, 重发致消息堆积/死循环; 需确认状态用 herdr agent read, 不重发。
 - 防重复成环: 分派即发(fire-and-forget), 不盲目重发。疑似未达 → 先 herdr agent read 查对端上报/处理证据: 读到任何证据即停(对端已收); 确无证据才可重发, 同一任务重发上限 1 次; 仍无果 → 停止重发并上报 coordinator 仲裁, 不得无限重发。
+- 用户可能用自定义昵称称呼各 agent; 遇未定义别名按上下文推断或询问, 不假设亦不硬编码映射。
 - 每个集群的 herdr agent 名是 `${LABEL}-<role>`（如 `mycoherd-coordinator`），非裸单词；互寻址用完整名。
 - 消息以 `[<role>]: ` 前缀开头 = 同级 agent 发言；无前缀 = 用户直接输入。
 - 每个 pane 自动注入 `HERDR_WORKSPACE_ID` / `HERDR_TAB_ID` / `HERDR_PANE_ID`。
