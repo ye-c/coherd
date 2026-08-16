@@ -15,6 +15,12 @@ description: 把当前 agent 加载为 coherd 协作集群的某个角色(coordi
 - 无 peer 参数 → standalone: 只加载该角色职责, 不涉及 peer 通信协议。
 - 有 peer 参数(如 w9-executor w9-reviewer) → cluster: 加载完整契约, 读 ~/.config/coherd/ROLES.md 的 §2-§7 执行(消息前缀/peer 寻址/握手/分派契约/审查循环)。
 
+## 加载守卫(上下文判定)
+
+- 先检测: 用 test "${HERDR_ENV:-}" = 1 判断——HERDR_ENV=1 表示当前在 herdr 管理的集群 pane 内。
+- coordinator / executor / reviewer: 是集群协作角色, 需在 herdr 集群内才有意义(有 peer 可派/可审/可上报)。若 HERDR_ENV 非 1 → 报错: '当前不在 herdr 集群内, 该角色无 peer 无意义; 请用 coherd <repo> 起集群, 或改加载 libero', 停止加载。
+- libero: 无此要求——脱离 herdr 集群也成立(面向你, 单向下 [libero]: 回报)。
+
 ## 角色职责(standalone 内联, 对齐 ROLES.md §1 去 peer 措辞)
 - coordinator: 接收意图, 拆解为任务分派, 整合并交付。
 - executor: 实现分派的任务, 产出可验证结果。
