@@ -274,36 +274,37 @@ start_roles
 # ROLES.md 放全局 (~/.config/coherd/), 不污染项目 git; 所有 herdr agent 共享
 # 先 focus: 不可见 pane 的 plain prompt 会文本残留不自动提交 (herdr issue#2063),
 # 故在 brief 前聚焦 workspace 使 pane 可见
-# brief 走 fire-and-forget (ROLES §2 禁 --wait: 超时路径 abort-but-delivered 清空 composer,
-# 反阻后续 send-keys enter 补提交); 送达确认复用 READY 握手 — executor/reviewer 读 brief 后
-# 主动上报 [executor]/[reviewer]: 就绪, coordinator 收齐即判集群就绪 (coord 未达则永不报)
-# 兜底: 部分 CLI (cursor 类, herdr issue#1869) 吞尾 Enter 致文本挂起 composer;
-# 故 fire-and-forget 后轮询 agent_status 是否进 working (DETECT_TIMEOUT 风格非阻塞循环),
-# 未进则 herdr agent send-keys <name> enter 补提交一次 (幂等, 不循环, 无 --wait 堆积)
+# brief 走 fire-and-forget (ROLES §2 禁 --wait): 三份并行发出, 无内部轮询;
+# 送达确认用 wait --until working: brief 到达 → agent 从 idle 进入 working,
+# 该 idle→working 转移是送达唯一真信号 (spawn 后初始皆 idle, 无 working 污染);
+# 就绪判定 = exec/rev 两 peer 进入 working (body 已达, 可安全分派), coord 不自判
+# 兜底 (herdr issue#1869/#2063): wait --until working 超时 → send-keys enter 补提交
+# → 短 wait --until working 再试 → 仍失败仅 WARN (不 die 不循环)
 herdr workspace focus "$WS" >/dev/null 2>&1 || true
-BRIEF_WAIT_TIMEOUT=15 # 单条 brief 轮询 agent_status 进 working 的超时 (s); 仅观察, 不用 --wait
-brief() { # name text — fire-and-forget 发送, 轮询确认进 working, 未达则 send-keys enter 补提交
-  local name="$1" text="$2" deadline=$((SECONDS + BRIEF_WAIT_TIMEOUT)) st
-  herdr agent prompt "$name" "$text" >/dev/null 2>&1
-  # 轮询 agent_status 是否进 working (同 start_roles 的 DETECT_TIMEOUT 风格, 非阻塞)
-  while [ "$SECONDS" -lt "$deadline" ]; do
-    st="$(herdr agent list 2>/dev/null | jq -r --arg n "$name" '.result.agents[]? | select(.name==$n) | .agent_status' | head -1)"
-    [ "$st" = "working" ] && return 0
-    sleep 1
-  done
-  # 未进 working: 疑似文本挂起 composer (herdr issue#1869), 补提交一次 Enter
+BRIEF_WAIT_TIMEOUT=30000 # 并行 wait exec/rev working 的共享单一 deadline (ms)
+# 三份 brief 并行 fire-and-forget 发出; 分别捕获 PID (bash3.2 裸 wait 吞末条错)
+herdr agent prompt "$COORD_NAME" "你是协调者 coordinator。集群角色与协作契约见 $ROLES (先读)。你的 herdr agent 名称: ${COORD_NAME}; 联系 executor: herdr agent prompt $EXEC_NAME; 联系 reviewer: herdr agent prompt ${REV_NAME}。就绪判定: 等 executor/reviewer 各自进 working 后(body 送达)判集群就绪并开始分派。" >/dev/null 2>&1 &
+_p_coord=$!
+herdr agent prompt "$EXEC_NAME" "你是执行者 executor。集群角色与协作契约见 $ROLES (先读)。你的 herdr agent 名称: $EXEC_NAME; 联系 coordinator: herdr agent prompt $COORD_NAME; 联系 reviewer: herdr agent prompt ${REV_NAME}。" >/dev/null 2>&1 &
+_p_exec=$!
+herdr agent prompt "$REV_NAME" "你是审查者 reviewer。集群角色与协作契约见 $ROLES (先读)。你的 herdr agent 名称: $REV_NAME; 联系 coordinator: herdr agent prompt $COORD_NAME; 联系 executor: herdr agent prompt ${EXEC_NAME}。" >/dev/null 2>&1 &
+_p_rev=$!
+wait "$_p_coord" || echo "coherd: WARN: brief 投递 COORD 失败" >&2
+wait "$_p_exec"  || echo "coherd: WARN: brief 投递 EXEC 失败" >&2
+wait "$_p_rev"   || echo "coherd: WARN: brief 投递 REV 失败" >&2
+# 并行 wait exec/rev 进 working, 共享单一 deadline (coordinator 是主控不判)
+herdr agent wait "$EXEC_NAME" --until working --timeout "$BRIEF_WAIT_TIMEOUT" >/dev/null 2>&1 &
+_w_exec=$!
+herdr agent wait "$REV_NAME" --until working --timeout "$BRIEF_WAIT_TIMEOUT" >/dev/null 2>&1 &
+_w_rev=$!
+# 兜底: wait 超时 → send-keys enter 补提交 → 短 wait --until working 再试 → 仍失败 WARN
+brief_fallback() {
+  local name="$1"
   herdr agent send-keys "$name" enter >/dev/null 2>&1
-  # 再轮 5s 确认补提交生效
-  deadline=$((SECONDS + 5))
-  while [ "$SECONDS" -lt "$deadline" ]; do
-    st="$(herdr agent list 2>/dev/null | jq -r --arg n "$name" '.result.agents[]? | select(.name==$n) | .agent_status' | head -1)"
-    [ "$st" = "working" ] && return 0
-    sleep 1
-  done
-  echo "coherd: WARN: brief $name 未确认进 working (已补提交 Enter) — 请在其 pane 手动回车确认接收" >&2
+  herdr agent wait "$name" --until working --timeout 5000 >/dev/null 2>&1 && return 0
+  echo "coherd: WARN: brief $name 未达 working (已补提交 Enter) — 请在其 pane 手动回车确认接收" >&2
 }
-brief "$COORD_NAME" "你是协调者 coordinator。集群角色与协作契约见 $ROLES (先读)。你的 herdr agent 名称: $COORD_NAME; 联系 executor: herdr agent prompt $EXEC_NAME; 联系 reviewer: herdr agent prompt $REV_NAME。就绪握手: 等 executor/reviewer 各自上报 '[executor]:/[reviewer]: 就绪', 收齐后判集群就绪并开始分派。"
-brief "$EXEC_NAME" "你是执行者 executor。集群角色与协作契约见 $ROLES (先读)。你的 herdr agent 名称: $EXEC_NAME; 联系 coordinator: herdr agent prompt $COORD_NAME; 联系 reviewer: herdr agent prompt $REV_NAME。就绪握手: 读 ROLES 后主动向 coordinator 发 '[executor]: 就绪'(herdr agent prompt $COORD_NAME '[executor]: 就绪...'), 由 coordinator 判集群就绪。"
-brief "$REV_NAME" "你是审查者 reviewer。集群角色与协作契约见 $ROLES (先读)。你的 herdr agent 名称: $REV_NAME; 联系 coordinator: herdr agent prompt $COORD_NAME; 联系 executor: herdr agent prompt $EXEC_NAME。就绪握手: 读 ROLES 后主动向 coordinator 发 '[reviewer]: 就绪'(herdr agent prompt $COORD_NAME '[reviewer]: 就绪...'), 由 coordinator 判集群就绪。"
+wait "$_w_exec" || brief_fallback "$EXEC_NAME"
+wait "$_w_rev"  || brief_fallback "$REV_NAME"
 
 info "集群就绪: workspace=$WS  coordinator=$COORD_PANE  reviewer=$REV_PANE  executor=$EXEC_PANE  (角色见 $ROLES; 依赖 herdr ≥ 需支持上述 pane/agent 操作)"
