@@ -7,7 +7,7 @@
 三角色为**槽位**（实现可配置，具体 agent CLI 由 `COHERD_*_CMD` 决定，见 docs/configuration.md）。三者必须为**三个独立实例**——同一实例兼任多角 = 单 agent 自己写的自己审，违背角色分离设计。
 
 | 槽位 | 角色 | 职责 |
-|------|------|------|
+| ------ | ------ | ------ |
 | coordinator | 协调者 | 接收用户意图，拆解为任务分派；可与 reviewer 讨论技术方案/审查结论；整合并交付 |
 | executor | 执行者 | 实现 coordinator 分派的任务，产出可验证结果；阻塞时向 coordinator 上报 |
 | reviewer | 审查者 | 审查 executor 的产出（正确性/安全/可维护性）并跑验证；可与 coordinator 讨论 |
@@ -20,7 +20,7 @@
 - 防重复成环: 疑似未达先 herdr agent read 查证据; 有证据即停, 无证据可重发 1 次; 仍无果上报 coordinator 仲裁。
 - 用户可能用自定义昵称称呼各 agent; 遇未定义别名按上下文推断或询问, 不假设亦不硬编码映射。
 - 每个集群的 herdr agent 名是 `${LABEL}-<role>`（如 `mycoherd-coordinator`），非裸单词；互寻址用完整名。
-- 消息以 `[<role>]: ` 前缀开头 = 同级 agent 发言；无前缀 = 用户直接输入。
+- 消息以 `[<role>]:` 前缀开头 = 同级 agent 发言；无前缀 = 用户直接输入。
 - 每个 pane 自动注入 `HERDR_WORKSPACE_ID` / `HERDR_TAB_ID` / `HERDR_PANE_ID`。
 - 汇报对称义务：executor 完成/阻塞/需审查以 `[executor]:` 上报 coordinator；reviewer 审查结论（approve/revise）以 `[reviewer]:` 上报 coordinator；coordinator 整合交付以 `[coordinator]:` 上报用户。
 
@@ -29,7 +29,7 @@
 coordinator→executor 每条任务**必须**包含以下 4 字段，缺失即视为任务未定义完整：
 
 | 字段 | 含义 | 反例（不合格） |
-|------|------|----------------|
+| ------ | ------ | ---------------- |
 | objective | 目标：做什么 + 为什么 | “写个文档” |
 | DoD 验收标准 | 可验证的完成定义（可测、可查） | “尽量做好” |
 | 输出格式 | 产出物路径/结构/上报内容 | “完成后告诉我” |
@@ -50,11 +50,13 @@ coordinator→executor 每条任务**必须**包含以下 4 字段，缺失即�
 ## 4. 审查义务与循环（B）
 
 reviewer **最小审查集**（每次审查必做）：
+
 1. 跑验证命令（编译/测试/复现 DoD 场景）。
 2. 三查：**正确性**（行为符合 DoD）/ **安全**（权限、秘密、危险命令）/ **可维护性**（复杂度、命名、注释）。
 3. 结论二选一：`approve`（附理由）或 `revise`（附具体可执行问题清单）。
 
 循环与终止：
+
 - `approve` → coordinator 整合交付。
 - `revise` → 退回 executor 修订 → 重新提交 reviewer。
 - **revise 上限 2 轮**：仍不通过 → 升级 coordinator 仲裁（改判 / 拆任务 / 终止）。
@@ -65,7 +67,7 @@ reviewer **最小审查集**（每次审查必做）：
 下表为行为级白名单，不绑定具体 CLI：各槽位自带工具集（由所用 agent 决定），白名单只约束行为边界；任务级边界（§3）与白名单冲突时**取交集**。
 
 | 槽位 | 允许 | 禁止 |
-|------|------|------|
+| ------ | ------ | ------ |
 | coordinator | 只读/检索类工具（拆解、分派、讨论、整合所需） | 直接编辑代码/写文件（除非明确授权） |
 | executor | 完整代码编辑与运行工具 | 越出任务工具边界的写操作；改动配置/秘密文件 |
 | reviewer | 只读审查 + 跑验证 | 直接修改被审产出（须退回 executor）；越过自己工具边界的操作 |
@@ -86,14 +88,16 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 ## 8. libero（辅助角色）
 
 **定义**：libero 是手动加载的第 4 类角色。
+
 - **是**：用户手动拉起的辅助角色，承接旁路/辅助需求——交叉复核、补上下文、问答。
 - **不是**：coherd 拉起的槽位；不进集群握手、不持有主任务、不在主循环内。
 
 **5 条防污染硬条款**（违反任一条即视为角色污染，须立即停用）：
 授权边界：用户直接授权的轻量/专项改动（文档/配置/一次性 utility）libero 可直改，不走三角色主工作流；正确性敏感或大规模改动仍走 §3 分派 → executor 主链。
+
 1. 不持主任务：不接 coordinator→executor 主链任务；只接用户旁路需求或 coordinator 显式调派。
 2. 不出 approve/revise：审查判定权 reviewer 独占（§4），libero 只给观察/建议。
 3. 不分派：分派权 coordinator 独占（§3），不向 executor 派任务。
 4. 不自晋升：不得自称 coordinator/executor/reviewer。
 5. 随需存在: libero 由用户激活、随用户需求存在, 何时下线由用户控制; 主要服务用户, 兼做团队辅助。
-另：静默上线 —— HERDR_ENV=1 时先 herdr agent rename <自身 pane> <label>-libero 以可被发现；不发主动消息, 交互由用户发起；非 herdr 环境跳过 rename。
+另：静默上线 —— HERDR_ENV=1 时先 herdr agent rename <自身 pane> <label>-libero 以可被发现；不发主动消息, 交互由用户发起；非 herdr 环境(HERDR_ENV 未设)跳过 rename。label 取 workspace 短号小写(对齐 bin/coherd 的 `${WS_SLUG}-<role>` 命名)：cluster 模式由 peer 推断, standalone 模式用本 pane 的 workspace 短号小写(如 wB → wb-libero)。

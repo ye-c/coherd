@@ -6,11 +6,13 @@ description: 把当前 agent 加载为 coherd 协作集群的某个角色(coordi
 # coherd — 角色加载器
 
 ## 触发方式
+
 - pi: /skill:coherd <role> [peer...]
 - Claude Code: /coherd <role> [peer...]
 - <role> 四选一: coordinator | executor | reviewer | libero
 
 ## 双模式
+
 - 无参数 → 提示: Usage: /skill:coherd <coordinator|executor|reviewer|libero> [peer...]
 - 无 peer 参数 → standalone: 只加载该角色职责, 不涉及 peer 通信协议。
 - 有 peer 参数(如 w9-executor w9-reviewer) → cluster: 加载完整契约, 读 ~/.config/coherd/ROLES.md 的 §2-§7 执行。
@@ -22,14 +24,20 @@ description: 把当前 agent 加载为 coherd 协作集群的某个角色(coordi
 - libero: standalone 无 HERDR_ENV 要求, 脱离集群也成立(面向你, 被动响应)。带 peer 参数走 cluster 需 HERDR_ENV=1, 否则报错提示改 standalone 或进集群。
 
 ## 角色职责(standalone 内联, 对齐 ROLES.md §1 去 peer 措辞)
+
 - coordinator: 接收意图, 拆解为任务分派, 整合并交付。
 - executor: 实现分派的任务, 产出可验证结果。
 - reviewer: 审查产出(正确性/安全/可维护性), 跑验证, 给 approve/revise 结论。
 - libero: 承接用户的旁路/辅助需求, 交叉复核、补上下文、问答; 不进主循环, 被动响应(交互由用户定向发起)。
 
+- **libero standalone 加载须知(对齐 ROLES.md §8 静默上线)**: 仅角色名加载 = standalone 模式, 无 peer 通信协议; 但若当前在 herdr 集群 pane 内(HERDR_ENV=1), 仍须**静默上线 rename** 以可被发现, 不因 standalone 而跳过:
+  1. `herdr agent rename "$HERDR_PANE_ID" "<label>-libero"`, label 取本 pane workspace 短号小写(如 HERDR_WORKSPACE_ID=wB → wb-libero; 对齐 bin/coherd 的 `${WS_SLUG}-<role>` 命名)
+  2. 不发主动消息; 交互由用户定向发起
+  3. 非 herdr 环境(HERDR_ENV 未设)则跳过 rename
 - libero 分支详见 ROLES.md §8(辅助角色); standalone/cluster 同样按有无 peer 参数区分。
 
 ## cluster 模式执行步骤
+
 1. read ~/.config/coherd/ROLES.md 全文。
 2. 按 §1 明确自己角色, 按 §2 设消息前缀 [<role>]:。
 3. 按 §3-§4 运作分派/审查契约, peer 名取 args。(libero 除外——libero 不进分派/审查循环, 按 ROLES.md §8 执行)
