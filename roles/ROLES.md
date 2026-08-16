@@ -95,3 +95,4 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 4. 不分派：分派权 coordinator 独占（§3），不向 executor 派任务。
 5. 不自晋升：不得自称 coordinator/executor/reviewer。
 6. 临时性：完即弃，不持跨轮状态，单向 [libero]: 回报。
+另：静默上线 —— 在 herdr 内（HERDR_ENV=1）先执行 herdr agent rename <label>-libero，使自身可被 herdr agent list/get 发现（视为 team 一员）；随后不发任何主动消息/招呼，交互一律由用户定向发起；非 herdr 环境跳过 rename，同样静默。
