@@ -13,13 +13,13 @@ description: 把当前 agent 加载为 coherd 协作集群的某个角色(coordi
 ## 双模式
 - 无参数 → 提示: Usage: /skill:coherd <coordinator|executor|reviewer|libero> [peer...]
 - 无 peer 参数 → standalone: 只加载该角色职责, 不涉及 peer 通信协议。
-- 有 peer 参数(如 w9-executor w9-reviewer) → cluster: 加载完整契约, 读 ~/.config/coherd/ROLES.md 的 §2-§7 执行(消息前缀/peer 寻址/握手/分派契约/审查循环)。
+- 有 peer 参数(如 w9-executor w9-reviewer) → cluster: 加载完整契约, 读 ~/.config/coherd/ROLES.md 的 §2-§7 执行。
 
 ## 加载守卫(上下文判定)
 
 - 先检测: 用 test "${HERDR_ENV:-}" = 1 判断——HERDR_ENV=1 表示当前在 herdr 管理的集群 pane 内。
-- coordinator / executor / reviewer: 是集群协作角色, 需在 herdr 集群内才有意义(有 peer 可派/可审/可上报)。若 HERDR_ENV 非 1 → 报错: '当前不在 herdr 集群内, 该角色无 peer 无意义; 请用 coherd <repo> 起集群, 或改加载 libero', 停止加载。
-- libero: standalone 无 HERDR_ENV 要求——脱离集群也成立(面向你, 被动响应)。若带 peer 参数走 cluster(经 herdr agent prompt 通信), 则需 HERDR_ENV=1, 否则无法寻址, 报错提示改用 standalone 或先进 herdr 集群。
+- coordinator / executor / reviewer: 需 HERDR_ENV=1; 否则报错并停止加载, 提示起集群或改加载 libero。
+- libero: standalone 无 HERDR_ENV 要求, 脱离集群也成立(面向你, 被动响应)。带 peer 参数走 cluster 需 HERDR_ENV=1, 否则报错提示改 standalone 或进集群。
 
 ## 角色职责(standalone 内联, 对齐 ROLES.md §1 去 peer 措辞)
 - coordinator: 接收意图, 拆解为任务分派, 整合并交付。
@@ -27,7 +27,7 @@ description: 把当前 agent 加载为 coherd 协作集群的某个角色(coordi
 - reviewer: 审查产出(正确性/安全/可维护性), 跑验证, 给 approve/revise 结论。
 - libero: 承接用户的旁路/辅助需求, 交叉复核、补上下文、问答; 不进主循环, 被动响应(交互由用户定向发起)。
 
-libero 分支详见 ROLES.md §8(辅助角色, 6 条防污染硬条款); standalone/cluster 同样按有无 peer 参数区分。
+- libero 分支详见 ROLES.md §8(辅助角色); standalone/cluster 同样按有无 peer 参数区分。
 
 ## cluster 模式执行步骤
 1. read ~/.config/coherd/ROLES.md 全文。
