@@ -39,6 +39,30 @@ fi
 cp "$HERE/roles/ROLES.md" "$CFG_DIR/ROLES.md"
 info "已安装 $CFG_DIR/ROLES.md"
 
+# ── 安装 role skills 到共享目录 + Claude Code 软链 ──
+#   源: roles/skills/<name>/SKILL.md → ~/.agents/skills/<name>/(pi 等从此读)
+#   Claude Code 读 ~/.claude/skills/<name> → 软链到上面的共享目录 (对等 herdr 做法)
+AGENT_SKILLS="${HOME}/.agents/skills"
+CLAUDE_SKILLS="${HOME}/.claude/skills"
+if [ -d "$HERE/roles/skills" ]; then
+  mkdir -p "$AGENT_SKILLS" "$CLAUDE_SKILLS"
+  for sk in "$HERE"/roles/skills/*; do
+    [ -f "$sk/SKILL.md" ] || continue
+    name="$(basename "$sk")"
+    # 已有真实文件(非 symlink)先备份, 再重指 (幂等)
+    if [ -e "$CLAUDE_SKILLS/$name" ] && [ ! -L "$CLAUDE_SKILLS/$name" ]; then
+      mv "$CLAUDE_SKILLS/$name" "$CLAUDE_SKILLS/$name.bak.$(date +%s)"
+      info "已备份原 $CLAUDE_SKILLS/$name"
+    fi
+    rm -rf "$AGENT_SKILLS/$name"
+    cp -R "$sk" "$AGENT_SKILLS/$name"
+    ln -sfn "../../.agents/skills/$name" "$CLAUDE_SKILLS/$name"
+    info "已安装 skill $name → $AGENT_SKILLS/$name, 软链 $CLAUDE_SKILLS/$name"
+  done
+else
+  info "无 roles/skills/, 跳过 skill 安装"
+fi
+
 # ── 下一步 ──
 cat <<'EOF'
 

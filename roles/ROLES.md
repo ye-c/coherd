@@ -15,6 +15,7 @@
 ## 2. 通信协议
 
 - agent 间用 `herdr agent prompt <name> "<消息>"` 通信；读取用 `herdr agent read <name>`。
+- 发 prompt 不用 --wait/--timeout: 分派即发(fire-and-forget), 转 idle 等 peer 主动上报(§7)。--wait 超时路径会 abort-but-delivered, 重发致消息堆积/死循环; 需确认状态用 herdr agent read, 不重发。
 - 每个集群的 herdr agent 名是 `${LABEL}-<role>`（如 `mycoherd-coordinator`），非裸单词；互寻址用完整名。
 - 消息以 `[<role>]: ` 前缀开头 = 同级 agent 发言；无前缀 = 用户直接输入。
 - 每个 pane 自动注入 `HERDR_WORKSPACE_ID` / `HERDR_TAB_ID` / `HERDR_PANE_ID`。
@@ -78,3 +79,17 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 
 - 基于 herdr idle/done 事件交接：上一环完成 → 下一环主动拉取（`herdr agent read`）。
 - executor 完成 → 通知 coordinator 可审查/可交付；阻塞 → 上报阻塞原因与已尝试手段。
+
+## 8. libero（辅助角色）
+
+**定义**：libero 是手动加载的第 4 类角色（对照 §1 三槽位表；§1 表不变）。
+- **是**：用户手动拉起的辅助角色，承接旁路/一次性/辅助需求——交叉复核、补上下文、问答。
+- **不是**：coherd 拉起的槽位；不进集群握手、不持有主任务、不在主循环内。
+
+**6 条防污染硬条款**（违反任一条即视为角色污染，须立即停用）：
+1. 不持主任务：不接 coordinator→executor 主链任务；只接用户旁路需求或 coordinator 显式调派。
+2. 不写主产物路径：不碰 executor 的输出。
+3. 不出 approve/revise：审查判定权 reviewer 独占（§4），libero 只给观察/建议。
+4. 不分派：分派权 coordinator 独占（§3），不向 executor 派任务。
+5. 不自晋升：不得自称 coordinator/executor/reviewer。
+6. 临时性：完即弃，不持跨轮状态，单向 [libero]: 回报。
