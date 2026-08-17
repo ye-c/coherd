@@ -44,6 +44,7 @@ LABEL="${2:-$(basename "$REPO")}"
 CONF="${COHERD_CONF:-$HOME/.config/coherd/coherd.conf}"
 ROLES="$HOME/.config/coherd/ROLES.md"
 DETECT_TIMEOUT=120 # pane run 后 herdr 识别 agent + rename 的总超时 (s)
+BRIEF_GRACE=15     # 阶段7 brief 送达确认: 每轮宽限等待 seq 涨的秒数 (s)
 
 die()  { echo "coherd: $*" >&2; exit 1; }
 info() { echo "coherd: $*"; }
@@ -118,14 +119,14 @@ if [ -n "$EXISTING" ]; then
 fi
 
 # ── 2.5. 清理 herdr 自动恢复的默认 workspace ──
-# herdr server 启动时会从 session.json 恢复默认 workspace (无 label, 单 pane 空 shell),
-# 不关则与集群 workspace 并存。只关无 label + 单 pane + 无 agent 的, 避免误伤用户 workspace
+# herdr server 启动时会从 session.json 恢复默认 workspace (无 label 或 label="~",
+# 单 pane 空 shell), 不关则与集群 workspace 并存。只关无 label/~ + 单 pane + 无 agent 的, 避免误伤用户 workspace
 while IFS= read -r wid; do
   [ -n "$wid" ] || continue
   herdr workspace close "$wid" >/dev/null 2>&1 && info "已关闭默认 workspace $wid"
 done < <(herdr workspace list 2>/dev/null \
   | jq -r '.result.workspaces[]
-      | select((.label == null or .label == "")
+      | select((.label == null or .label == "" or .label == "~")
                and .pane_count == 1
                and (.agent_status == "unknown" or .agent_status == null))
       | .workspace_id')
@@ -225,7 +226,7 @@ start_roles() { # 无参; 用全局 COORD/EXEC/REV_PANE 与 *_CMD
   local names=("$COORD_NAME" "$EXEC_NAME" "$REV_NAME")
   local panes=("$COORD_PANE" "$EXEC_PANE" "$REV_PANE")
   local cmds=("$COORD_CMD" "$EXEC_CMD" "$REV_CMD")
-  local run_ok=(0 0 0) ids=(0 0 0)
+  local run_ok=(0 0 0) ids=(0 0 0) blocked_seen=(0 0 0)
   info "启动 coordinator/executor/reviewer (共享超时 ${DETECT_TIMEOUT}s)"
   # 阶段 1: 三条 pane run 并行发出 (pane 未就绪则 2s 后重试, 共享同一 deadline)
   while [ "$SECONDS" -lt "$deadline" ]; do
@@ -246,11 +247,12 @@ start_roles() { # 无参; 用全局 COORD/EXEC/REV_PANE 与 *_CMD
     [ "${run_ok[$i]}" = 1 ] || die "启动 ${names[$i]} 失败 (workspace $WS) — pane 未就绪或命令失败"
   done
   # 阶段 2: 合并检测+rename — 一次轮询覆盖三 pane (agent get 状态跟踪波动会返回 null 假阳性, 故用 list)
+  # blocked 不算就绪: 把 blocked 当 ready 会致 '静默假就绪' (agent 起来了但实际卡住, 后续 brief 发了也无人消费)
   while [ "$SECONDS" -lt "$deadline" ]; do
     for i in 0 1 2; do
       [ "${ids[$i]}" = 1 ] && continue
       if herdr agent list 2>/dev/null | jq -e --arg p "${panes[$i]}" \
-          '.result.agents[]? | select(.pane_id==$p and .agent_status != null)' >/dev/null 2>&1; then
+          '.result.agents[]? | select(.pane_id==$p and .agent_status != null and .agent_status != "blocked")' >/dev/null 2>&1; then
         ids[$i]=1
         out="$(herdr agent rename "${panes[$i]}" "${names[$i]}" 2>&1)" || {
           if [[ "$out" == *agent_name_taken* ]]; then
@@ -258,14 +260,22 @@ start_roles() { # 无参; 用全局 COORD/EXEC/REV_PANE 与 *_CMD
           fi
           die "rename '${names[$i]}' 失败(原始输出): $out"
         }
+      elif herdr agent list 2>/dev/null | jq -e --arg p "${panes[$i]}" \
+          '.result.agents[]? | select(.pane_id==$p and .agent_status == "blocked")' >/dev/null 2>&1; then
+        # 记录曾见 blocked: deadline 耗尽后据此分支报错(泛型, 不绑 CLI 信任屏字样)
+        blocked_seen[$i]=1
       fi
     done
     [ "${ids[0]}" = 1 ] && [ "${ids[1]}" = 1 ] && [ "${ids[2]}" = 1 ] && break
     sleep 2
   done
-  # 兜底: deadline 耗尽时循环可能一次未进(阶段 1 已用完预算), 未识别完成则必失败
+  # 兜底: deadline 耗尽 — blocked 与未识别分别报错(泛型信息, 不硬编码 CLI/信任屏)
   for i in 0 1 2; do
-    [ "${ids[$i]}" = 1 ] || die "识别 ${names[$i]} 超时 (workspace $WS) — 确认 CMD 是被 herdr 识别的 agent CLI (见 docs/agents.md)"
+    [ "${ids[$i]}" = 1 ] && continue
+    if [ "${blocked_seen[$i]}" = 1 ]; then
+      die "agent ${names[$i]} 卡在 blocked(需人工确认), 检查对应 pane"
+    fi
+    die "识别 ${names[$i]} 超时 (workspace $WS) — 确认 CMD 是被 herdr 识别的 agent CLI (见 docs/agents.md)"
   done
 }
 start_roles
@@ -274,12 +284,29 @@ start_roles
 # ROLES.md 放全局 (~/.config/coherd/), 不污染项目 git; 所有 herdr agent 共享
 # brief 走 fire-and-forget (ROLES §2 禁 --wait): 三份并行发出, 无内部轮询, 无送达等待;
 # 统一模板: 只给角色身份 + 自身 agent 名 + ROLES 指路 + 静默 standby 按消息行动 (角色专属行为全归 ROLES.md)
-# 兜底 (herdr issue#2063/#1869): 三份 brief 发出后无条件 send-keys enter 补提交,
-# 防止不可见 pane 的 prompt 文本残留不自动提交; 失败仅 WARN 不 die
+# 送达确认 (DoD5): fire-and-forget 后用 state_change_seq 有界重投递 —
+# seq 涨=文本已消费跳过; 未涨且非 blocked → send-keys enter 补提交(只提交不重发, 防双处理);
+# 最多 2 轮宽限(BRIEF_GRACE), 仍无 seq 变化 → WARN 不 die(静默/健谈 cluster 可能不涨 seq=软信号)
 herdr workspace focus "$WS" >/dev/null 2>&1 || echo "coherd: WARN: workspace focus 失败, 某些 pane 可能不可见致 brief 文本残留 — 手动在各 pane 回车确认接收" >&2
 
 # 统一 brief 模板; 三角色仅角色名 + agent 名不同, 行为契约全在 ROLES.md
 _brief() { printf '你是%s。你的 herdr agent 名: %s。集群角色与协作契约见 %s (先读, 含 peer 命名/分派审查规则)。确认身份后静默 standby, 按收到的消息行动。' "$1" "$2" "$ROLES"; }
+# 送达确认: 用 state_change_seq 有界重投递。先取三角色基线 seq (agent get 失败→空串),
+# 每轮 sleep BRIEF_GRACE 后重读 seq; 涨=已消费跳过, 未涨且非 blocked → send-keys enter 补提交
+# (只提交不重发 brief 文本, 防双处理); 最多 2 轮宽限, 到期仍无变化 → WARN 不 die
+# bash3.2 兼容: 用索引数组, 不用关联数组/mapfile; agent get/jq 失败一律 || true
+# 基线采集必须在 brief 派发之前: 快 agent 会在 wait 返回前就消费 brief,
+# 若基线滞后会读到消费后值 → now==base 误判未消费 → 白等 2×BRIEF_GRACE + 多余 enter
+_seq_names=("$COORD_NAME" "$EXEC_NAME" "$REV_NAME")
+_seq_base=("" "" "")
+_seq_now=("" "" "")
+_seq_done=(0 0 0)
+_seq_blocked=(0 0 0)
+_i=0
+for _n in "${_seq_names[@]}"; do
+  _seq_base[$_i]="$(herdr agent get "$_n" 2>/dev/null | jq -r '.result.agent.state_change_seq // ""' 2>/dev/null || true)"
+  _i=$((_i + 1))
+done
 herdr agent prompt "$COORD_NAME" "$(_brief coordinator "$COORD_NAME")" >/dev/null 2>&1 &
 _p_coord=$!
 herdr agent prompt "$EXEC_NAME" "$(_brief executor "$EXEC_NAME")" >/dev/null 2>&1 &
@@ -289,10 +316,40 @@ _p_rev=$!
 wait "$_p_coord" || echo "coherd: WARN: brief 投递 COORD 失败" >&2
 wait "$_p_exec"  || echo "coherd: WARN: brief 投递 EXEC 失败" >&2
 wait "$_p_rev"   || echo "coherd: WARN: brief 投递 REV 失败" >&2
-# 无条件 enter 兜底 (herdr issue#2063): 防止不可见 pane 的 brief 文本残留不自动提交
-for _n in "$COORD_NAME" "$EXEC_NAME" "$REV_NAME"; do
-  herdr agent send-keys "$_n" enter >/dev/null 2>&1 || true
+for _round in 1 2; do
+  sleep "$BRIEF_GRACE"
+  _all_done=1
+  for _i in 0 1 2; do
+    [ "${_seq_done[$_i]}" = 1 ] && continue
+    _n="${_seq_names[$_i]}"
+    _seq_now[$_i]="$(herdr agent get "$_n" 2>/dev/null | jq -r '.result.agent.state_change_seq // ""' 2>/dev/null || true)"
+    # seq 变化 = brief 已被消费
+    if [ -n "${_seq_now[$_i]}" ] && [ "${_seq_now[$_i]}" != "${_seq_base[$_i]}" ]; then
+      _seq_done[$_i]=1
+      continue
+    fi
+    _all_done=0
+    # 仅在非 blocked 时补 enter (blocked 本不该到此, 阶段6 已拦截; 但仍二次判别防误)
+    _st_blocked="$(herdr agent get "$_n" 2>/dev/null | jq -r '.result.agent.agent_status == "blocked"' 2>/dev/null || true)"
+    if [ "$_st_blocked" = "true" ]; then
+      _seq_blocked[$_i]=1
+      continue
+    fi
+    # 文本已滞在 pane, 只提交不清空, 不重发 brief (防双处理)
+    herdr agent send-keys "$_n" enter >/dev/null 2>&1 || true
+  done
+  [ "$_all_done" = 1 ] && break
 done
-unset _n _brief
+# 2 轮宽限后仍未消费 → WARN 不 die (静默/健谈 cluster 可能不涨 seq = 软信号, 误 die 反伤)
+for _i in 0 1 2; do
+  [ "${_seq_done[$_i]}" = 1 ] && continue
+  _n="${_seq_names[$_i]}"
+  if [ "${_seq_blocked[$_i]}" = 1 ]; then
+    echo "coherd: WARN: brief 疑似未消费(角色 blocked) $_n — 手动检查 pane" >&2
+  else
+    echo "coherd: WARN: brief 疑似未消费 $_n — 手动检查 pane" >&2
+  fi
+done
+unset _n _i _round _all_done _st_blocked _seq_names _seq_base _seq_now _seq_done _seq_blocked _brief
 
 info "集群就绪: workspace=$WS  coordinator=$COORD_PANE  reviewer=$REV_PANE  executor=$EXEC_PANE  (角色见 $ROLES; 依赖 herdr ≥ 需支持上述 pane/agent 操作)"
