@@ -290,7 +290,7 @@ start_roles
 herdr workspace focus "$WS" >/dev/null 2>&1 || echo "coherd: WARN: workspace focus 失败, 某些 pane 可能不可见致 brief 文本残留 — 手动在各 pane 回车确认接收" >&2
 
 # 统一 brief 模板; 三角色仅角色名 + agent 名不同, 行为契约全在 ROLES.md
-_brief() { printf '你是%s。你的 herdr agent 名: %s。集群角色与协作契约见 %s (先读, 含 peer 命名/分派审查规则)。确认身份后静默 standby, 按收到的消息行动。' "$1" "$2" "$ROLES"; }
+_brief() { printf '你是%s。你的 herdr agent 名: %s。集群角色与协作契约见 @%s (先读, 含 peer 命名/分派审查规则)。确认身份后静默 standby, 按收到的消息行动。' "$1" "$2" "$ROLES"; }
 # 送达确认: 用 state_change_seq 有界重投递。先取三角色基线 seq (agent get 失败→空串),
 # 每轮 sleep BRIEF_GRACE 后重读 seq; 涨=已消费跳过, 未涨且非 blocked → send-keys enter 补提交
 # (只提交不重发 brief 文本, 防双处理); 最多 2 轮宽限, 到期仍无变化 → WARN 不 die
