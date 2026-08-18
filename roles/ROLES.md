@@ -23,6 +23,7 @@
 - 消息以 `[<role>]:` 前缀开头 = 同级 agent 发言；无前缀 = 用户直接输入。
 - 每个 pane 自动注入 `HERDR_WORKSPACE_ID` / `HERDR_TAB_ID` / `HERDR_PANE_ID`。
 - 汇报对称义务：executor 完成后直接提交 reviewer 审查（附 DoD + 输出路径，不转发产物正文），并轻量上报 coordinator 已交审（状态级）；阻塞以 `[executor]:` 上报 coordinator（原因 + 已尝试手段）；reviewer 审查结论（approve/revise）以 `[reviewer]:` 上报 coordinator；coordinator 整合交付以 `[coordinator]:` 上报用户。
+- **token 控制**（详 docs/token-control.md）：① 通信精简——结论结构化 `approve: <要点>` / `revise: <问题清单逐条>`，要点式不叙述；executor 交审消息保 DoD + 路径 + 关键取舍一句，不可瘦到只剩路径。② 输入端控制——消息引用路径不贴大文件正文，交审附 git diff 范围 reviewer 只读变更行，长任务串轮换 session。③ revise 循环最贵：一次返工 > 一切通信压缩，投资分派质量优先。
 
 ## 3. 分派契约模板（A）
 
@@ -76,7 +77,7 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 
 ## 6. 规模缩放与防失控
 
-- 简单任务（1–2 文件、低风险）→ coordinator 单点派 executor，可不启动 reviewer 全链路。
+- 简单任务跳过 reviewer 全链路的**硬判据**（须同时满足）：≤2 文件改动 + 无安全/正确性敏感面；任一不满足 → 必走 executor → reviewer → coordinator 全链路。
 - 高风险 / 正确性敏感任务 → 必走 executor → reviewer → coordinator 全链路（§4）。
 - 防失控：出现级联/循环/重复工作 → 任一 agent 可喊停并上报 coordinator；revise 超限见 §4 仲裁。
 
