@@ -27,7 +27,7 @@ coherd 启动时**不使用 `--kind` 指定**（历史上 `agent start --kind pi
 ## 三角色 = 三独立实例（硬边界）
 
 - 三个槽位必须由**三个独立 agent 实例**填充。
-- 同一个 agent 实例兼任两角 = 自己写、自己审 = 单 agent 自评，直接违背角色分离设计（ROLES.md §1 注记）。coherd 不禁止你这么配，但后果自负，reviewer 也会拒审自审产出。
+- 同一个 agent 实例兼任两角 = 自己写、自己审 = 单 agent 自评，直接违背角色分离设计（CONTRACT.md §1 注记）。coherd 不禁止你这么配，但后果自负，reviewer 也会拒审自审产出。
 
 ## 怎么把你的 agent 填进槽位
 

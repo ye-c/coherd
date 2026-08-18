@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # coherd 安装脚本
 #   bin/coherd        → ~/.local/bin/coherd   (已有则备份为 coherd.bak.*)
-#   roles/ROLES.md    → ~/.config/coherd/ROLES.md (已有则备份)
+#   roles/CONTRACT.md + 4 per-role → ~/.config/coherd/ (已有则各自备份)
 #   不安装 agent CLI / relay backend —— 那是用户自己的事
 set -euo pipefail
 
@@ -29,15 +29,30 @@ ln -sf "$HERE/bin/coherd" "$BIN_DIR/coherd"
 chmod +x "$HERE/bin/coherd"   # 幂等: 确保 target 可执行(不 chmod symlink 本身)
 info "已安装 $BIN_DIR/coherd → $HERE/bin/coherd (symlink)"
 
-# ── 拷贝 roles/ROLES.md ──
-[ -f "$HERE/roles/ROLES.md" ] || die "缺失 $HERE/roles/ROLES.md"
+# ── 拷贝契约文件 (CONTRACT.md + 4 per-role) ──
+# 旧版单文件 roles/ROLES.md 已拆分为 5 文件; 用户已有 ROLES.md 时备份保留 (旧档不删, 给用户手动迁移窗口)
+ROLE_DOCS=("coordinator" "executor" "reviewer" "libero")
+[ -f "$HERE/roles/CONTRACT.md" ] || die "缺失 $HERE/roles/CONTRACT.md"
 mkdir -p "$CFG_DIR"
 if [ -e "$CFG_DIR/ROLES.md" ]; then
   cp "$CFG_DIR/ROLES.md" "$CFG_DIR/ROLES.md.bak.$(date +%s)"
-  info "已备份原有 $CFG_DIR/ROLES.md → ROLES.md.bak.*"
+  info "已备份原有 $CFG_DIR/ROLES.md → ROLES.md.bak.* (旧版单文件, 内容已并入 CONTRACT.md + per-role)"
 fi
-cp "$HERE/roles/ROLES.md" "$CFG_DIR/ROLES.md"
-info "已安装 $CFG_DIR/ROLES.md"
+_install_doc() { # 文件名 → 装到 $CFG_DIR (已有则备份后覆盖)
+  local f="$1"
+  [ -f "$HERE/roles/$f" ] || die "缺失 $HERE/roles/$f"
+  if [ -e "$CFG_DIR/$f" ]; then
+    cp "$CFG_DIR/$f" "$CFG_DIR/$f.bak.$(date +%s)"
+    info "已备份原有 $CFG_DIR/$f → $f.bak.*"
+  fi
+  cp "$HERE/roles/$f" "$CFG_DIR/$f"
+  info "已安装 $CFG_DIR/$f"
+}
+_install_doc "CONTRACT.md"
+for _rd in "${ROLE_DOCS[@]}"; do
+  _install_doc "$_rd.md"
+done
+unset _rd _install_doc ROLE_DOCS
 
 # ── 安装 role skills 到共享目录 + Claude Code 软链 ──
 #   源: roles/skills/<name>/SKILL.md → ~/.agents/skills/<name>/(pi 等从此读)

@@ -2,7 +2,7 @@
 
 coherd 把多个 AI agent 组织成一个小团队：一个规划、一个干活、一个审查。编排逻辑已内置，配好 backend 即用。
 
-> ⚠️ 安全须知：本 repo 不提供任何 agent wrapper、不绕过任何权限确认。agent 的权限与密钥由你自己的 CLI 配置负责，详见下文"安全"与 docs/reviewer.md。
+> ⚠️ 安全须知：本 repo 不提供任何 agent wrapper、不绕过任何权限确认。agent 的权限与密钥由你自己的 CLI 配置负责，详见下文"安全"与 roles/reviewer.md。
 
 ## 它解决什么问题
 
@@ -38,7 +38,7 @@ coherd 把多个 AI agent 组织成一个小团队：一个规划、一个干活
 # 手动安装（install.sh 亦可用）
 cp bin/coherd ~/.local/bin/                 # 或 /usr/local/bin，确保在 PATH
 mkdir -p ~/.config/coherd
-cp roles/ROLES.md ~/.config/coherd/ROLES.md
+cp roles/CONTRACT.md roles/coordinator.md roles/executor.md roles/reviewer.md roles/libero.md ~/.config/coherd/
 # 一键版:
 ./install.sh                                # 拷贝+备份+依赖提示
 ```
@@ -60,7 +60,7 @@ export COHERD_REVIEWER_CMD=~/bin/my-reviewer-cli
 ```bash
 coherd [init] [REPO] [LABEL]
 # REPO 仓库目录（默认当前目录）；LABEL workspace 标签（默认仓库名）
-# init 强制(重)建：同 label 已存在时先关闭再重建（ROLES.md/brief/agent 配置改动后重启用）；不存在则等同普通创建
+# init 强制(重)建：同 label 已存在时先关闭再重建（CONTRACT.md/brief/agent 配置改动后重启用）；不存在则等同普通创建
 ```
 
 - 横屏（默认检测）：reviewer 左上 / executor 右上 / coordinator 下全宽
@@ -78,7 +78,7 @@ coherd init ~/code/myapp            # 强制重建同 label 集群（已存在�
 
 ## 三 agent 协作契约
 
-完整契约见 `roles/ROLES.md`（安装到 `~/.config/coherd/ROLES.md`），要点：
+完整契约见 `roles/CONTRACT.md`（公共，安装到 `~/.config/coherd/CONTRACT.md`）+ 四份 per-role（`roles/{coordinator,executor,reviewer,libero}.md`），要点：
 
 - **分派契约**：coordinator→executor 每条任务必带 4 字段——objective / DoD 验收标准 / 输出格式 / 工具边界。字段缺了先补，模糊不干活。
 - **审查循环**：reviewer 每次必跑验证命令 + 三查（正确性/安全/可维护性）+ 给双向结论；revise 上限 2 轮。
@@ -89,7 +89,7 @@ coherd init ~/code/myapp            # 强制重建同 label 集群（已存在�
 
 - coherd 只做一件事：建 workspace+pane → 跑你给的命令 → 识别改名 → 发 brief。**它不提供任何 agent wrapper，不注入 env，不背 `--dangerously-skip-permissions` 这类权限责任**。
 - **agent 的权限与密钥是你自己 CLI 配置的事，自负**。默认不绕过任何确认。
-- reviewer 槽位建议最小权限（只读 + 跑验证），具体做法参考 docs/reviewer.md——是建议，不强制。
+- reviewer 槽位建议最小权限（只读 + 跑验证），具体做法参考 roles/reviewer.md——是建议，不强制。
 - 若你的 reviewer CLI 配置了跳过权限确认，那是在你自己的沙箱环境里做的决定，与 coherd 无关。
 
 ## 局限与扩展

@@ -1,6 +1,6 @@
 # coherd 集群协作契约（公共）
 
-> 路径：本文件安装于 `~/.config/coherd/ROLES.md`（过渡保留，内容与 CONTRACT.md 一致，阶段3 改名时处理）。
+> 路径：本文件安装于 `~/.config/coherd/CONTRACT.md`。
 > 公共契约：全部角色共享的协作规则。per-role 执行细节见 coordinator.md / executor.md / reviewer.md / libero.md，本节号沿用原 roles/ROLES.md（过渡期保留）：§6（规模缩放决策）、§8（libero 定义与防污染）见 coordinator.md 与 libero.md。
 
 ## 1. 角色职责表

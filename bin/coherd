@@ -42,7 +42,7 @@ REPO="${1:-$PWD}"
 REPO="$(cd "$REPO" && pwd)" || exit 1
 LABEL="${2:-$(basename "$REPO")}"
 CONF="${COHERD_CONF:-$HOME/.config/coherd/coherd.conf}"
-ROLES="$HOME/.config/coherd/ROLES.md"
+CONTRACT="$HOME/.config/coherd/CONTRACT.md"
 DETECT_TIMEOUT=120 # pane run 后 herdr 识别 agent + rename 的总超时 (s)
 BRIEF_GRACE=15     # 阶段7 brief 送达确认: 每轮宽限等待 seq 涨的秒数 (s)
 
@@ -86,7 +86,7 @@ COORD_CMD="$(resolve_cmd coordinator)"
 EXEC_CMD="$(resolve_cmd executor)"
 REV_CMD="$(resolve_cmd reviewer)"
 
-[ -f "$ROLES" ] || die "缺 $ROLES (角色契约) — 先跑 install.sh 或手动拷贝 roles/ROLES.md"
+[ -f "$CONTRACT" ] || die "缺 $CONTRACT (公共契约) — 先跑 install.sh 或手动拷贝 roles/CONTRACT.md"
 
 # ── 1. 确保 herdr server (常驻 daemon; bare shell 下 CLI 走 socket) ──
 # 注意: `herdr status` 在 server 未运行时退出码仍是 0, 必须解析 --json
@@ -281,16 +281,24 @@ start_roles() { # 无参; 用全局 COORD/EXEC/REV_PANE 与 *_CMD
 start_roles
 
 # ── 7. 角色事实源 + 启动 brief ──
-# ROLES.md 放全局 (~/.config/coherd/), 不污染项目 git; 所有 herdr agent 共享
-# brief 走 fire-and-forget (ROLES §2 禁 --wait): 三份并行发出, 无内部轮询, 无送达等待;
-# 统一模板: 只给角色身份 + 自身 agent 名 + ROLES 指路 + 静默 standby 按消息行动 (角色专属行为全归 ROLES.md)
+# 契约文件放全局 (~/.config/coherd/), 不污染项目 git; 所有 herdr agent 共享
+# brief 走 fire-and-forget (CONTRACT §2 禁 --wait): 三份并行发出, 无内部轮询, 无送达等待;
+# 统一模板: 只给角色身份 + 自身 agent 名 + 双 @ 指路 (公共契约 CONTRACT.md + 角色执行细节 <role>.md) + 静默 standby 按消息行动
 # 送达确认 (DoD5): fire-and-forget 后用 state_change_seq 有界重投递 —
 # seq 涨=文本已消费跳过; 未涨且非 blocked → send-keys enter 补提交(只提交不重发, 防双处理);
 # 最多 2 轮宽限(BRIEF_GRACE), 仍无 seq 变化 → WARN 不 die(静默/健谈 cluster 可能不涨 seq=软信号)
 herdr workspace focus "$WS" >/dev/null 2>&1 || echo "coherd: WARN: workspace focus 失败, 某些 pane 可能不可见致 brief 文本残留 — 手动在各 pane 回车确认接收" >&2
 
-# 统一 brief 模板; 三角色仅角色名 + agent 名不同, 行为契约全在 ROLES.md
-_brief() { printf '你是%s。你的 herdr agent 名: %s。集群角色与协作契约见 @%s (先读, 含 peer 命名/分派审查规则)。确认身份后静默 standby, 按收到的消息行动。' "$1" "$2" "$ROLES"; }
+# 统一 brief 模板: 三角色公共契约全在 CONTRACT.md, per-role 执行细节在对应 <role>.md,
+# 双 @ 注入 (物理文件拆开后必须双指针, 单指 CONTRACT 会让角色细节不可达)
+_role_doc() { # role 名 → per-role 契约文档路径 (安装目录)
+  case "$1" in
+    coordinator) printf '%s' "$HOME/.config/coherd/coordinator.md" ;;
+    executor)    printf '%s' "$HOME/.config/coherd/executor.md" ;;
+    reviewer)    printf '%s' "$HOME/.config/coherd/reviewer.md" ;;
+  esac
+}
+_brief() { printf '你是%s。你的 herdr agent 名: %s。集群公共契约见 @%s (先读), 角色执行细节见 @%s (先读)。确认身份后静默 standby, 按收到的消息行动。' "$1" "$2" "$CONTRACT" "$(_role_doc "$1")"; }
 # 送达确认: 用 state_change_seq 有界重投递。先取三角色基线 seq (agent get 失败→空串),
 # 每轮 sleep BRIEF_GRACE 后重读 seq; 涨=已消费跳过, 未涨且非 blocked → send-keys enter 补提交
 # (只提交不重发 brief 文本, 防双处理); 最多 2 轮宽限, 到期仍无变化 → WARN 不 die
@@ -350,6 +358,6 @@ for _i in 0 1 2; do
     echo "coherd: WARN: brief 疑似未消费 $_n — 手动检查 pane" >&2
   fi
 done
-unset _n _i _round _all_done _st_blocked _seq_names _seq_base _seq_now _seq_done _seq_blocked _brief
+unset _n _i _round _all_done _st_blocked _seq_names _seq_base _seq_now _seq_done _seq_blocked _brief _role_doc
 
-info "集群就绪: workspace=$WS  coordinator=$COORD_PANE  reviewer=$REV_PANE  executor=$EXEC_PANE  (角色见 $ROLES; 依赖 herdr ≥ 需支持上述 pane/agent 操作)"
+info "集群就绪: workspace=$WS  coordinator=$COORD_PANE  reviewer=$REV_PANE  executor=$EXEC_PANE  (契约见 $CONTRACT + per-role; 依赖 herdr ≥ 需支持上述 pane/agent 操作)"
