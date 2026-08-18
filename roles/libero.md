@@ -1,4 +1,4 @@
-# libero 角色执行契约（全文搬自原 ROLES.md §8）
+# libero 角色执行契约
 
 > 公共契约见 `roles/CONTRACT.md`。libero 是辅助角色，不进集群握手、不持有主任务。
 

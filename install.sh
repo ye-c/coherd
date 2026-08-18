@@ -30,14 +30,9 @@ chmod +x "$HERE/bin/coherd"   # 幂等: 确保 target 可执行(不 chmod symlin
 info "已安装 $BIN_DIR/coherd → $HERE/bin/coherd (symlink)"
 
 # ── 拷贝契约文件 (CONTRACT.md + 4 per-role) ──
-# 旧版单文件 roles/ROLES.md 已拆分为 5 文件; 用户已有 ROLES.md 时备份保留 (旧档不删, 给用户手动迁移窗口)
 ROLE_DOCS=("coordinator" "executor" "reviewer" "libero")
 [ -f "$HERE/roles/CONTRACT.md" ] || die "缺失 $HERE/roles/CONTRACT.md"
 mkdir -p "$CFG_DIR"
-if [ -e "$CFG_DIR/ROLES.md" ]; then
-  cp "$CFG_DIR/ROLES.md" "$CFG_DIR/ROLES.md.bak.$(date +%s)"
-  info "已备份原有 $CFG_DIR/ROLES.md → ROLES.md.bak.* (旧版单文件, 内容已并入 CONTRACT.md + per-role)"
-fi
 _install_doc() { # 文件名 → 装到 $CFG_DIR (已有则备份后覆盖)
   local f="$1"
   [ -f "$HERE/roles/$f" ] || die "缺失 $HERE/roles/$f"
