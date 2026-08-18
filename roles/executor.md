@@ -43,6 +43,13 @@
 - **不自评**：自己说"好了"不算数，审查是 reviewer 的事（角色分离，CONTRACT §4）。
 - revise 上限 2 轮；仍不通过 → 升级 coordinator 仲裁，不自行扩大范围。
 
+## 待机（交审后 / 等待下一环）
+
+- 交审、修订重提、或 reviewer `approve` 回流后，若**无下一环可执行**：直接**转 idle 待机**——**不要用 `sleep` + `herdr agent read` 轮询占住 pane**（CONTRACT §7 事件驱动，idle 即待机形态）。
+- 下一环（coordinator 新分派 / reviewer revise）由发起方以 `herdr agent prompt` 推送，会自动唤醒待机中的你——**无需自己主动去捞**。
+- `herdr agent read <peer>` 只用于**核对状态 / 查证据**（§2 防重复成环），**不用于轮询等待消息**。
+- 待机期间保持 pane 空闲，不空耗轮询 token（CONTRACT §9）。
+
 ## 与其他角色交互
 
 - **流入**：coordinator 分派（`[coordinator]:`，4 字段契约）、reviewer revise（`[reviewer]:`）。

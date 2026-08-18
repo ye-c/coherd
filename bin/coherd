@@ -283,7 +283,7 @@ start_roles
 # ── 7. 角色事实源 + 启动 brief ──
 # 契约文件放全局 (~/.config/coherd/), 不污染项目 git; 所有 herdr agent 共享
 # brief 走 fire-and-forget (CONTRACT §2 禁 --wait): 三份并行发出, 无内部轮询, 无送达等待;
-# 统一模板: 只给角色身份 + 自身 agent 名 + 双 @ 指路 (公共契约 CONTRACT.md + 角色执行细节 <role>.md) + 静默 standby 按消息行动
+# 统一模板: 只给角色身份 + 自身 agent 名 + 双 @ 指路 (公共契约 CONTRACT.md + 角色执行细节 <role>.md) + standby 握手后转 idle 待机, 按消息行动
 # 送达确认 (DoD5): fire-and-forget 后用 state_change_seq 有界重投递 —
 # seq 涨=文本已消费跳过; 未涨且非 blocked → send-keys enter 补提交(只提交不重发, 防双处理);
 # 最多 2 轮宽限(BRIEF_GRACE), 仍无 seq 变化 → WARN 不 die(静默/健谈 cluster 可能不涨 seq=软信号)
@@ -298,7 +298,7 @@ _role_doc() { # role 名 → per-role 契约文档路径 (安装目录)
     reviewer)    printf '%s' "$HOME/.config/coherd/reviewer.md" ;;
   esac
 }
-_brief() { printf '你是%s。你的 herdr agent 名: %s。集群公共契约见 @%s (先读), 角色执行细节见 @%s (先读)。确认身份后静默 standby, 按收到的消息行动。' "$1" "$2" "$CONTRACT" "$(_role_doc "$1")"; }
+_brief() { printf '你是%s。你的 herdr agent 名: %s。集群公共契约见 @%s (先读), 角色执行细节见 @%s (先读)。确认身份后发 standby 握手 (事件) 并转 idle 待机, 按收到的消息行动。' "$1" "$2" "$CONTRACT" "$(_role_doc "$1")"; }
 # 送达确认: 用 state_change_seq 有界重投递。先取三角色基线 seq (agent get 失败→空串),
 # 每轮 sleep BRIEF_GRACE 后重读 seq; 涨=已消费跳过, 未涨且非 blocked → send-keys enter 补提交
 # (只提交不重发 brief 文本, 防双处理); 最多 2 轮宽限, 到期仍无变化 → WARN 不 die

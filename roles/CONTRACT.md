@@ -3,6 +3,23 @@
 > 路径：本文件安装于 `~/.config/coherd/CONTRACT.md`。
 > 公共契约：全部角色共享的协作规则。per-role 执行细节见 coordinator.md / executor.md / reviewer.md / libero.md：§6（规模缩放决策）见 coordinator.md，§8（libero 定义与防污染）见 libero.md（coordinator 侧管理视角见 coordinator.md §8）。
 
+## 0. 术语表（先定义，后使用）
+
+> 以下词汇在契约内含义固定，其余角色文档沿用；出现歧义以此表为准。
+
+| 术语 | 含义（本契约内固定） | 出处 |
+| ------ | ------ | ------ |
+| push / 推送 | `herdr agent prompt <name> "<消息>"`：主动发消息给 peer；**会自动唤醒 idle 待机者**（消息送达不依赖对方动作） | §2 |
+| pull / 拉取 | `herdr agent read <name>`：被动读 peer 最新内容；**仅用于核对状态/查证据，不是等待手段** | §2 |
+| fire-and-forget / 即发即走 | 发 prompt 不带 `--wait/--timeout`，发出即止、不等回复 | §2 |
+| event / 事件 | herdr 生命周期事件（如 idle/done），契约交接的触发信号 | §7 |
+| idle / 待机 | agent 挂起态：不占 pane、不运行、等待 push 唤醒；**"等待下一环" = 转 idle，不是轮询** | §7 |
+| standby / 握手 | 启动时向 coordinator 发一次 `[role]: standby` 的单向一次性上报（宣告就绪）；**是事件不是状态，收到后转 idle** | §7 |
+| 轮询 (polling) | sleep 循环 + 反复 pull 取消息；契约**禁止**的等待方式 | §7 |
+| 分派 (dispatch) | coordinator→executor 带 4 字段（objective/DoD/输出/边界）的任务消息 | §3 |
+| 回流 | 结论/状态消息上报 coordinator（approve/revise/阻塞/已交审） | §2 |
+| 审查 (review) | reviewer 对 executor 产出做三查，给 approve/revise 二选一结论 | §4 |
+
 ## 1. 角色职责表
 
 三角色为**槽位**（实现可配置，具体 agent CLI 由 `COHERD_*_CMD` 决定，见 docs/configuration.md）。三者必须为**三个独立实例**——同一实例兼任多角 = 单 agent 自己写的自己审，违背角色分离设计。
@@ -79,7 +96,8 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 ## 7. 事件驱动交接
 
 - 基于 herdr idle/done 事件交接：上一环完成 → 下一环主动拉取（`herdr agent read`）。
-- executor/reviewer 启动后读 CONTRACT.md 确认身份, 向 coordinator 发一次 `[<role>]: standby` 上报即转 standby; coordinator 收到两份上报后判集群起步就绪, 自身转 standby 并开始按用户意图分派, 之后全程事件驱动(§7 下条)。**此握手单向、一次性、不触发 §2 回复义务**——coordinator 不回"收到", exec/rev 不等回复。coordinator 不轮询、不检测 exec/rev 状态; 未收到上报也不追究、不重发——沉默即故障信号, 用户自然察觉。
+- **待机动作界外声明**：任一环执行完毕、无下一环时（如 executor 交审且 reviewer approve 后、coordinator 交付后），直接 **转 idle 待机**；`herdr agent prompt` 会自动唤醒 idle 待机者，peer 无需 sleep 阻塞或轮询消息。`herdr agent read` 仅用于核对状态/查证据，**不作轮询等待**（详见 executor.md「待机」节）。
+- executor/reviewer 启动后读 CONTRACT.md 确认身份, 向 coordinator 发一次 `[<role>]: standby` 上报（§0 standby/握手）, 随即**转 idle 待机**; coordinator 收到两份上报后判集群起步就绪, 自身转 idle 待机后开始按用户意图分派, 之后全程事件驱动(§7 下条)。**此握手单向、一次性、不触发 §2 回复义务**——coordinator 不回"收到", exec/rev 不等回复。coordinator 不轮询(§0)、不检测 exec/rev 状态; 未收到上报也不追究、不重发——沉默即故障信号, 用户自然察觉。
 - executor 完成 → 直接提交 reviewer 审查（reviewer 读产物 / `herdr agent read` 验证），结论 approve/revise 回流 coordinator；阻塞 → 上报 coordinator（原因 + 已尝试手段）；revise 循环 rev→exe→rev 不经 coordinator，超 §4 上限（2 轮）才介入仲裁。
 
 ## 9. token 控制
