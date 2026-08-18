@@ -50,13 +50,13 @@ done
 unset _rd _install_doc ROLE_DOCS
 
 # ── 安装 role skills 到共享目录 + Claude Code 软链 ──
-#   源: roles/skills/<name>/SKILL.md → ~/.agents/skills/<name>/(pi 等从此读)
+#   源: skills/<name>/SKILL.md → ~/.agents/skills/<name>/(pi 等从此读)
 #   Claude Code 读 ~/.claude/skills/<name> → 软链到上面的共享目录 (对等 herdr 做法)
 AGENT_SKILLS="${HOME}/.agents/skills"
 CLAUDE_SKILLS="${HOME}/.claude/skills"
-if [ -d "$HERE/roles/skills" ]; then
+if [ -d "$HERE/skills" ]; then
   mkdir -p "$AGENT_SKILLS" "$CLAUDE_SKILLS"
-  for sk in "$HERE"/roles/skills/*; do
+  for sk in "$HERE"/skills/*; do
     [ -f "$sk/SKILL.md" ] || continue
     name="$(basename "$sk")"
     # 已有真实文件(非 symlink)先备份, 再重指 (幂等)
@@ -70,7 +70,7 @@ if [ -d "$HERE/roles/skills" ]; then
     info "已安装 skill $name → $AGENT_SKILLS/$name, 软链 $CLAUDE_SKILLS/$name"
   done
 else
-  info "无 roles/skills/, 跳过 skill 安装"
+  info "无 skills/, 跳过 skill 安装"
 fi
 
 # ── 下一步 ──
