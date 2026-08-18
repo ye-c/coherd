@@ -23,7 +23,7 @@
 - 消息以 `[<role>]:` 前缀开头 = 同级 agent 发言；无前缀 = 用户直接输入。
 - 每个 pane 自动注入 `HERDR_WORKSPACE_ID` / `HERDR_TAB_ID` / `HERDR_PANE_ID`。
 - 汇报对称义务：executor 完成后直接提交 reviewer 审查（附 DoD + 输出路径，不转发产物正文），并轻量上报 coordinator 已交审（状态级）；阻塞以 `[executor]:` 上报 coordinator（原因 + 已尝试手段）；reviewer 审查结论（approve/revise）以 `[reviewer]:` 上报 coordinator；coordinator 整合交付以 `[coordinator]:` 上报用户。
-- **token 控制**（详 docs/token-control.md）：① 通信精简——结论结构化 `approve: <要点>` / `revise: <问题清单逐条>`，要点式不叙述；executor 交审消息保 DoD + 路径 + 关键取舍一句，不可瘦到只剩路径。② 输入端控制——消息引用路径不贴大文件正文，交审附 git diff 范围 reviewer 只读变更行，长任务串轮换 session。③ revise 循环最贵：一次返工 > 一切通信压缩，投资分派质量优先。
+- **token 控制**：① 通信精简——结论结构化 `approve: <要点>` / `revise: <问题清单逐条>`，要点式不叙述；executor 交审消息保 DoD + 路径 + 关键取舍一句，不可瘦到只剩路径。② 输入端控制——消息引用路径不贴大文件正文，交审附 git diff 范围 reviewer 只读变更行，长任务串轮换 session。③ revise 循环最贵：一次返工 > 一切通信压缩，投资分派质量优先。
 
 ## 3. 分派契约模板（A）
 
@@ -103,3 +103,14 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 4. 不自晋升：不得自称 coordinator/executor/reviewer。
 5. 随需存在: libero 由用户激活、随用户需求存在, 何时下线由用户控制; 主要服务用户, 兼做团队辅助。
 另：静默上线 —— HERDR_ENV=1 时先 herdr agent rename <自身 pane> <label>-libero 以可被发现；不发主动消息, 交互由用户发起；非 herdr 环境(HERDR_ENV 未设)跳过 rename。label 取 workspace 短号小写(对齐 bin/coherd 的 `${WS_SLUG}-<role>` 命名)：cluster 模式由 peer 推断, standalone 模式用本 pane 的 workspace 短号小写(如 wB → wb-libero)。
+
+## 9. token 控制
+
+> 目标：不影响工作质量前提下，降低集群 token 消耗。实质条款内联于此，不依赖外部详述文件；详述/设计论证见 docs/token-control.md。
+
+**三块核心条款**：
+
+- **① 通信精简**：结论结构化——`approve: <理由要点>` / `revise: <问题清单逐条>`；agent 间消息用要点式，避免叙述铺陈。executor 交审消息**底线**：保 DoD + 输出路径 + 关键取舍一句，不可瘦到只剩路径。
+- **② 输入端控制**（token 大头）：消息引用路径不贴大文件正文；交审附 `git diff` 范围，reviewer 只读变更行；长任务串轮换 session，防上下文膨胀。
+- **③ revise 循环最贵**：一次返工消耗 > 一切通信压缩的收益；投资分派质量（清晰 objective / 可测 DoD / 精确边界）优先于压缩单条消息。
+- **④ 规模缩放判据**：简单任务跳过 reviewer 全链路须**同时满足** ≤2 文件改动 + 无安全/正确性敏感面；任一不满足 → 必走 executor → reviewer → coordinator 全链路（与 §6 一致）。
