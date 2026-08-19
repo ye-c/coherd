@@ -34,10 +34,14 @@ description: 把当前 agent 加载为 coherd 协作集群的某个角色(coordi
   1. `herdr agent rename "$HERDR_PANE_ID" "<label>-libero"`, label 取本 pane workspace 短号小写(如 HERDR_WORKSPACE_ID=wB → wb-libero; 对齐 bin/coherd 的 `${WS_SLUG}-<role>` 命名)
   2. 不发主动消息; 交互由用户定向发起
   3. 非 herdr 环境(HERDR_ENV 未设)则跳过 rename
-- libero 分支详见 ~/.config/coherd/libero.md(辅助角色); standalone/cluster 同样按有无 peer 参数区分。
+- libero 分支详见 ~/.config/coherd/libero.md(辅助角色); standalone/cluster 同样按有无 peer 参数区分; cluster 模式的 libero rename 走下方步骤 0, standalone 走本节 1-3(步骤 0 与本节 slug 来源一致: cluster 从 peer 推断, standalone 取本 pane workspace 短号)。
 
 ## cluster 模式执行步骤
 
+0. **身份上线(rename, 四角色通用)**: cluster 加载 = 加入 peer 集群, 互寻址依赖自身 agent 名 = `${WS_SLUG}-<role>`(CONTRACT §2 名规则; bin/coherd 拉起时脚本已统一 rename, 本步覆盖手动加载路径)。先确认/建立自身名再继续:
+   - slug 取 peer 名前缀小写(peer=w9-executor → w9)或 HERDR_WORKSPACE_ID 短号小写; 目标名 = `<slug>-<自身角色>`(libero → `<slug>-libero`)。
+   - 自身 agent 已为目标名 → 跳过(幂等)。
+   - 否则 `herdr agent rename "$HERDR_PANE_ID" "<目标名>"`; 报 agent_name_taken(槽位已有实例 / bin/coherd 已拉起该槽位)→ 报错停止加载, 不顶替——三角色须独立实例(CONTRACT §1)。
 1. read ~/.config/coherd/CONTRACT.md 公共契约 + 自身角色 per-role 文档 (~/.config/coherd/{coordinator,executor,reviewer}.md; libero 读 ~/.config/coherd/libero.md)。
 2. 按 CONTRACT.md §1 明确自己角色, 按 §2 设消息前缀 [<role>]:。
 3. 按 CONTRACT.md §3-§4 运作分派/审查契约, peer 名取 args。(libero 除外——libero 不进分派/审查循环, 按 ~/.config/coherd/libero.md 执行)
