@@ -30,6 +30,11 @@ description: 把当前 agent 加载为 coherd 协作集群的某个角色(coordi
 - reviewer: 审查产出(正确性/安全/可维护性), 跑验证, 给 approve/revise 结论。
 - libero: 承接用户的旁路/辅助需求, 交叉复核、补上下文、问答; 不进主循环, 被动响应(交互由用户定向发起)。
 
+- **standalone 通用身份上线(rename, 四角色通用)**: 仅角色名加载 = standalone 模式, 无 peer 通信协议。当前 pane 是否 HERDR 集群 pane (HERDR_ENV=1) 决定 rename, 不看 standalone/cluster 标签。HERDR_ENV=1 时互寻址依赖 agent 名 = `${WS_SLUG}-<role>`(CONTRACT §2 名规则), 名字不带该前缀就无法被 peer 寻址。coord/exec/reviewer standalone 在集群 pane 内**同样须 rename** 建立寻址名——对齐 bin/coherd 拉起时脚本统一 rename 的行为, 本步覆盖手动加载路径:
+  1. `herdr agent rename "$HERDR_PANE_ID" "<slug>-<自身角色>"`, slug 取本 pane workspace 短号小写(如 HERDR_WORKSPACE_ID=wB → wb-coordinator / wb-executor / wb-reviewer)
+  2. 自身 agent 已为目标名 → 跳过(幂等); 报 agent_name_taken(槽位已有实例 / bin/coherd 已拉起该槽位)→ 报错停止加载, 不顶替——三角色须独立实例(CONTRACT §1)
+  3. 非 herdr 环境(HERDR_ENV 未设)则跳过 rename
+
 - **libero standalone 加载须知(对齐 ~/.config/coherd/libero.md 静默上线)**: 仅角色名加载 = standalone 模式, 无 peer 通信协议; 但若当前在 herdr 集群 pane 内(HERDR_ENV=1), 仍须**静默上线 rename** 以可被发现, 不因 standalone 而跳过:
   1. `herdr agent rename "$HERDR_PANE_ID" "<label>-libero"`, label 取本 pane workspace 短号小写(如 HERDR_WORKSPACE_ID=wB → wb-libero; 对齐 bin/coherd 的 `${WS_SLUG}-<role>` 命名)
   2. 不发主动消息; 交互由用户定向发起
