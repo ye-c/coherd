@@ -5,12 +5,13 @@ coherd 的配置面很小：三个槽位的启动命令 + 布局。所有配置�
 ## 三槽位启动命令（契约）
 
 | 变量 | 角色 | 说明 |
-|------|------|------|
+| ------ | ------ | ------ |
 | `COHERD_COORDINATOR_CMD` | coordinator | 启动协调者 agent 的命令（可带参数） |
 | `COHERD_EXECUTOR_CMD` | executor | 启动执行者 agent 的命令（可带参数） |
 | `COHERD_REVIEWER_CMD` | reviewer | 启动审查者 agent 的命令（可带参数） |
 
 契约：
+
 - 值是**完整命令字符串**（路径 + 参数），经 `pane run` 原样执行，例如 `~/bin/executor-cli --cwd .`。含空格需自行引号；coherd 不解析不加工。
 - 命令启动的进程必须能被 herdr 识别成 agent（herdr 内置 21 种 agent 探测，见 docs/agents.md），否则 coherd 会在识别阶段超时报错。
 - **coherd 不注入任何环境变量、不加载 ~/.agents/env、不传 flag**。如果命令需要密钥/模型配置，写在你自己 wrapper 里面（比如 `export` + exec 你的 CLI）。
@@ -18,7 +19,7 @@ coherd 的配置面很小：三个槽位的启动命令 + 布局。所有配置�
 ## 默认回退（未设置 CMD 时）
 
 | 变量未设置 → | 回退查找 PATH | 仍缺失 → |
-|--------------|--------------|-----------|
+| -------------- | -------------- | ----------- |
 | `COHERD_COORDINATOR_CMD` | `pi` | die，提示 docs/configuration.md |
 | `COHERD_EXECUTOR_CMD` | `omp` | 同上 |
 | `COHERD_REVIEWER_CMD` | `cc` | 同上 |
@@ -34,7 +35,6 @@ coherd 的配置面很小：三个槽位的启动命令 + 布局。所有配置�
 COHERD_COORDINATOR_CMD=~/bin/my-coordinator
 COHERD_EXECUTOR_CMD=~/bin/my-executor
 COHERD_REVIEWER_CMD=~/bin/my-reviewer
-COHERD_LAYOUT=auto
 ```
 
 优先级：**已显式设置的 `COHERD_*` 环境变量 > conf**。conf 先加载，再被环境中已存在的同名变量覆盖——命令行 `COHERD_X=… coherd` 永远压过 conf。
@@ -45,7 +45,6 @@ COHERD_LAYOUT=auto
 
 | 变量 | 默认 | 说明 |
 |------|------|------|
-| `COHERD_LAYOUT` | `auto` | `portrait` / `landscape` / `auto`（auto = pane cell 几何近似） |
 | `COHERD_CONF` | `~/.config/coherd/coherd.conf` | conf 路径；可在运行前覆盖 |
 
 ## FAQ：coherd 报"未找到 xx 的启动命令"

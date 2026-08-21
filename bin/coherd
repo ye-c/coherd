@@ -12,9 +12,8 @@
 #     未设置时回退 PATH 中的 pi / omp / cc; 均缺则 die 指向 docs/configuration.md
 #   agent 私有配置 (env/flag/wrapper 内容) 由用户自备, 本脚本不注入不修改
 #
-# 布局:  自动检测横竖屏: ① COHERD_LAYOUT=portrait|landscape|auto (手动指定,
-#        默认 auto) ② cell 几何近似 (高>半宽=竖屏, 以 pane 实际形状为准;
-#        几何首查可能 null, 重试 3 次后仍 null 才回退横屏并 WARN)
+# 布局:  默认横屏; 需竖屏时传 -p/--portrait (无赋值 flag)。不做几何自动检测
+#   (headless 场景拿不到真实屏幕, 自动判横竖不可靠)
 #   竖屏: coordinator 上 / reviewer 中 / executor 下 (均分三行)
 #   横屏: reviewer 左上 / executor 右上 / coordinator 下全宽
 #
@@ -26,17 +25,31 @@ set -euo pipefail
 bash -n "$0" # 启动自检: 本脚本语法错误即由 set -e 早退, 避免半路挂起
 
 # 帮助: 首参为 -h/--help 时打印 usage 后退出, 不触发后续 cd(否则 --help 会被当目录)
-show_usage() { # 打印文件头注释(去 #) + 用法行
-  sed -n '1,30p' "$0" | sed 's/^# \{0,1\}//'
-  printf '
-用法: coherd [init] [REPO] [LABEL]  —  init 强制重建同 label 集群; 普通调用幂等 focus+exit\n'
+show_usage() { # 精简 usage (不吐整个文件头源码)
+  cat <<'EOF'
+coherd — 从零拉起 herdr 多 agent 协作集群
+
+用法: coherd [init] [-p|--portrait] [REPO] [LABEL]
+  init            强制重建同 label 集群; 普通调用幂等 focus+exit
+  -p, --portrait  竖屏布局 (默认横屏; 无需赋值, 存在即竖屏)
+  REPO            目标仓库目录 (默认 $PWD)
+  LABEL           workspace 标签 (默认 repo basename)
+
+布局: 默认横屏; 加 -p 触发竖屏
+EOF
 }
-case "${1:-}" in
-  -h|--help) show_usage; exit 0 ;;
-esac
 
 INIT=0
-if [ "${1:-}" = "init" ]; then INIT=1; shift; fi
+PORTRAIT=0
+# 循环吃前导开关 (与 --help 对齐: 仅首部位置), 剩余为 [REPO] [LABEL]
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -h|--help) show_usage; exit 0 ;;
+    init)      INIT=1; shift ;;
+    -p|--portrait) PORTRAIT=1; shift ;;
+    *) break ;;
+  esac
+done
 
 REPO="${1:-$PWD}"
 REPO="$(cd "$REPO" && pwd)" || exit 1
@@ -151,47 +164,11 @@ info "agent 命名: $COORD_NAME / $EXEC_NAME / $REV_NAME"
 cleanup_hint() { info "失败/中断残留清理: herdr workspace close $WS"; }
 trap cleanup_hint ERR
 
-# ── 4. 检测横竖屏: 显式参数 > cell 近似 (pane 实际几何) ──
-LAYOUT="${COHERD_LAYOUT:-auto}"
-case "$LAYOUT" in
-  portrait|landscape|auto) ;;
-  *) die "COHERD_LAYOUT 必须是 portrait|landscape|auto (当前: $LAYOUT)" ;;
-esac
-DETECT_SRC="显式 COHERD_LAYOUT=$LAYOUT"
-if [ "$LAYOUT" = "portrait" ]; then
-  PORTRAIT=1
-elif [ "$LAYOUT" = "landscape" ]; then
-  PORTRAIT=0
-else
-  # 朝向 = pane 实际 cell 几何: 高 > 半宽 → 竖屏
-  # create 后 pane 几何未必随 workspace 立即可得 (首查可能返回 null → 误判横屏),
-  # 故取 null 时重试 ≤3 次 (每次 sleep 1), 仍 null 才回退横屏并 WARN 供诊断
-  PW="" PH=""
-  for _try in 1 2 3; do
-    GEOM="$(herdr pane layout --pane "$ROOT" 2>/dev/null)" || GEOM="{}"
-    PW="$(jqr '.result.layout.area.width'  "$GEOM")"
-    PH="$(jqr '.result.layout.area.height' "$GEOM")"
-    [ "${PW:-0}" -gt 0 ] 2>/dev/null && [ "${PH:-0}" -gt 0 ] 2>/dev/null && break
-    sleep 1
-  done
-  if [ "${PW:-0}" -gt 0 ] 2>/dev/null && [ "${PH:-0}" -gt 0 ] 2>/dev/null \
-       && [ "$PH" -gt $((PW / 2)) ]; then
-    PORTRAIT=1
-    DETECT_SRC="cell ${PW}x${PH}"
-  else
-    PORTRAIT=0
-    if [ "${PH:-0}" -gt 0 ] 2>/dev/null; then
-      DETECT_SRC="cell ${PW}x${PH} (横屏)"
-    else
-      DETECT_SRC="cell ${PW:-?}x${PH:-?} (几何不可得→回退横屏)"
-      echo "coherd: WARN: $ROOT 三次取几何仍无正数, 回退横屏布局 — 若实为竖屏请检查终端几何或设 COHERD_LAYOUT=portrait" >&2
-    fi
-  fi
-fi
+# ── 4. 布局: 默认横屏, -p/--portrait 触发竖屏。不做几何自动检测 ──
 if [ "$PORTRAIT" = 1 ]; then
-  info "布局: ${DETECT_SRC} → 竖屏 (coordinator 上 / reviewer 中 / executor 下)"
+  info "布局: 竖屏 (coordinator 上 / reviewer 中 / executor 下)"
 else
-  info "布局: ${DETECT_SRC} → 横屏 (reviewer 左上 / executor 右上 / coordinator 下)"
+  info "布局: 横屏 (reviewer 左上 / executor 右上 / coordinator 下)"
 fi
 
 # ── 5. 布局 (先布局后 spawn) ──

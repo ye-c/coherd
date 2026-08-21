@@ -25,8 +25,8 @@ coherd 把多个 AI agent 组织成一个小团队：一个规划、一个干活
 ## 前置依赖
 
 | 依赖 | 作用 | 安装 |
-|------|------|------|
-| herdr | 终端多路复用器；管理 workspace/pane/agent | https://github.com/…（占位） |
+| ------ | ------ | ------ |
+| herdr | 终端多路复用器；管理 workspace/pane/agent | <https://github.com/…（占位）> |
 | jq | 解析 herdr JSON 输出 | `brew install jq` |
 | 任意 agent CLI ×3 | 三个槽位各一个；必须是 herdr 内置识别的 21 种之一（见 docs/agents.md） | 各自官方安装方式 |
 
@@ -58,19 +58,19 @@ export COHERD_REVIEWER_CMD=~/bin/my-reviewer-cli
 ## 用法
 
 ```bash
-coherd [init] [REPO] [LABEL]
+coherd [init] [-p|--portrait] [REPO] [LABEL]
 # REPO 仓库目录（默认当前目录）；LABEL workspace 标签（默认仓库名）
 # init 强制(重)建：同 label 已存在时先关闭再重建（CONTRACT.md/brief/agent 配置改动后重启用）；不存在则等同普通创建
+# -p / --portrait 竖屏布局（默认横屏，无需赋值，存在即启用）
 ```
 
-- 横屏（默认检测）：reviewer 左上 / executor 右上 / coordinator 下全宽
-- 竖屏：coordinator 上 / reviewer 中 / executor 下
-- 手动指定：`COHERD_LAYOUT=portrait|landscape|auto coherd …`
+- 横屏（默认）：reviewer 左上 / executor 右上 / coordinator 下全宽
+- 竖屏：`-p` / `--portrait` 触发 — coordinator 上 / reviewer 中 / executor 下
 
 ```bash
-coherd                              # 在当前目录起集群
+coherd                              # 在当前目录起集群（横屏）
 coherd ~/code/myapp                 # 指定仓库
-COHERD_LAYOUT=portrait coherd ~/code/myapp mylabel  # 竖屏 + 自定义标签
+coherd -p ~/code/myapp mylabel      # 竖屏 + 自定义标签
 coherd init ~/code/myapp            # 强制重建同 label 集群（已存在先关闭）
 ```
 
