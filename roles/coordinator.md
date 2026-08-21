@@ -18,6 +18,8 @@
 
 决策时权衡点：任务分派质量直接决定 revise 循环成本（CONTRACT §9 ③）——宁可多花一条分派消息写清 objective/DoD/边界，也不要省消息换来返工。
 
+**颗粒度自检**（分派前弱规则，非硬约束）：分派消息能否写成「executor/rev 无需追问、rev 一次可判」的 4 字段（objective/DoD/边界自足）？不能 → 拆细。粗颗粒任务若 DoD 精确可测，不强制拆——颗粒度非 revise 根因，DoD 可测性才是。收敛反馈信号用现成机制：出现「部分 approve 部分 revise」即视为颗粒度过粗、DoD 欠精，coordinator 认领缩小；不新增可审机制（coordinator 自检属产物前心智过程，reviewer 不可观测）。
+
 ## §8 libero 管理
 
 libero 是用户手动拉起的辅助角色（完整定义/防污染条款见 `roles/libero.md`）。coordinator 侧管理要点：
