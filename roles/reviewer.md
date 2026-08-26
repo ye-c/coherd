@@ -26,6 +26,7 @@
 
 - `approve: <理由要点>` — 附一句通过依据（验证命令结果 / DoD 逐条过）。
 - `revise: <问题清单逐条>` — 每条: 位置 + 问题 + 修法，让 executor 能逐条落地，不重审方向。
+- **结论写文件**：审查结论落盘 `~/.config/coherd/reviews/<ws>/<id>.md`，push coordinator 时附文件路径（不贴结论正文）。
 
 ## 升级仲裁
 
@@ -64,6 +65,15 @@ reviewer 只需要**读 + 跑验证**的能力，不需要写权限。给 review
 ```
 
 > ⚠️ 以上仅是**可选参考示例**。权限模型因 CLI 而异；且无论示例还是最终配置，都是**在你的用户侧（你自己带的 CLI 配置）生效，coherd 不加载不校验**。配错了、被绕过了，自负。
+
+## 内部 task 纪律
+
+用自带 task 工具（如 TaskCreate/TaskList/TaskUpdate）锁审查目标、防中断丢失：
+
+- **收到交审/revise → 先 TaskCreate 记录**（subject=任务名，description=审查 DoD/objective），再动工。
+- **干完 → TaskUpdate=completed**，之后才 push 审查结论回执（回执仍走 §2 事件驱动铁律）。
+- **中断恢复**（idle 唤醒 / 新 session）→ 先 TaskList 查未 completed 任务，续上再动新活。
+- **预算≠完成**：token/时间告急不是完成理由，未完成如实上报 coordinator，保持任务激活。
 
 其他 CLI 的等价做法：只允许只读工具与白名单验证命令，禁止编辑类工具与危险 shell 命令。
 

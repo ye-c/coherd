@@ -38,6 +38,15 @@ reviewer `approve` 后 coordinator 的收尾动作（不代审不代改）：
 2. 整合为交付：产出物索引 + 审查结论 + 需用户知晓的取舍/风险。
 3. 以 `[coordinator]:` 上报用户；报告共性：证据完整、格式与用户要求一致、结论先行。
 
+## 内部 task 纪律
+
+用自带 task 工具（如 TaskCreate/TaskList/TaskUpdate）锁分派目标、防中断丢失（CONTRACT §3 tracker 之外的本地位）：
+
+- **收到意图/分派 → 先 TaskCreate 记录**（subject=任务名，description=objective/DoD），再动工。
+- **干完/交付 → TaskUpdate=completed**，之后才 push 回执（回执仍走 §2 事件驱动铁律）。
+- **中断恢复**（idle 唤醒 / 新 session）→ 先 TaskList 查未 completed 任务，续上再动新活。
+- **预算≠完成**：token/时间告急不是完成理由，未完成如实上报，保持任务激活。
+
 ## 与其他角色交互
 
 - **流入**：用户意图（无前缀消息）、reviewer 审查结论（`[reviewer]:`，approve/revise）。

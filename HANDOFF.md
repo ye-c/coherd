@@ -249,13 +249,24 @@ uv add typer && uv sync
 
 | 轮 | 做 | 验证 |
 | --- | --- | --- |
-| **R1** | CONTRACT 补丁（§2/§3/§4/§7/§9 +9 行）+ executor/reviewer 补丁（+3 行） | 契约文件 git diff 审查 |
+| **R1** ✅已完成 | CONTRACT 补丁（§2/§3/§4/§7/§9）+ executor/reviewer 补丁 + 议题1 task 纪律节 | 契约文件 git diff 审查 |
 | **R2** | pyproject + cli.py + tracker.py + id_gen.py（task new/list/show/archive） | `coherd task new` 生成 valid tracker、`list` 可见、`show` 打印 |
 | **R3** | install.sh 适配 uv + CLAUDE.md 护栏 | 重装后 `coherd task` 可用 |
 | **R4（下轮）** | `task status --set` 状态机 + bash bin/coherd 适配新 tracker 路径 | status 变更落 struct |
 | **不做** | bash→typer 统一入口（两入口是刻意设计） | — |
 
 ---
+
+## 5.5 R1 落地记录
+
+> **状态：已完成**（w2a 集群，2026-08-26）。revise 1 轮后 approve。
+
+- **改了什么**：`roles/` 下 CONTRACT.md / coordinator.md / executor.md / reviewer.md 纯文档补丁（已同步到 `~/.config/coherd/`）。
+- **CONTRACT.md**：三铁律（事件驱动 / 内容·信号分离 / push 格式，§2）；tracker 权威副本 + 自举过渡 + DoD 语义变更归 coord + 归档（§3/§4）；§7 收口见 §2。
+- **conduct 决策**：R1 只做契约补丁，不做 CLI / 不装依赖 / 不动 bin/install.sh。议题1 一并落地。
+- **共识修正**（revise 采纳）：①内容/信号分离措辞对齐 §9①（prompt 带短结构化信号+路径，结论正文落文件，不设绝对句）；②「executor 物理不可写」改「契约上不可写（运行时不强制，靠流程+对账)」，避免与能力分离声明矛盾；③补充自举过渡：CLI 落地前 coordinator 手写 tracker、`<id>`=任务名、目录由首写方 mkdir -p 兜底；④§7 删重复只留引用。
+- **reviewer 交付物**不留挡板：revise 4 处全修，approve。
+- **此后可直接做 R2**（CLI：pyproject + cli.py + tracker.py + id_gen.py）。
 
 ## 6. 未决/下轮
 

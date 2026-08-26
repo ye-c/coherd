@@ -33,6 +33,9 @@
 ## 2. 通信协议
 
 - 有来有往: 收到 peer 消息（`[<role>]:` 前缀）即产生 push back 义务——回复 = `herdr agent prompt` 送达发起方, 非 pane 内自答; pane 内答了不 push = 未完成。问询/讨论型消息同样触发, 调查中可回状态级（"收到, 调查中"）, 不必等结论齐。回复义务按任务闭环计, 不按消息条数计; 同一任务重发或纯 ack 不产生新义务。**作用域: 任务交互过程（分派→执行→交审→结论回流）; 启动 standby 握手不在内（见 §7）。**
+- **事件驱动铁律**：做事的 agent 完成动作后，主动 `herdr agent prompt` push 对端。**不等待、不轮询、不靠对端 read 探活；不 push = 任务未完成。**
+- **内容/信号分离**：prompt 只送短结构化信号 + 路径指针（approve 要点 / revise 摘要 ≤ 一句），结论正文与完整论证落文件。文件是内容载体（持久锚点、天然 EOF、可校验），prompt 是事件信号。完整结论格式见 §9 ①。
+- **push 格式**：`[<role>]: <信号> <任务名> — 详见 <文件绝对路径>`
 - agent 间用 `herdr agent prompt <name> "<消息>"` 通信；读取用 `herdr agent read <name>`。
 - 发 prompt 不用 --wait/--timeout: 分派即发(fire-and-forget), 转 idle 等 peer 主动上报(§7)。--wait 超时路径会 abort-but-delivered, 重发致消息堆积/死循环; 需确认状态用 herdr agent read, 不重发。
 - 防重复成环: 疑似未达先 herdr agent read 查证据; 有证据即停, 无证据可重发 1 次; 仍无果上报 coordinator 仲裁。
@@ -65,6 +68,9 @@ coordinator→executor 每条任务**必须**包含以下 4 字段，缺失即�
 ```
 
 约定：字段缺失 → executor 先向 coordinator 补齐再动工；模糊分派导致的重复/遗漏由分派方负责。
+- **tracker 权威副本**：分派前 coordinator 把 4 字段落盘 `~/.config/coherd/tasks/<ws>/<id>.md`，executor 契约上不可写（运行时不强制，靠流程保障 + 事后对账，见 §5）。
+- **自举过渡（CLI 落地前）**：tracker/reviews/archive 统一路径 `~/.config/coherd/{tasks,reviews,archive}/<ws>/<id>.md`，`<id>` 取任务名；目录由首写方 `mkdir -p` 兜底；`coherd task` CLI 就绪后接管路径与 `<id>` 生成（HANDOFF §3）。
+- executor **先读 tracker 再动工**；产出写 tracker「输出」字段指定路径。
 
 ## 4. 审查义务与循环（B）
 
@@ -80,6 +86,8 @@ reviewer **最小审查集**（每次审查必做）：
 - `revise` → 退回 executor 修订 → 重新提交 reviewer。
 - **revise 上限 2 轮**：仍不通过 → 升级 coordinator 仲裁（改判 / 拆任务 / 终止）。
 - 角色分离是架构核心：同一推理路径既写码又自评必失败，reviewer 不得代改被审产出，问题一律退回 executor。
+- **DoD 语义变更归 coordinator**：revise 若改动 DoD 验收标准（非实现级修订），必经 coordinator 更新 tracker，不走 rev→exe→rev 直通绕过。
+- **归档**：approve 后 coordinator 把 tracker + 审查结论归档到 `~/.config/coherd/archive/<ws>/`。
 
 ## 5. 工具白名单（C）
 
@@ -99,6 +107,7 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 - **待机动作界外声明**：任一环执行完毕、无下一环时（如 executor 交审且 reviewer approve 后、coordinator 交付后），直接 **转 idle 待机**；`herdr agent prompt` 会自动唤醒 idle 待机者，peer 无需 sleep 阻塞或轮询消息。`herdr agent read` 仅用于核对状态/查证据，**不作轮询等待**（详见 executor.md「待机」节）。
 - executor/reviewer 启动后读 CONTRACT.md 确认身份, 向 coordinator 发一次 `[<role>]: standby` 上报（§0 standby/握手）, 随即**转 idle 待机**（herdr 层 pane 挂起; 非 agent CLI 层 hub-wait 等机制, 见 §0 idle）; coordinator 收到两份上报后判集群起步就绪, 自身转 idle 待机后开始按用户意图分派, 之后全程事件驱动(§7 下条)。**此握手单向、一次性、不触发 §2 回复义务**——coordinator 不回"收到", exec/rev 不等回复。coordinator 不轮询(§0)、不检测 exec/rev 状态; 未收到上报也不追究、不重发——沉默即故障信号, 用户自然察觉。
 - executor 完成 → 直接提交 reviewer 审查（reviewer 读产物 / `herdr agent read` 验证），结论 approve/revise 回流 coordinator；阻塞 → 上报 coordinator（原因 + 已尝试手段）；revise 循环 rev→exe→rev 不经 coordinator，超 §4 上限（2 轮）才介入仲裁。
+- push 内容遵循 §2 三铁律（见 §2）；pane 输出退化为辅助。
 
 ## 9. token 控制
 
@@ -107,6 +116,6 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 **三块核心条款**：
 
 - **① 通信精简**：结论结构化——`approve: <理由要点>` / `revise: <问题清单逐条>`；agent 间消息用要点式，避免叙述铺陈。executor 交审消息**底线**：保 DoD + 输出路径 + 关键取舍一句，不可瘦到只剩路径。
-- **② 输入端控制**（token 大头）：消息引用路径不贴大文件正文；交审附 `git diff` 范围，reviewer 只读变更行；长任务串轮换 session，防上下文膨胀。
+- **② 输入端控制**（token 大头）：消息引用路径不贴大文件正文；交审附 `git diff` 范围，reviewer 只读变更行；长任务串轮换 session，防上下文膨胀。**文件交互降 token**：结论/产物落文件，push 只送路径指针，peer 按需读，避免整段折入消息。
 - **③ revise 循环最贵**：一次返工消耗 > 一切通信压缩的收益；投资分派质量（清晰 objective / 可测 DoD / 精确边界）优先于压缩单条消息。
 - **④ 规模缩放判据**：简单任务跳过 reviewer 全链路须**同时满足** ≤2 文件改动 + 无安全/正确性敏感面；任一不满足 → 必走 executor → reviewer → coordinator 全链路（判据出处与决策细节见 coordinator.md `§6`）。
