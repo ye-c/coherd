@@ -23,6 +23,18 @@
 set -euo pipefail
 
 bash -n "$0" # 启动自检: 本脚本语法错误即由 set -e 早退, 避免半路挂起
+# ── 0. coherd task → re-exec 到 venv typer CLI（两入口同名; A 方案: launcher 收编 task 为子命令）──
+# 置于最顶部 (herdr/jq 检查前): 纯数据 CRUD 不被 launcher runtime 依赖卡死; 且须在 REPO="${1:-$PWD}" 前
+# 截获, 防 "task" 被误当 REPO 路径 cd。re-exec 用 repo 根 .venv (install.sh 建), 缺则指引装 install.sh。
+HERE_BIN="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")" && pwd)"
+if [ "${1:-}" = "task" ]; then
+  VENV_COHERD="$HERE_BIN/../.venv/bin/coherd"
+  if [ ! -x "$VENV_COHERD" ]; then
+    echo "coherd: 未找到 .venv/bin/coherd — 先跑 install.sh (装 coherd task CLI)" >&2
+    exit 1
+  fi
+  exec "$VENV_COHERD" "$@"
+fi
 
 # 帮助: 首参为 -h/--help 时打印 usage 后退出, 不触发后续 cd(否则 --help 会被当目录)
 show_usage() { # 精简 usage (不吐整个文件头源码)

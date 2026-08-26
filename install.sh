@@ -90,6 +90,8 @@ cat <<'EOF'
 EOF
 
 # ── 安装 Python task CLI（uv sync; 建 .venv + 装 deps + 项目, 参照 tallyman）──
+# 锚 repo 根 ($HERE = install.sh 所在目录): 从任意 cwd 跑 install.sh, .venv 都建在 repo 根
+# (bin/coherd task re-exec 依赖 $HERE_BIN/../.venv, 见 bin/coherd §0)
 command -v uv >/dev/null || die "未找到 uv — coherd task CLI 依赖。安装: https://docs.astral.sh/uv/ (或 brew install uv)"
 (cd "$HERE" && uv sync)
 info "已 uv sync — .venv 就绪, coherd task CLI 可用了"

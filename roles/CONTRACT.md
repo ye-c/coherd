@@ -101,6 +101,30 @@ reviewer **最小审查集**（每次审查必做）：
 
 executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限收紧由用户 CLI 配置负责（同 reviewer 见 roles/reviewer.md）。
 
+## CLI 集成（数据契约 + 滑坡护栏）
+
+> **CLI 只做文件 CRUD + 格式校验，永不做角色决策**（分派/审查/判断）。coherd typer 是数据管理工具，
+> 不绑特定 agent CLI，不是 agent 编排引擎。本节只写「CLI 命令 ↔ tracker 文件操作」的**数据映射**，
+> 不写「角色在何时调用哪个命令」的编排语义——那是各 per-role 文档「内部 task 纪律」的职责
+> （reviewer.md 已有 agent 自带 TaskCreate/TaskUpdate 纪律一节，注意与 coherd task CLI 区分）。
+
+**tracker 权威路径**：`~/.config/coherd/tasks/<ws>/<id>.md`（frontmatter 权威 schema + 自由 body）。
+
+| CLI 命令 | 文件操作 | 数据含义 |
+| ------ | ------ | ------ |
+| `coherd task new` | 建 tasks/<ws>/<id>.md（id 自动生成 <ws>-<UTC日>-<序号>，查重防注入） | 创建任务记录 |
+| `coherd task list` | 列 tasks/<ws>/ 下 tracker 摘要（可按 --ws / --status 过滤） | 只读枚举 |
+| `coherd task show <ID>` | 打印完整 tracker（frontmatter + body） | 只读查看 |
+| `coherd task status <ID> --set <s>` | 改 frontmatter 的 status 字段（非法值拒绝，ID 不存在报错） | 更新状态 |
+| `coherd task archive <ID>` | 移 tracker 到 archive/<ws>/<id>.md | 归档（移出活跃区） |
+
+**status 枚举 `pending | active | done` 的数据含义**：是 tracker 记录本身的**记录态**（这条任务记录处于
+什么生命周期），**不是角色协作阶段**（不是「分派/审查中/已交付」的协作阶段机）。reviewer 的 approve/revise
+结论、coordinator 的交付，均不映射到 status。
+
+**反例自检**：某契约条文若删掉后，CLI 的 CRUD 能力不变、只丢失「角色该不该在此时刻调用该命令」的约定，
+即为编排语义，**不进本公共契约**——归 per-role 文档「内部 task 纪律」。
+
 ## 7. 事件驱动交接
 
 - 基于 herdr idle/done 事件交接：上一环完成 → 下一环主动拉取（`herdr agent read`）。
