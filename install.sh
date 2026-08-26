@@ -9,12 +9,15 @@ BIN_DIR="${HOME}/.local/bin"
 CFG_DIR="${HOME}/.config/coherd"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
-die()  { echo "install.sh: $*" >&2; exit 1; }
+die() {
+  echo "install.sh: $*" >&2
+  exit 1
+}
 info() { echo "install.sh: $*"; }
 
 # ── 前置依赖检查 (硬阻断: 缺则 die + 安装指引, 不自动装不碰 brew) ──
 command -v herdr >/dev/null || die "未找到 herdr — coherd 的运行时依赖。安装: brew install herdr (或见 herdr.dev); 配置见 docs/configuration.md"
-command -v jq    >/dev/null || die "未找到 jq — 安装: brew install jq / apt install jq; 配置见 docs/configuration.md"
+command -v jq >/dev/null || die "未找到 jq — 安装: brew install jq / apt install jq; 配置见 docs/configuration.md"
 
 # ── 安装 bin/coherd (symlink → repo; repo 更新即时反映, 免重跑) ──
 [ -f "$HERE/bin/coherd" ] || die "缺失 $HERE/bin/coherd (请在 repo 内运行 install.sh)"
@@ -26,7 +29,7 @@ if [ -e "$BIN_DIR/coherd" ] && [ ! -L "$BIN_DIR/coherd" ]; then
 fi
 # target 用绝对路径(symlink 以 link 所在目录解析, 相对路径会断); 已是 symlink 直接重指不备份
 ln -sf "$HERE/bin/coherd" "$BIN_DIR/coherd"
-chmod +x "$HERE/bin/coherd"   # 幂等: 确保 target 可执行(不 chmod symlink 本身)
+chmod +x "$HERE/bin/coherd" # 幂等: 确保 target 可执行(不 chmod symlink 本身)
 info "已安装 $BIN_DIR/coherd → $HERE/bin/coherd (symlink)"
 
 # ── 拷贝契约文件 (CONTRACT.md + 4 per-role) ──
@@ -85,3 +88,8 @@ cat <<'EOF'
      都未设置时, coherd 回退找 PATH 中的 pi / omp / cc
   3. 起飞: coherd [REPO] [LABEL]
 EOF
+
+# ── 安装 Python task CLI（uv sync; 建 .venv + 装 deps + 项目, 参照 tallyman）──
+command -v uv >/dev/null || die "未找到 uv — coherd task CLI 依赖。安装: https://docs.astral.sh/uv/ (或 brew install uv)"
+(cd "$HERE" && uv sync)
+info "已 uv sync — .venv 就绪, coherd task CLI 可用了"

@@ -1,0 +1,1 @@
+"""coherd — 多 agent 协作集群任务管理（tracker CLI）。"""

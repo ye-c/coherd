@@ -6,3 +6,10 @@
 # agent 指令文件 (本机私有, 不提交)
 /AGENTS.md
 /CLAUDE.md
+# Python 工程（pyproject + src 布局, 对齐 tallyman）
+__pycache__/
+*.py[cod]
+.venv/
+build/
+dist/
+*.egg-info/

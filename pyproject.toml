@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "coherd"
+version = "0.1.0"
+description = "coherd 多 agent 协作集群：任务管理 CLI（tracker CRUD）"
+requires-python = ">=3.10"
+dependencies = [
+    "typer",
+]
+
+[project.scripts]
+coherd = "coherd.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -275,7 +275,8 @@ _role_doc() { # role 名 → per-role 契约文档路径 (安装目录)
     reviewer)    printf '%s' "$HOME/.config/coherd/reviewer.md" ;;
   esac
 }
-_brief() { printf '你是%s。你的 herdr agent 名: %s。集群公共契约见 @%s (先读), 角色执行细节见 @%s (先读)。确认身份后发 standby 握手 (事件) 并转 idle 待机, 按收到的消息行动。' "$1" "$2" "$CONTRACT" "$(_role_doc "$1")"; }
+TRACKER_DIR="$HOME/.config/coherd/tasks/$WS_SLUG"
+_brief() { printf '你是%s。你的 herdr agent 名: %s。集群公共契约见 @%s (先读), 角色执行细节见 @%s (先读), 任务 tracker 目录见 %s (分派/审查结论落文件)。确认身份后发 standby 握手 (事件) 并转 idle 待机, 按收到的消息行动。' "$1" "$2" "$CONTRACT" "$(_role_doc "$1")" "$TRACKER_DIR"; }
 # 送达确认: 用 state_change_seq 有界重投递。先取三角色基线 seq (agent get 失败→空串),
 # 每轮 sleep BRIEF_GRACE 后重读 seq; 涨=已消费跳过, 未涨且非 blocked → send-keys enter 补提交
 # (只提交不重发 brief 文本, 防双处理); 最多 2 轮宽限, 到期仍无变化 → WARN 不 die
