@@ -1,8 +1,9 @@
-"""coherd.herdr_client — herdr socket 短连接请求-响应客户端（共享 helper）。
+"""coherd.client — herdr socket 短连接请求-响应客户端（共享 helper）。
 
 把 watch.enum_panes 的 socket connect + 流读完整 JSON 响应抽成模块级 helper，
 push 的 role 自派生末级 fallback 同源复用，避免在两个消费者里复制 socket 代码。
 """
+
 from __future__ import annotations
 
 import json
@@ -34,8 +35,7 @@ def agent_list(socket_path: str) -> list:
     try:
         s.connect(socket_path)
         req = json.dumps(
-            {"jsonrpc": "2.0", "id": "cli_list", "method": "agent.list",
-             "params": {}}
+            {"jsonrpc": "2.0", "id": "cli_list", "method": "agent.list", "params": {}}
         )
         s.sendall(req.encode("utf-8") + b"\n")
         line = _recv_full_json(s)

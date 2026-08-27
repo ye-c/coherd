@@ -11,6 +11,7 @@
 
 不依赖 watcher 存活（不变量 1）：只 append 日志，watcher 挂时 push 仍可用。
 """
+
 from __future__ import annotations
 
 import json
@@ -22,8 +23,8 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .client import agent_list
 from .tracker import CONFIG_HOME
-from .herdr_client import agent_list
 
 # 全局账本（spec §6）：每行 JSON 带 ws 字段，单例 watcher 跨 ws 分桶
 DEFAULT_LOG = CONFIG_HOME / "push-events.log"
@@ -67,8 +68,9 @@ def make_msg_id() -> str:
     return f"{time.time_ns()}-{uuid.uuid4().hex[:8]}"
 
 
-def make_event(op: str, ws: str, from_: str, to: str, msg_id: str,
-               ts: str | None = None) -> dict:
+def make_event(
+    op: str, ws: str, from_: str, to: str, msg_id: str, ts: str | None = None
+) -> dict:
     """账本事件 dict（字段序 op,ws,from,to,msg_id,ts，与 spec §4 一致）。"""
     return {
         "op": op,
@@ -97,18 +99,25 @@ def send_prompt(peer_agent: str, msg: str) -> bool:
     try:
         proc = subprocess.run(
             ["herdr", "agent", "prompt", peer_agent, msg],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         return proc.returncode == 0
     except (subprocess.SubprocessError, FileNotFoundError, OSError):
         return False
 
 
-def run(peer_agent: str, msg: str, *,
-        ws: str | None = None, role: str | None = None,
-        log_path: Path | None = None,
-        sender: Sender = send_prompt,
-        self_role_fn: Callable[[], str | None] | None = None) -> dict:
+def run(
+    peer_agent: str,
+    msg: str,
+    *,
+    ws: str | None = None,
+    role: str | None = None,
+    log_path: Path | None = None,
+    sender: Sender = send_prompt,
+    self_role_fn: Callable[[], str | None] | None = None,
+) -> dict:
     """push 主流程：① 派生（env → 显参 → 报错）② 记账 ③ 送达。
 
     - 日志先行：append 成功即记账完成，后续送达失败不丢行。
@@ -132,7 +141,9 @@ def run(peer_agent: str, msg: str, *,
         if name:
             resolved_role = derive_role(name, resolved_ws)
     if not resolved_role:
-        raise ValueError("无法派生 role：未提供 --role，且 COHERD_ROLE / HERDR_AGENT_NAME / agent.list 均缺")
+        raise ValueError(
+            "无法派生 role：未提供 --role，且 COHERD_ROLE / HERDR_AGENT_NAME / agent.list 均缺"
+        )
 
     peer_role = derive_role(peer_agent, resolved_ws)
 
