@@ -85,11 +85,12 @@ class Ledger:
         ws, f, t = rec.get("ws"), rec.get("from"), rec.get("to")
         if op != "send" or not (ws and f and t):
             return
-        # 反向清账：F 曾欠 T，现 F 发消息给 T → 已回执
+        # 反向清账：F 曾欠 T，现 F 发消息给 T → 已回执（无条件：F 的回应即清偿，回应是否期待再回执无关）
         if self.pending.get((ws, f)) == t:
             del self.pending[(ws, f)]
-        # 本消息：T 欠 F
-        self.pending[(ws, t)] = f
+        # 本消息：T 欠 F（仅期待回执的消息登记；--no-reply 上报不产生新欠）
+        if rec.get("expect_reply", True):
+            self.pending[(ws, t)] = f
 
     def replay(self, log_path: Path, from_offset: int) -> int:
         """从 from_offset 续读日志新行并 apply，返回新的 offset（日志当前大小）。

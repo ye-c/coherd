@@ -82,6 +82,29 @@ class ReplayTest(unittest.TestCase):
         l.replay(log, 0)
         self.assertEqual(l.owner("w2p", "reviewer"), "coordinator")
 
+    def test_no_reply_not_registered(self):
+        # expect_reply=False 上报（单向上报/回流）不登记新欠 → 无 pending
+        log = self._log([
+            json.dumps({"op": "send", "ws": "w2p", "from": "executor", "to": "reviewer",
+                        "msg_id": "1", "ts": "t", "expect_reply": False}),
+        ])
+        l = W.Ledger()
+        l.replay(log, 0)
+        self.assertIsNone(l.owner("w2p", "reviewer"))
+
+    def test_no_reply_reply_still_clears_pending(self):
+        # F 欠 T 遗账，F 用 --no-reply 回一条 → 仍清偿该账；该 --no-reply 本身不产生新欠
+        log = self._log([
+            json.dumps({"op": "send", "ws": "w2p", "from": "executor", "to": "reviewer",
+                        "msg_id": "1", "ts": "t"}),
+            json.dumps({"op": "send", "ws": "w2p", "from": "reviewer", "to": "executor",
+                        "msg_id": "2", "ts": "t", "expect_reply": False}),
+        ])
+        l = W.Ledger()
+        l.replay(log, 0)
+        self.assertIsNone(l.owner("w2p", "reviewer"))   # 遗账已清偿
+        self.assertIsNone(l.owner("w2p", "executor"))   # --no-reply 不产生新欠
+
 
 class DecideTest(unittest.TestCase):
     def test_no_owner_skip(self):

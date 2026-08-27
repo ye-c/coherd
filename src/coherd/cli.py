@@ -32,13 +32,15 @@ def push(
     msg: str = typer.Argument(..., help="消息，须带 [role]: 前缀（契约 §2）"),
     ws: str = typer.Option(None, "--ws", help="自身 ws 短号（缺省取 HERDR_WORKSPACE_ID 小写）"),
     role: str = typer.Option(None, "--role", help="自身 role（缺省从 COHERD_ROLE / agent 名派生）"),
+    no_reply: bool = typer.Option(False, "--no-reply",
+                                  help="单向上报/回流/ack/纯通知：不期待回执（watch 不登记 pending）"),
 ) -> None:
     """runtime 记账 wrapper + 送达：追 push-events.log + herdr agent prompt。
 
     把回执义务变成可观测账本；日志先行，送达失败不丢行（watch 兜底）。
     """
     try:
-        r = _push.run(peer_agent, msg, ws=ws, role=role)
+        r = _push.run(peer_agent, msg, ws=ws, role=role, expect_reply=not no_reply)
     except ValueError as e:
         _fatal(str(e))
     if r["delivered"]:

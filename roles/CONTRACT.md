@@ -133,6 +133,7 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 - executor 完成 → 直接提交 reviewer 审查（reviewer 读产物 / `herdr agent read` 验证），结论 approve/revise 回流 coordinator；阻塞 → 上报 coordinator（原因 + 已尝试手段）；revise 循环 rev→exe→rev 不经 coordinator，超 §4 上限（2 轮）才介入仲裁。
 - push 内容遵循 §2 三铁律（见 §2）；pane 输出退化为辅助。
 - **记账边界（D10）**：`coherd push` 记入 `push-events.log` 账本，供 watcher 判 `pending` 兜底断链。**可判定锚点**：凡「§7 standby 握手（一次性，coordinator 不回）」或「watcher 发起的系统唤醒提醒」→ 用裸 `herdr agent prompt`（**不记账**，防 pending 残留/提醒成环）；**其余**一切 peer 间 `[<role>]:` 任务交互消息（分派 / 交审 / approve·revise / 讨论 / 回流）→ 一律 `coherd push`（记账）。一句话：任务交互记账、handshake 与系统提醒裸发。
+- **回执语义**：`coherd push` 缺省**期待回执**（watch 登记 pending，防忘回执）；单向上报/回流/ack/纯通知用 `coherd push --no-reply`（不登记 pending，不产生新欠）。不标 --no-reply 的上报令收方永久欠账 → watch 误报。任务交互内再分两态：**期待回执（默认 push）** / **单向上报（--no-reply push）**；handshake 与系统提醒仍裸发不记账（不变）。
 
 ## 9. token 控制
 

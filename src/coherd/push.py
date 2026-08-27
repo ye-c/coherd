@@ -68,10 +68,9 @@ def make_msg_id() -> str:
     return f"{time.time_ns()}-{uuid.uuid4().hex[:8]}"
 
 
-def make_event(
-    op: str, ws: str, from_: str, to: str, msg_id: str, ts: str | None = None
-) -> dict:
-    """账本事件 dict（字段序 op,ws,from,to,msg_id,ts，与 spec §4 一致）。"""
+def make_event(op: str, ws: str, from_: str, to: str, msg_id: str,
+               ts: str | None = None, expect_reply: bool = True) -> dict:
+    """账本事件 dict（字段序 op,ws,from,to,msg_id,ts,expect_reply，与 spec §4/§6 一致）。"""
     return {
         "op": op,
         "ws": ws,
@@ -79,6 +78,7 @@ def make_event(
         "to": to,
         "msg_id": msg_id,
         "ts": ts or datetime.now(timezone.utc).isoformat(),
+        "expect_reply": expect_reply,  # 缺省期待回执；--no-reply 上报置 False
     }
 
 
@@ -108,16 +108,12 @@ def send_prompt(peer_agent: str, msg: str) -> bool:
         return False
 
 
-def run(
-    peer_agent: str,
-    msg: str,
-    *,
-    ws: str | None = None,
-    role: str | None = None,
-    log_path: Path | None = None,
-    sender: Sender = send_prompt,
-    self_role_fn: Callable[[], str | None] | None = None,
-) -> dict:
+def run(peer_agent: str, msg: str, *,
+        ws: str | None = None, role: str | None = None,
+        log_path: Path | None = None,
+        sender: Sender = send_prompt,
+        self_role_fn: Callable[[], str | None] | None = None,
+        expect_reply: bool = True) -> dict:
     """push 主流程：① 派生（env → 显参 → 报错）② 记账 ③ 送达。
 
     - 日志先行：append 成功即记账完成，后续送达失败不丢行。
@@ -148,7 +144,8 @@ def run(
     peer_role = derive_role(peer_agent, resolved_ws)
 
     # ② 记账（O_APPEND，日志先行）
-    event = make_event("send", resolved_ws, resolved_role, peer_role, make_msg_id())
+    event = make_event("send", resolved_ws, resolved_role, peer_role, make_msg_id(),
+                       expect_reply=expect_reply)
     line = event_line(event)
     path = log_path or DEFAULT_LOG
     append_event(path, line)

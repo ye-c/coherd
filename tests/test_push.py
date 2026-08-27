@@ -124,8 +124,11 @@ class AppendFormatTest(unittest.TestCase):
                           ts="2026-08-27T00:00:00Z")
         line = P.event_line(ev)
         self.assertEqual(json.loads(line), ev)
-        # 字段序与 spec §4 一致
-        self.assertEqual(list(ev.keys()), ["op", "ws", "from", "to", "msg_id", "ts"])
+        # 字段序与 spec §4/§6 一致
+        self.assertEqual(list(ev.keys()),
+                         ["op", "ws", "from", "to", "msg_id", "ts", "expect_reply"])
+        # 缺省期待回执
+        self.assertTrue(ev["expect_reply"])
 
     def test_append_writes_single_json_line(self):
         path, cleanup = _tmp_log()
