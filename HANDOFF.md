@@ -37,7 +37,7 @@
 | --- | --- | --- |
 | `tasks/<ws>/` | 活动 tracker | 文件名 = id = `<ws>-<YYYYMMDDHHMMSS>` |
 | `archive/<ws>/` | 已完成 tracker | `coherd task archive` 原样 rename（文件名=id 不变），**只放 tracker，不放 review** |
-| `reviews/<ws>/` | 审查/讨论结论 | `<approve | revise | discuss>-<taskid>.md`（前缀保留态，后缀关联任务 id；同任务 approve+revise 靠前缀区分不撞名） |
+| `reviews/<ws>/` | 审查/讨论结论 | `{verdict}-<taskid>-<HHMMSS>.md`（verdict=approve/revise/discuss；verdict+秒戳双编码，多轮不撞、最新态=秒戳最大） |
 
 - 归档 tracker 重命名 = 同步改 frontmatter `id`（须=文件名）+ 补 `created_at`。
 - 已归档历史（w2a/w2c/w2e）已全量统一成此规范（语义名如 `r2-task-cli`/`R1` 已弃，改秒戳）。
