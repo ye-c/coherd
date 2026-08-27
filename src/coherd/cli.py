@@ -12,6 +12,7 @@ import typer
 
 from . import push as _push
 from . import tracker as T
+from . import watch as _watch
 from .id_gen import next_id
 
 app = typer.Typer(name="coherd", help="coherd 多 agent 协作集群：任务管理 CLI",
@@ -48,6 +49,20 @@ def push(
             f"- watch 将兜底提醒；日志 {r['log_path']}",
             err=True,
         )
+
+
+@app.command(name="watch")
+def watch(
+    ws: str = typer.Option(None, "--ws", help="ws 短号（缺省取 COHERD_WS / 事件 workspace_id）"),
+    escalate_agent: str = typer.Option(
+        None, "--escalate-agent", help="escalate 投递目标（缺省 = 本 ws coordinator）"),
+) -> None:
+    """单例断链兜底 watcher：订阅 idle 事件，pending 未清则提醒/升级（前台长驻）。"""
+    w = _watch.Watch(ws=ws, escalate_agent=escalate_agent)
+    try:
+        w.run()
+    except RuntimeError as e:
+        _fatal(str(e))
 
 
 @task_app.command()
