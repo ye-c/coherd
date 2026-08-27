@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import queue
@@ -29,8 +30,8 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
+from .client import agent_list
 from .tracker import CONFIG_HOME
 
 # 事件常量
@@ -166,8 +167,6 @@ def decide(
     return SKIP, count, last_remind
 
 
-
-
 def derive_role(agent_name: str, ws: str) -> str:
     """agent 名去 `${ws}-` 前缀取 role（如 `w2p-reviewer`→`reviewer`）。
 
@@ -175,7 +174,7 @@ def derive_role(agent_name: str, ws: str) -> str:
     本模块自足避免循环依赖。
     """
     prefix = f"{ws}-"
-    return agent_name[len(prefix):] if agent_name.startswith(prefix) else agent_name
+    return agent_name.removeprefix(prefix)
 
 
 def role_from_event(data: dict, ws: str) -> str | None:
@@ -210,18 +209,20 @@ class Watch:
     escalate_agent: str | None = None
     throttle: float = THROTTLE_SECONDS
     queue_max: int = QUEUE_MAX
-    counts: dict[str, int] = field(default_factory=dict)   # pane -> remind count
+    counts: dict[str, int] = field(default_factory=dict)  # pane -> remind count
     last_remind: dict[str, float] = field(default_factory=dict)
-    panes: dict[str, str] = field(default_factory=dict)    # pane_id -> role
-    agents: dict[str, str] = field(default_factory=dict)   # pane_id -> agent 全名
+    panes: dict[str, str] = field(default_factory=dict)  # pane_id -> role
+    agents: dict[str, str] = field(default_factory=dict)  # pane_id -> agent 全名
     ledger: Ledger = field(default_factory=Ledger)
     stop: bool = False
 
     def __post_init__(self):
         if self.ws is None:
-            self.ws = (os.environ.get("COHERD_WS")
-                       or os.environ.get("HERDR_WORKSPACE_ID", "").lower()
-                       or "")
+            self.ws = (
+                os.environ.get("COHERD_WS")
+                or os.environ.get("HERDR_WORKSPACE_ID", "").lower()
+                or ""
+            )
         if self.socket_path is None:
             self.socket_path = os.environ.get("HERDR_SOCKET_PATH")
         if self.sender is None:
@@ -258,7 +259,9 @@ class Watch:
         if not self.socket_path:
             raise RuntimeError("HERDR_SOCKET_PATH 未设置，无法订阅 herdr 事件")
         if not self.ws:
-            raise RuntimeError("无法派生 ws：未提供 --ws，且 COHERD_WS / HERDR_WORKSPACE_ID 均缺")
+            raise RuntimeError(
+                "无法派生 ws：未提供 --ws，且 COHERD_WS / HERDR_WORKSPACE_ID 均缺"
+            )
         if not self.acquire_pid_lock():
             raise RuntimeError("已有 watch 实例运行（pid 锁占用），拒绝并发第二实例")
 
@@ -284,7 +287,6 @@ class Watch:
             self.release_pid_lock()
         return 0
 
-        
     def _connect_socket(self):
         """建事件的订阅连接（长连接，读事件流）。
 
@@ -295,6 +297,7 @@ class Watch:
         请求-响应短连接（响应后服务端关闭），订阅是唯一长连接，故枚举不走本连接。
         """
         panes = self.enum_panes()
+        assert self.socket_path is not None  # run() 启动前已校验非空
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         s.connect(self.socket_path)
         subscriptions: list[dict] = [{"type": "pane.created"}]
@@ -321,24 +324,9 @@ class Watch:
         """
         if not self.socket_path:
             return []
-        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        s.connect(self.socket_path)
-        try:
-            req = json.dumps(
-                {"jsonrpc": "2.0", "id": "watch_list", "method": "agent.list",
-                 "params": {}}
-            )
-            s.sendall(req.encode("utf-8") + b"\n")
-            line = self._recv_full_json(s)
-            agents = (line.get("result") or {}).get("agents") or []
-            return self.build_pane_map(agents, self.ws or "")
-        except Exception:
-            return []
-        finally:
-            try:
-                s.close()
-            except OSError:
-                pass
+        # 同源复用共享 helper：socket connect + 流读 JSON 响应在 client.agent_list
+        agents = agent_list(self.socket_path)
+        return self.build_pane_map(agents, self.ws or "")
 
     def build_pane_map(self, agents: list, ws: str) -> list[str]:
         """纯函数：从 agent.list 的 agents 载荷建映射，返回 pane_id 列表（P1）。
@@ -358,19 +346,6 @@ class Watch:
             self.panes[pane] = derive_role(name, ws or "")
         return list(self.panes.keys())  # 只列成功建映射的 pane（name+pane_id 齐全）
 
-    @staticmethod
-    def _recv_full_json(sock) -> dict:
-        """读请求-响应短连接的完整 JSON 响应（到 EOF）。"""
-        buf = b""
-        while True:
-            chunk = sock.recv(8192)
-            if not chunk:
-                break
-            buf += chunk
-        try:
-            return json.loads(buf.split(b"\n", 1)[0])
-        except (json.JSONDecodeError, IndexError):
-            return {}
     def _read_loop(self, sock, q: queue.Queue) -> None:
         """读线程：逐行解析 socket 事件，入有界队列；队列满则丢弃（限流）。"""
         buf = b""
@@ -409,7 +384,7 @@ class Watch:
         data = ev.get("data") or {}
         if data.get("agent_status") != IDLE:
             return
-        ws = data.get("workspace_id", "").lower()
+        ws = data.get("workspace_id", "").lower() or self.ws or ""
         # 跨 ws 分桶：只处理本 watcher 关注 ws（粗订阅全部，此处过滤）
         if self.ws and ws and ws != self.ws:
             return
@@ -419,7 +394,7 @@ class Watch:
             # P1：事件载荷无 role 名（agent=CLI 标签）。新 pane 未入映射 →
             # 重拉 agent.list 重建（pane.created 补发现闭环），再兜底 role_from_event
             self.enum_panes()
-            role = self.panes.get(pane) or role_from_event(data, ws or self.ws)
+            role = self.panes.get(pane) or role_from_event(data, ws)
         if not role:
             return
         self.panes[pane] = role
@@ -428,11 +403,14 @@ class Watch:
         self.ledger.offset = self.ledger.replay(self.log_path, self.ledger.offset)
         save_state(self.state_path, self.ledger.offset)
 
-        owner = self.ledger.owner(ws or self.ws, role)
+        owner = self.ledger.owner(ws, role)
         now = time.monotonic()
         action, count, last = decide(
-            owner, self.counts.get(pane, 0), self.last_remind.get(pane, 0.0),
-            now, self.throttle,
+            owner,
+            self.counts.get(pane, 0),
+            self.last_remind.get(pane, 0.0),
+            now,
+            self.throttle,
         )
         self.counts[pane] = count
         self.last_remind[pane] = last
@@ -448,18 +426,18 @@ class Watch:
         if not peer:
             peer = f"{self.ws}-{role}" if self.ws else role
         msg = f"[watch] {REMIND_TMPL.format(sender=owner).rstrip()}（pane={pane} idle 未回执）"
-        try:
-            self.sender(peer, msg)
-        except Exception:
-            pass  # 提醒失败不致命：账本仍在，下轮事件会再判
+        # 提醒失败不致命：账本仍在，下轮事件会再判
+        send = self.sender
+        if send:
+            with contextlib.suppress(Exception):
+                send(peer, msg)
 
     def _escalate(self, pane: str, role: str, owner: str) -> None:
         """动作：升级到 coordinator / 用户（写 stderr 兜底报用户可见）。"""
         target = self.escalate_agent or (f"{self.ws}-coordinator" if self.ws else None)
         msg = ESCALATE_TMPL.format(receiver=role, sender=owner)
-        if target:
-            try:
-                self.sender(target, msg)
-            except Exception:
-                pass
+        send = self.sender
+        if target and send:
+            with contextlib.suppress(Exception):
+                send(target, msg)
         print(f"{msg}（pane={pane}）", file=sys.stderr)

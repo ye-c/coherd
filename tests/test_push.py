@@ -8,6 +8,7 @@ import threading
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest import mock
 
 from coherd import push as P
 
@@ -24,7 +25,8 @@ def _tmp_log() -> tuple[Path, object]:
 class EnvMixin:
     """保存/恢复涉及的 env 变量。"""
 
-    KEYS = ("HERDR_WORKSPACE_ID", "COHERD_ROLE", "HERDR_AGENT_NAME")
+    KEYS = ("HERDR_WORKSPACE_ID", "COHERD_ROLE", "HERDR_AGENT_NAME",
+            "HERDR_PANE_ID", "HERDR_SOCKET_PATH")
 
     def setUp(self):
         self._saved = {k: os.environ.get(k) for k in self.KEYS}
@@ -82,8 +84,38 @@ class DerivationTest(EnvMixin, unittest.TestCase):
         os.environ["HERDR_WORKSPACE_ID"] = "w2p"
         os.environ.pop("COHERD_ROLE", None)
         os.environ.pop("HERDR_AGENT_NAME", None)
+        # 末级 fallback 也无 socket env → 自派生无果 → raise（不撞真实 socket）
+        os.environ.pop("HERDR_PANE_ID", None)
+        os.environ.pop("HERDR_SOCKET_PATH", None)
         with self.assertRaises(ValueError):
             P.run("w2p-reviewer", "m", ws="w2p", role=None, log_path=path)
+
+    def test_self_role_fn_stub_derives_role(self):
+        """注入 self_role_fn（同 sender 模式）代替 agent.list fallback，零 env。"""
+        path, cleanup = _tmp_log()
+        self.addCleanup(cleanup)
+        for k in self.KEYS:
+            os.environ.pop(k, None)
+        r = P.run("w2t-reviewer", "m", ws="w2t", role=None, log_path=path,
+                  sender=_delivered, self_role_fn=lambda: "w2t-executor")
+        self.assertEqual(r["ws"], "w2t")
+        self.assertEqual(r["from"], "executor")   # fallback 返回 name → derive_role
+        self.assertEqual(r["to"], "reviewer")
+
+    def test_agent_list_fallback_hits(self):
+        """零 env 时 agent.list 按 pane_id 命中自身 name → 派生成功（不碰真实 socket）。"""
+        path, cleanup = _tmp_log()
+        self.addCleanup(cleanup)
+        for k in self.KEYS:
+            os.environ.pop(k, None)
+        os.environ["HERDR_PANE_ID"] = "w2T:p9"
+        os.environ["HERDR_SOCKET_PATH"] = "/tmp/fake.sock"
+        with mock.patch.object(P, "agent_list", return_value=[
+                {"name": "w2t-executor", "pane_id": "w2T:p9", "workspace_id": "w2t"},
+        ]):
+            r = P.run("w2t-reviewer", "m", ws="w2t", role=None, log_path=path,
+                      sender=_delivered)
+        self.assertEqual(r["from"], "executor")
 
 
 class AppendFormatTest(unittest.TestCase):

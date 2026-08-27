@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .tracker import CONFIG_HOME
+from .herdr_client import agent_list
 
 # 全局账本（spec §6）：每行 JSON 带 ws 字段，单例 watcher 跨 ws 分桶
 DEFAULT_LOG = CONFIG_HOME / "push-events.log"
@@ -41,6 +42,24 @@ def derive_role(agent_name: str, ws: str) -> str:
     """agent 名去 `${ws}-` 前缀取 role；无前缀则原样（libero/standalone 兜底）。"""
     prefix = f"{ws}-"
     return agent_name.removeprefix(prefix)
+
+
+def _self_role_from_pane_list() -> str | None:
+    """末级 fallback：agent.list 按 HERDR_PANE_ID 查自身 name。
+
+    集群 pane 内 launcher 不注入 COHERD_ROLE/HERDR_AGENT_NAME（bin/coherd §6），
+    故回退到 herdr 权威源 agent.list（复用 watch 已验证的 name+pane_id 链路）：
+    返回匹配 pane 的 agent name（如 `w2t-reviewer`），由 run() 再 derive_role。
+    无 pane/socket env 或未命中（libero/standalone）返回 None。
+    """
+    pane = os.environ.get("HERDR_PANE_ID")
+    sock = os.environ.get("HERDR_SOCKET_PATH")
+    if not (pane and sock):
+        return None
+    for a in agent_list(sock):
+        if a.get("pane_id") == pane:
+            return a.get("name")
+    return None
 
 
 def make_msg_id() -> str:
@@ -88,7 +107,8 @@ def send_prompt(peer_agent: str, msg: str) -> bool:
 def run(peer_agent: str, msg: str, *,
         ws: str | None = None, role: str | None = None,
         log_path: Path | None = None,
-        sender: Sender = send_prompt) -> dict:
+        sender: Sender = send_prompt,
+        self_role_fn: Callable[[], str | None] | None = None) -> dict:
     """push 主流程：① 派生（env → 显参 → 报错）② 记账 ③ 送达。
 
     - 日志先行：append 成功即记账完成，后续送达失败不丢行。
@@ -108,7 +128,11 @@ def run(peer_agent: str, msg: str, *,
         if owner:
             resolved_role = derive_role(owner, resolved_ws)
     if not resolved_role:
-        raise ValueError("无法派生 role：未提供 --role，且 COHERD_ROLE / HERDR_AGENT_NAME 均缺")
+        name = (self_role_fn or _self_role_from_pane_list)()
+        if name:
+            resolved_role = derive_role(name, resolved_ws)
+    if not resolved_role:
+        raise ValueError("无法派生 role：未提供 --role，且 COHERD_ROLE / HERDR_AGENT_NAME / agent.list 均缺")
 
     peer_role = derive_role(peer_agent, resolved_ws)
 
