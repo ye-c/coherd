@@ -23,18 +23,20 @@
 set -euo pipefail
 
 bash -n "$0" # 启动自检: 本脚本语法错误即由 set -e 早退, 避免半路挂起
-# ── 0. coherd task → re-exec 到 venv typer CLI（两入口同名; A 方案: launcher 收编 task 为子命令）──
-# 置于最顶部 (herdr/jq 检查前): 纯数据 CRUD 不被 launcher runtime 依赖卡死; 且须在 REPO="${1:-$PWD}" 前
-# 截获, 防 "task" 被误当 REPO 路径 cd。re-exec 用 repo 根 .venv (install.sh 建), 缺则指引装 install.sh。
+# ── 0. coherd task|push|watch → re-exec 到 venv typer CLI（同一 typer app, 三子命令; spec §7 D8）──
+# 置于最顶部 (herdr/jq 检查前): 纯数据 CRUD/记账/兜底不被 launcher runtime 依赖卡死; 且须在 REPO="${1:-$PWD}" 前
+# 截获, 防 "task"/"push"/"watch" 被误当 REPO 路径 cd。re-exec 用 repo 根 .venv (install.sh 建), 缺则指引装 install.sh。
 HERE_BIN="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")" && pwd)"
-if [ "${1:-}" = "task" ]; then
-  VENV_COHERD="$HERE_BIN/../.venv/bin/coherd"
-  if [ ! -x "$VENV_COHERD" ]; then
-    echo "coherd: 未找到 .venv/bin/coherd — 先跑 install.sh (装 coherd task CLI)" >&2
-    exit 1
-  fi
-  exec "$VENV_COHERD" "$@"
-fi
+case "${1:-}" in
+  task|push|watch)
+    VENV_COHERD="$HERE_BIN/../.venv/bin/coherd"
+    if [ ! -x "$VENV_COHERD" ]; then
+      echo "coherd: 未找到 .venv/bin/coherd — 先跑 install.sh (装 coherd task/push/watch CLI)" >&2
+      exit 1
+    fi
+    exec "$VENV_COHERD" "$@"
+    ;;
+esac
 
 # 帮助: 首参为 -h/--help 时打印 usage 后退出, 不触发后续 cd(否则 --help 会被当目录)
 show_usage() { # 精简 usage (不吐整个文件头源码)
@@ -349,5 +351,34 @@ for _i in 0 1 2; do
   fi
 done
 unset _n _i _round _all_done _st_blocked _seq_names _seq_base _seq_now _seq_done _seq_blocked _brief _role_doc
+
+# ── 7.5. 拉起单例 watcher（断链兜底, spec §7/§8 不变量 1）──
+# 非阻塞后台 (&) 起 coherd watch --ws $WS_SLUG：watcher 挂=只失兜底, 不拖垮起集群主流程。
+# 幂等: 先探测 pid 锁文件 (~/.config/coherd/watch.pid) 有存活进程则跳过; watch 自身 pid 锁(已实现)是第二道防。
+# 起失败 / 探测出错 → WARN 不 die（收敛于不变量 1: push 不依赖 watcher 存活, 集群照常就绪）。
+VCOHERD="$HERE_BIN/../.venv/bin/coherd"
+_watch_alive=0
+# 探测路径与 watch 写锁路径对齐: watch.py 用 CONFIG_HOME=COHERD_CONFIG_HOME 派生 PID_FILE
+# (缺省 ~/.config/coherd)。不一致会导致幂等探测失准(多起一次,仍被 watch 自身锁拒)。
+_WATCH_CONFIG_HOME="${COHERD_CONFIG_HOME:-$HOME/.config/coherd}"
+if [ -f "$_WATCH_CONFIG_HOME/watch.pid" ]; then
+  _wpid="$(cat "$_WATCH_CONFIG_HOME/watch.pid" 2>/dev/null || true)"
+  if [ -n "$_wpid" ] && kill -0 "$_wpid" 2>/dev/null; then
+    _watch_alive=1
+  fi
+fi
+if [ "$_watch_alive" = 1 ]; then
+  info "watch 已在运行(pid $_wpid), 跳过拉起 (幂等)"
+elif [ -x "$VCOHERD" ]; then
+  "$VCOHERD" watch --ws "$WS_SLUG" >/dev/null 2>&1 &
+  if [ $? -eq 0 ]; then
+    info "已后台拉起 watch (ws=$WS_SLUG)"
+  else
+    echo "coherd: WARN: watch 拉起失败(非阻塞, 不阻断集群) — 断链兜底暂缺, 可手动 coherd watch --ws $WS_SLUG &" >&2
+  fi
+else
+  echo "coherd: WARN: 缺 .venv/bin/coherd, 未拉起 watch (先跑 install.sh)" >&2
+fi
+unset _wpid _watch_alive VCOHERD _WATCH_CONFIG_HOME
 
 info "集群就绪: workspace=$WS  coordinator=$COORD_PANE  reviewer=$REV_PANE  executor=$EXEC_PANE  (契约见 $CONTRACT + per-role; 依赖 herdr ≥ 需支持上述 pane/agent 操作)"
