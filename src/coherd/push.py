@@ -1,0 +1,134 @@
+"""coherd.push — coherd push 子命令核心逻辑（runtime 记账 wrapper + 送达）。
+
+把 peer 间发消息的"回执义务"从 agent 心智变成可观测账本（push-events.log），
+是 T-B（coherd watch 兜底）判定"谁欠谁回执"的前提。
+
+职责（spec §4）：
+  1. 派生自身 role / ws / peer role
+  2. O_APPEND 向 push-events.log 追一行 JSON {op,ws,from,to,msg_id,ts}
+  3. 调 `herdr agent prompt <peer-agent> "<msg>"` 送达
+落地顺序：日志先行，再送达 —— 送达失败不丢日志行（watcher 靠它兜底）。
+
+不依赖 watcher 存活（不变量 1）：只 append 日志，watcher 挂时 push 仍可用。
+"""
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import time
+import uuid
+from collections.abc import Callable
+from datetime import datetime, timezone
+from pathlib import Path
+
+from .tracker import CONFIG_HOME
+
+# 全局账本（spec §6）：每行 JSON 带 ws 字段，单例 watcher 跨 ws 分桶
+DEFAULT_LOG = CONFIG_HOME / "push-events.log"
+
+# 送达执行器签名（可注入以便测试替换真实 herdr 调用）
+Sender = Callable[[str, str], bool]
+
+
+def ws_from_env() -> str | None:
+    """从 env 派生 ws 短号（HERDR_WORKSPACE_ID 小写），无则 None。"""
+    raw = os.environ.get("HERDR_WORKSPACE_ID")
+    return raw.lower() if raw else None
+
+
+def derive_role(agent_name: str, ws: str) -> str:
+    """agent 名去 `${ws}-` 前缀取 role；无前缀则原样（libero/standalone 兜底）。"""
+    prefix = f"{ws}-"
+    return agent_name.removeprefix(prefix)
+
+
+def make_msg_id() -> str:
+    """唯一 msg_id：纳秒时间戳 + uuid 短段，保证并发不撞。"""
+    return f"{time.time_ns()}-{uuid.uuid4().hex[:8]}"
+
+
+def make_event(op: str, ws: str, from_: str, to: str, msg_id: str,
+               ts: str | None = None) -> dict:
+    """账本事件 dict（字段序 op,ws,from,to,msg_id,ts，与 spec §4 一致）。"""
+    return {
+        "op": op,
+        "ws": ws,
+        "from": from_,
+        "to": to,
+        "msg_id": msg_id,
+        "ts": ts or datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def event_line(event: dict) -> str:
+    """事件 dict → 单行 JSON（ensure_ascii=False 保中文明文）。"""
+    return json.dumps(event, ensure_ascii=False)
+
+
+def append_event(log_path: Path, line: str) -> None:
+    """O_APPEND 追加单行（POSIX append 模式对小写原子，免锁并发安全）。"""
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(line + "\n")
+
+
+def send_prompt(peer_agent: str, msg: str) -> bool:
+    """默认送达器：`herdr agent prompt <peer> "<msg>"`。失败返回 False。"""
+    try:
+        proc = subprocess.run(
+            ["herdr", "agent", "prompt", peer_agent, msg],
+            capture_output=True, text=True, timeout=30,
+        )
+        return proc.returncode == 0
+    except (subprocess.SubprocessError, FileNotFoundError, OSError):
+        return False
+
+
+def run(peer_agent: str, msg: str, *,
+        ws: str | None = None, role: str | None = None,
+        log_path: Path | None = None,
+        sender: Sender = send_prompt) -> dict:
+    """push 主流程：① 派生（env → 显参 → 报错）② 记账 ③ 送达。
+
+    - 日志先行：append 成功即记账完成，后续送达失败不丢行。
+    - 返回含 from/to/msg_id/ts/delivered，供调用方回显与测试断言。
+    """
+    if not peer_agent or not msg:
+        raise ValueError("peer 与消息均不可为空")
+
+    # ① 派生 ws / role / peer role
+    resolved_ws = ws or ws_from_env()
+    if not resolved_ws:
+        raise ValueError("无法派生 ws：未提供 --ws 且 HERDR_WORKSPACE_ID 未设置")
+
+    resolved_role = role or os.environ.get("COHERD_ROLE")
+    if not resolved_role:
+        owner = os.environ.get("HERDR_AGENT_NAME")
+        if owner:
+            resolved_role = derive_role(owner, resolved_ws)
+    if not resolved_role:
+        raise ValueError("无法派生 role：未提供 --role，且 COHERD_ROLE / HERDR_AGENT_NAME 均缺")
+
+    peer_role = derive_role(peer_agent, resolved_ws)
+
+    # ② 记账（O_APPEND，日志先行）
+    event = make_event("send", resolved_ws, resolved_role, peer_role, make_msg_id())
+    line = event_line(event)
+    path = log_path or DEFAULT_LOG
+    append_event(path, line)
+
+    # ③ 送达（失败不丢行，返回 delivered=False）
+    delivered = sender(peer_agent, msg)
+
+    return {
+        "ws": resolved_ws,
+        "from": resolved_role,
+        "to": peer_role,
+        "peer_agent": peer_agent,
+        "msg_id": event["msg_id"],
+        "ts": event["ts"],
+        "delivered": delivered,
+        "log_path": str(path),
+        "line": line,
+    }
