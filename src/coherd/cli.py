@@ -38,11 +38,12 @@ def new(
     """生成新 tracker 到 ~/.config/coherd/tasks/<ws>/<id>.md，打印路径。"""
     if status not in T.STATUSES:
         _fatal(f"status 非法: {status!r}（需 {T.STATUSES}）")
+    now = datetime.now(timezone.utc)
     try:
-        task_id = next_id(ws)
+        task_id = next_id(ws, now)
         data = {
             "id": task_id, "ws": ws,
-            "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "created_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "task_name": task_name, "status": status, "parent_id": "",
             "objective": objective, "dod": dod, "output_path": output,
         }
@@ -68,7 +69,12 @@ def list_cmd(
         if not ws_dir.is_dir() or (ws and ws_dir.name != ws):
             continue
         for p in sorted(ws_dir.glob("*.md")):
-            data = T.load(p)
+            try:
+                data = T.load(p)
+            except ValueError as e:
+                # 容错:枚举列表遇 malformed/旧格式 tracker 跳过并告警,不拖垮整体
+                typer.echo(f"警告: 跳过非法 tracker {p}: {e}", err=True)
+                continue
             if status is not None and data.get("status") != status:
                 continue
             rows.append(data)
