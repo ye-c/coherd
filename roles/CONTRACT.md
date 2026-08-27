@@ -9,7 +9,7 @@
 
 | 术语 | 含义（本契约内固定） | 出处 |
 | ------ | ------ | ------ |
-| push / 推送 | `herdr agent prompt <name> "<消息>"`：主动发消息给 peer；**会自动唤醒 idle 待机者**（消息送达不依赖对方动作） | §2 |
+| push / 推送 | `coherd push <name> "<消息>"`：主动发消息给 peer 的**记账 wrapper**——内部调 `herdr agent prompt <name>` 送达（**会自动唤醒 idle 待机者**）+ 向 `push-events.log` append 一行 JSON 记账。任务交互口消息必须走它（watcher 靠账本判 pending 兜底断链）；但 **standby 握手 / watcher 系统唤醒提醒** 例外走裸 `herdr agent prompt`（不记账，见 §2 记账边界） | §2 |
 | pull / 拉取 | `herdr agent read <name>`：被动读 peer 最新内容；**仅用于核对状态/查证据，不是等待手段** | §2 |
 | fire-and-forget / 即发即走 | 发 prompt 不带 `--wait/--timeout`，发出即止、不等回复 | §2 |
 | event / 事件 | herdr 生命周期事件（如 idle/done），契约交接的触发信号 | §7 |
@@ -32,11 +32,11 @@
 
 ## 2. 通信协议
 
-- 有来有往: 收到 peer 消息（`[<role>]:` 前缀）即产生 push back 义务——回复 = `herdr agent prompt` 送达发起方, 非 pane 内自答; pane 内答了不 push = 未完成。问询/讨论型消息同样触发, 调查中可回状态级（"收到, 调查中"）, 不必等结论齐。回复义务按任务闭环计, 不按消息条数计; 同一任务重发或纯 ack 不产生新义务。**作用域: 任务交互过程（分派→执行→交审→结论回流）; 启动 standby 握手不在内（见 §7）。**
-- **事件驱动铁律**：做事的 agent 完成动作后，主动 `herdr agent prompt` push 对端。**不等待、不轮询、不靠对端 read 探活；不 push = 任务未完成。**
+- 有来有往: 收到 peer 消息（`[<role>]:` 前缀）即产生 push back 义务——回复 = `coherd push` 送达发起方（记账 wrapper）, 非 pane 内自答; pane 内答了不 push = 未完成。问询/讨论型消息同样触发, 调查中可回状态级（"收到, 调查中"）, 不必等结论齐。回复义务按任务闭环计, 不按消息条数计; 同一任务重发或纯 ack 不产生新义务。**作用域: 任务交互过程（分派→执行→交审→结论回流）; 启动 standby 握手不在内（见 §7）。**
+- **事件驱动铁律**：做事的 agent 完成动作后，主动 `coherd push` push 对端。**不等待、不轮询、不靠对端 read 探活；不 push = 任务未完成。**
 - **内容/信号分离**：prompt 只送短结构化信号 + 路径指针（approve 要点 / revise 摘要 ≤ 一句），结论正文与完整论证落文件。文件是内容载体（持久锚点、天然 EOF、可校验），prompt 是事件信号。完整结论格式见 §9 ①。
 - **push 格式**：`[<role>]: <信号> <任务名> — 详见 <文件绝对路径>`
-- agent 间用 `herdr agent prompt <name> "<消息>"` 通信；读取用 `herdr agent read <name>`。
+- agent 间任务交互用 `coherd push <name> "<消息>"` 通信（记账 wrapper，内部送达 + 记账）；读取用 `herdr agent read <name>`。
 - 发 prompt 不用 --wait/--timeout: 分派即发(fire-and-forget), 转 idle 等 peer 主动上报(§7)。--wait 超时路径会 abort-but-delivered, 重发致消息堆积/死循环; 需确认状态用 herdr agent read, 不重发。
 - 防重复成环: 疑似未达先 herdr agent read 查证据; 有证据即停, 无证据可重发 1 次; 仍无果上报 coordinator 仲裁。
 - 用户可能用自定义昵称称呼各 agent; 遇未定义别名按上下文推断或询问, 不假设亦不硬编码映射。
@@ -129,9 +129,10 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 
 - 基于 herdr idle/done 事件交接：上一环完成 → 下一环主动拉取（`herdr agent read`）。
 - **待机动作界外声明**：任一环执行完毕、无下一环时（如 executor 交审且 reviewer approve 后、coordinator 交付后），直接 **转 idle 待机**；`herdr agent prompt` 会自动唤醒 idle 待机者，peer 无需 sleep 阻塞或轮询消息。`herdr agent read` 仅用于核对状态/查证据，**不作轮询等待**（详见 executor.md「待机」节）。
-- executor/reviewer 启动后读 CONTRACT.md 确认身份, 向 coordinator 发一次 `[<role>]: standby` 上报（§0 standby/握手）, 随即**转 idle 待机**（herdr 层 pane 挂起; 非 agent CLI 层 hub-wait 等机制, 见 §0 idle）; coordinator 收到两份上报后判集群起步就绪, 自身转 idle 待机后开始按用户意图分派, 之后全程事件驱动(§7 下条)。**此握手单向、一次性、不触发 §2 回复义务**——coordinator 不回"收到", exec/rev 不等回复。coordinator 不轮询(§0)、不检测 exec/rev 状态; 未收到上报也不追究、不重发——沉默即故障信号, 用户自然察觉。
+- executor/reviewer 启动后读 CONTRACT.md 确认身份, 向 coordinator 用裸 `herdr agent prompt` 发一次 `[<role>]: standby` 上报（§0 standby/握手, **不记账**——coordinator 不回 standby, 记账会残留 pending 致 watcher 死循环; 见 §2 记账边界）, 随即**转 idle 待机**（herdr 层 pane 挂起; 非 agent CLI 层 hub-wait 等机制, 见 §0 idle）; coordinator 收到两份上报后判集群起步就绪, 自身转 idle 待机后开始按用户意图分派, 之后全程事件驱动(§7 下条)。**此握手单向、一次性、不触发 §2 回复义务**——coordinator 不回"收到", exec/rev 不等回复。coordinator 不轮询(§0)、不检测 exec/rev 状态; 未收到上报也不追究、不重发——沉默即故障信号, 用户自然察觉。
 - executor 完成 → 直接提交 reviewer 审查（reviewer 读产物 / `herdr agent read` 验证），结论 approve/revise 回流 coordinator；阻塞 → 上报 coordinator（原因 + 已尝试手段）；revise 循环 rev→exe→rev 不经 coordinator，超 §4 上限（2 轮）才介入仲裁。
 - push 内容遵循 §2 三铁律（见 §2）；pane 输出退化为辅助。
+- **记账边界（D10）**：`coherd push` 记入 `push-events.log` 账本，供 watcher 判 `pending` 兜底断链。**可判定锚点**：凡「§7 standby 握手（一次性，coordinator 不回）」或「watcher 发起的系统唤醒提醒」→ 用裸 `herdr agent prompt`（**不记账**，防 pending 残留/提醒成环）；**其余**一切 peer 间 `[<role>]:` 任务交互消息（分派 / 交审 / approve·revise / 讨论 / 回流）→ 一律 `coherd push`（记账）。一句话：任务交互记账、handshake 与系统提醒裸发。
 
 ## 9. token 控制
 
