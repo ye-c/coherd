@@ -304,6 +304,9 @@ _brief() { # 统一模板基干: 身份 + agent 名 + 双 @ 指路 (CONTRACT + p
 # 送达确认: 用 state_change_seq 有界重投递。先取三角色基线 seq (agent get 失败→空串),
 # 每轮 sleep BRIEF_GRACE 后重读 seq; 涨=已消费跳过, 未涨且非 blocked → send-keys enter 补提交
 # (只提交不重发 brief 文本, 防双处理); 最多 2 轮宽限, 到期仍无变化 → WARN 不 die
+# ⚠️ omp 特例: herdr agent prompt 对 omp(TUI 输入框)只把 brief 文本放进输入框, state_change_seq 在
+#    "文本到达" 即涨(非消费) → 上方"涨=已消费"对 omp 误判 → 跳过补 enter → brief 滞留框内需人工回车。
+#    故对输入框型 kind(omp)不信任 seq, 一律先显式 send-keys enter 提交, 再据 Enter 后 seq 涨确认真消费。
 # bash3.2 兼容: 用索引数组, 不用关联数组/mapfile; agent get/jq 失败一律 || true
 # 基线采集必须在 brief 派发之前: 快 agent 会在 wait 返回前就消费 brief,
 # 若基线滞后会读到消费后值 → now==base 误判未消费 → 白等 2×BRIEF_GRACE + 多余 enter
@@ -312,9 +315,20 @@ _seq_base=("" "" "")
 _seq_now=("" "" "")
 _seq_done=(0 0 0)
 _seq_blocked=(0 0 0)
+_seq_kind=("" "" "")
+_seq_needcommit=(0 0 0)
+_seq_committed=(0 0 0)
+_need_enter_case() { # kind → 输入框型 TUI 需显式 Enter 提交 brief? (仅 omp 有据; 其余 CLI 直接消费)
+  case "$1" in
+    omp) printf '1' ;;
+    *)   printf '0' ;;
+  esac
+}
 _i=0
 for _n in "${_seq_names[@]}"; do
   _seq_base[$_i]="$(herdr agent get "$_n" 2>/dev/null | jq -r '.result.agent.state_change_seq // ""' 2>/dev/null || true)"
+  _seq_kind[$_i]="$(herdr agent get "$_n" 2>/dev/null | jq -r '.result.agent.agent // ""' 2>/dev/null || true)"
+  _seq_needcommit[$_i]="$(_need_enter_case "${_seq_kind[$_i]}")"
   _i=$((_i + 1))
 done
 herdr agent prompt "$COORD_NAME" "$(_brief coordinator "$COORD_NAME")" >/dev/null 2>&1 &
@@ -333,7 +347,24 @@ for _round in 1 2; do
     [ "${_seq_done[$_i]}" = 1 ] && continue
     _n="${_seq_names[$_i]}"
     _seq_now[$_i]="$(herdr agent get "$_n" 2>/dev/null | jq -r '.result.agent.state_change_seq // ""' 2>/dev/null || true)"
-    # seq 变化 = brief 已被消费
+    # 输入框型 kind (omp): seq 涨=文本到达输入框, 非消费。先显式 Enter 提交, 再以 Enter 后 seq 涨确认真消费
+    if [ "${_seq_needcommit[$_i]}" = 1 ]; then
+      if [ "${_seq_committed[$_i]}" = 0 ]; then
+        # 第一轮: 文本已滞在输入框(≥1×BRIEF_GRACE), 发一次 Enter 提交(不重发 brief, 防双处理)
+        herdr agent send-keys "$_n" enter >/dev/null 2>&1 || true
+        _seq_committed[$_i]=1
+        _all_done=0
+        continue
+      fi
+      # 第二轮: Enter 已发 → 文本必已提交; seq 较基线有涨即视为消费完成
+      if [ -n "${_seq_now[$_i]}" ] && [ "${_seq_now[$_i]}" != "${_seq_base[$_i]}" ]; then
+        _seq_done[$_i]=1
+      else
+        _all_done=0
+      fi
+      continue
+    fi
+    # 普通 CLI (pi/cc...): seq 变化 = brief 已被消费
     if [ -n "${_seq_now[$_i]}" ] && [ "${_seq_now[$_i]}" != "${_seq_base[$_i]}" ]; then
       _seq_done[$_i]=1
       continue
@@ -360,6 +391,6 @@ for _i in 0 1 2; do
     echo "coherd: WARN: brief 疑似未消费 $_n — 手动检查 pane" >&2
   fi
 done
-unset _n _i _round _all_done _st_blocked _seq_names _seq_base _seq_now _seq_done _seq_blocked _brief _role_doc
+unset _n _i _round _all_done _st_blocked _seq_names _seq_base _seq_now _seq_done _seq_blocked _seq_kind _seq_needcommit _seq_committed _need_enter_case _brief _role_doc
 
 info "集群就绪: workspace=$WS  coordinator=$COORD_PANE  reviewer=$REV_PANE  executor=$EXEC_PANE  (契约见 $CONTRACT + per-role; 依赖 herdr ≥ 需支持上述 pane/agent 操作)"
