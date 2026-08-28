@@ -16,7 +16,7 @@
 - **缺任一字段 → 先向 coordinator 补齐再动工**，模糊不干活（不猜、不自行补全后开工）。
 - 边界明确读写范围：只动分派允许的路径，不越界改配置/秘密文件（CONTRACT §5）。
 - **读 tracker**：动工前先读分派对应 tracker（权威副本，见 CONTRACT §3），以其中 objective/DoD/边界为执行依据。
-- **产出写文件**：实现结果写入 tracker「输出」字段指定路径；push reviewer 时附文件绝对路径 + `git diff` 范围（不贴产物正文）。
+- **产出写文件**：实现结果写入 tracker「输出」字段指定路径；notify reviewer 交审时附文件绝对路径 + `git diff` 范围（不贴产物正文）。
 
 ## 执行与达成 DoD
 
@@ -49,8 +49,8 @@
 
 ## 待机（交审后 / 等待下一环）
 
-- 交审、修订重提、或 reviewer `approve` 回流后，若**无下一环可执行**：直接**转 idle 待机**——**不要用 `sleep` + `herdr agent read` 轮询占住 pane**（CONTRACT §7 事件驱动，idle 即待机形态）。
-- 下一环（coordinator 新分派 / reviewer revise）由发起方以 `coherd push` 推送（记账 wrapper，内部送达自动唤醒怠机中的你）——**无需自己主动去捞**；standby 握手 / watcher 系统唤醒提醒例外走裸 `herdr agent prompt`（见 CONTRACT §2 记账边界）。
+- 交审（notify）后 / 修订重提后，若**无下一环可执行**：直接**转 idle 待机**——**不要用 `sleep` + `herdr agent read` 轮询占住 pane**（CONTRACT §7 事件驱动，idle 即待机形态）。注：reviewer `approve` **只回流 coordinator、不通知 executor**；交审后未被 revise 退回（feedback）即视为终态，等 coordinator 新分派。
+- 下一环（coordinator 新分派 / reviewer revise）由发起方以 `coherd feedback` 推送（记账 wrapper，内部送达自动唤醒怠机中的你）——**无需自己主动去捞**；单向上报/握手等走 `coherd notify`，watcher 系统唤醒提醒走裸 `herdr agent prompt`（见 CONTRACT §2 记账边界）。
 - `herdr agent read <peer>` 只用于**核对状态 / 查证据**（§2 防重复成环），**不用于轮询等待消息**。
 - 待机期间保持 pane 空闲，不空耗轮询 token（CONTRACT §9）。
 
@@ -59,7 +59,7 @@
 用自带 task 工具（如 TaskCreate/TaskList/TaskUpdate）锁目标、防中断丢失（CONTRACT §3 tracker 之外的本地位）：
 
 - **收到分派/revise → 先 TaskCreate 记录**（subject=任务名，description=objective/DoD），再动工。
-- **干完 → TaskUpdate=completed**，之后才发 push 回执（回执仍走 §2 事件驱动铁律）。
+- **干完 → TaskUpdate=completed**，之后才发回执（按环节映射表：交审/重交走 notify、revise 回复走 feedback；回执仍走 §2 事件驱动铁律）。
 - **中断恢复**（idle 唤醒 / 新 session）→ 先 TaskList 查未 completed 任务，续上再动新活。
 - **预算≠完成**：token/时间告急不是完成理由，未完成如实上报 coordinator，保持任务激活。
 

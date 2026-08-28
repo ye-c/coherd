@@ -79,9 +79,9 @@ def notify(
 
 @app.command(name="watch")
 def watch(
-    ws: str = typer.Option(None, "--ws", help="ws 短号（缺省取 COHERD_WS / 事件 workspace_id）"),
+    ws: str = typer.Option(None, "--ws", help="仅测试隔离过滤（缺省 = 全局单 watch，覆盖所有 ws）"),
     escalate_agent: str = typer.Option(
-        None, "--escalate-agent", help="escalate 投递目标（缺省 = 本 ws coordinator）"),
+        None, "--escalate-agent", help="escalate 投递目标（缺省 = 事件所属 ws 的 coordinator）"),
 ) -> None:
     """单例断链兜底 watcher：订阅 idle 事件，pending 未清则提醒/升级（前台长驻）。"""
     w = _watch.Watch(ws=ws, escalate_agent=escalate_agent)

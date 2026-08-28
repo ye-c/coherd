@@ -4,7 +4,10 @@ socket 用假对象注入，不连真实 herdr。"""
 import contextlib
 import json
 import os
+import socket
 import unittest
+import threading
+import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import mock
@@ -95,7 +98,7 @@ class ReplayTest(unittest.TestCase):
         self.assertIsNone(l.owner("w2p", "reviewer"))
 
     def test_no_reply_reply_still_clears_pending(self):
-        # F 欠 T 遗账，F 用 --no-reply 回一条 → 仍清偿该账；该 --no-reply 本身不产生新欠
+        # F 欠 T 遗账，F 以 notify（expect_reply=false）回一条 → 仍清偿该账；该 notify 本身不产生新欠
         log = self._log([
             json.dumps({"op": "send", "ws": "w2p", "from": "executor", "to": "reviewer",
                         "msg_id": "1", "ts": "t"}),
@@ -105,7 +108,7 @@ class ReplayTest(unittest.TestCase):
         l = W.Ledger()
         l.replay(log, 0)
         self.assertIsNone(l.owner("w2p", "reviewer"))   # 遗账已清偿
-        self.assertIsNone(l.owner("w2p", "executor"))   # --no-reply 不产生新欠
+        self.assertIsNone(l.owner("w2p", "executor"))   # notify（expect_reply=false）不产生新欠
 
 
 class DecideTest(unittest.TestCase):
@@ -192,10 +195,76 @@ class PidLockTest(unittest.TestCase):
         self.w.release_pid_lock()
 
     def test_stale_lock_overwrites(self):
-        # 旧 pid 不存在（99 万级 pid 通常未分配）→ 覆盖
+        # 旧 pid 不存在（99 万级 pid 通常未分配）→ 覆盖 stale 锁
         self.w.pid_path.write_text("99999999", encoding="utf-8")
         self.assertTrue(self.w.acquire_pid_lock())
         self.w.release_pid_lock()
+
+    def test_read_loop_eof_stops_and_releases_lock(self):
+        """DoD1 回归：mock server 关断（socket EOF）→ self.stop=True → consumer 退出
+        → run() finally 释放 pid 锁。防 bug1 zombie（主线程空转 + 锁永不释放）复发。"""
+        tdir = _tmp(self)
+        sock_path = tdir / "herdr.sock"
+        log = tdir / "push-events.log"
+        state = tdir / "state.json"
+        pid = tdir / "watch.pid"
+
+        srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        srv.bind(str(sock_path))
+        srv.listen(5)
+        conns = []
+
+        def serve():
+            # conn1=agent.list 短连（回空 agents 即闭），conn2=subscribe 长连（保持直至关断）
+            for i in range(2):
+                try:
+                    c, _ = srv.accept()
+                except OSError:
+                    return
+                conns.append(c)
+                try:
+                    c.recv(8192)
+                    c.sendall(json.dumps({"jsonrpc": "2.0", "id": 1,
+                                          "result": {"agents": []}}).encode() + b"\n")
+                    if i == 0:
+                        c.close()
+                except OSError:
+                    return
+
+        threading.Thread(target=serve, daemon=True).start()
+
+        w = W.Watch(ws=None, socket_path=str(sock_path), pid_path=pid,
+                    log_path=log, state_path=state)
+        res = {}
+
+        def runner():
+            res["rc"] = w.run()
+
+        t = threading.Thread(target=runner)
+        t.start()
+        for _ in range(200):  # 等 pid 锁落盘
+            if pid.exists():
+                break
+            time.sleep(0.02)
+        # 等 subscribe 长连已建立（conns>=2），否则提前关 server 触发 connect 竞态
+        for _ in range(100):
+            if len(conns) >= 2:
+                break
+            time.sleep(0.02)
+        self.assertGreaterEqual(len(conns), 2, "subscribe 连接应已建立")
+
+        srv.close()  # server 关断 → subscribe 连接 EOF
+        for c in conns:
+            try:
+                c.shutdown(socket.SHUT_RDWR)
+                c.close()
+            except OSError:
+                pass
+        t.join(timeout=8)
+        self.assertFalse(t.is_alive(), "run() 应在 EOF 后自行退出（非 zombie 空转）")
+        self.assertTrue(w.stop)
+        self.assertFalse(pid.exists(), "EOF 退出后 pid 锁应释放")
+        self.assertEqual(res.get("rc"), 0)
 
 
 class HandleEventTest(unittest.TestCase):

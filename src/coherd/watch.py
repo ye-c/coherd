@@ -43,10 +43,8 @@ IDLE = "idle"
 PUSH_LOG = CONFIG_HOME / "push-events.log"
 # 状态（offset 续读 + pid 锁）落盘
 STATE_FILE = CONFIG_HOME / "watch-state.json"
-# pid 锁按 ws 派生，异 ws 独立锁、互不占（修跨集群占锁）
-def ws_pid_path(ws: str) -> Path:
-    """派生本 ws 的 pid 锁文件名：watch-<ws>.pid（<ws> 小写短号）。"""
-    return CONFIG_HOME / f"watch-{ws}.pid"
+# pid 锁回全局单例：watch 生命周期绑 server（全局单 watch），锁与 server 一对一
+PID_FILE = CONFIG_HOME / "watch.pid"
 
 # 升级阈值：提醒次数达此即 escalate（不变量 2）
 ESCALATE_AT = 2
@@ -92,7 +90,7 @@ class Ledger:
         # 反向清账：F 曾欠 T，现 F 发消息给 T → 已回执（无条件：F 的回应即清偿，回应是否期待再回执无关）
         if self.pending.get((ws, f)) == t:
             del self.pending[(ws, f)]
-        # 本消息：T 欠 F（仅期待回执的消息登记；--no-reply 上报不产生新欠）
+        # 本消息：T 欠 F（仅期待回执的消息登记；notify/expect_reply=false 上报不产生新欠）
         if rec.get("expect_reply", True):
             self.pending[(ws, t)] = f
 
@@ -207,7 +205,7 @@ class Watch:
 
     log_path: Path = PUSH_LOG
     state_path: Path = STATE_FILE
-    pid_path: Path | None = None
+    pid_path: Path = PID_FILE
     ws: str | None = None
     socket_path: str | None = None
     sender: Callable[[str, str], bool] | None = None
@@ -222,15 +220,8 @@ class Watch:
     stop: bool = False
 
     def __post_init__(self):
-        if self.ws is None:
-            self.ws = (
-                os.environ.get("COHERD_WS")
-                or os.environ.get("HERDR_WORKSPACE_ID", "").lower()
-                or ""
-            )
-        if self.pid_path is None:
-            # pid 锁按 ws 派生：异 ws 独立锁，同 ws 仍单例
-            self.pid_path = ws_pid_path(self.ws)
+        # 全局模式显式化：self.ws 仅由显式 --ws 传入（测试隔离过滤）；不再从 env 派生。
+        # 无 --ws = 全局单 watch（无论 env 有无 workspace id），防"表面全局实为单 ws 过滤"退化。
         if self.socket_path is None:
             self.socket_path = os.environ.get("HERDR_SOCKET_PATH")
         if not self.socket_path:
@@ -290,10 +281,6 @@ class Watch:
         """主循环：replay 账本 → 订阅 socket → 读线程入队 → 单 consumer。"""
         if not self.socket_path:
             raise RuntimeError("HERDR_SOCKET_PATH 未设置，无法订阅 herdr 事件")
-        if not self.ws:
-            raise RuntimeError(
-                "无法派生 ws：未提供 --ws，且 COHERD_WS / HERDR_WORKSPACE_ID 均缺"
-            )
         if not self.acquire_pid_lock():
             raise RuntimeError("已有 watch 实例运行（pid 锁占用），拒绝并发第二实例")
 
@@ -302,7 +289,12 @@ class Watch:
         self.ledger.offset = self.ledger.replay(self.log_path, self.ledger.offset)
         save_state(self.state_path, self.ledger.offset)
 
-        sock = self._connect_socket()
+        try:
+            sock = self._connect_socket()
+        except Exception:
+            # 启动即连不上 server（socket 断）：不空转、不留锁（同 DoD1 zombie 精神）
+            self.release_pid_lock()
+            raise
         q: queue.Queue = queue.Queue(maxsize=self.queue_max)
 
         # 读线程：socket 流式读事件 → 入队
@@ -372,10 +364,11 @@ class Watch:
         for a in agents:
             name = a.get("name")
             pane = a.get("pane_id")
+            wid = (a.get("workspace_id") or ws or "").lower()
             if not (name and pane):
                 continue
             self.agents[pane] = name
-            self.panes[pane] = derive_role(name, ws or "")
+            self.panes[pane] = derive_role(name, wid)
         return list(self.panes.keys())  # 只列成功建映射的 pane（name+pane_id 齐全）
 
     def _read_loop(self, sock, q: queue.Queue) -> None:
@@ -385,6 +378,7 @@ class Watch:
             try:
                 chunk = sock.recv(4096)
                 if not chunk:
+                    self.stop = True  # EOF：server 关 / 订阅断 → 让 _consumer_loop 退出
                     break
                 buf += chunk
                 while b"\n" in buf:
@@ -398,6 +392,7 @@ class Watch:
                     except queue.Full:
                         pass  # consumer 积压：跳过（限流兜底，避免队列无限膨胀）
             except OSError:
+                self.stop = True  # 断连 / server 不可达 → 同样终止读线程 → 释放锁
                 break
 
     def _consumer_loop(self, q: queue.Queue) -> None:
@@ -448,15 +443,15 @@ class Watch:
         self.last_remind[pane] = last
 
         if action == REMIND and owner:
-            self._remind(pane, role, owner)
+            self._remind(pane, role, owner, ws)
         elif action == ESCALATE and owner:
-            self._escalate(pane, role, owner)
+            self._escalate(pane, role, owner, ws)
 
-    def _remind(self, pane: str, role: str, owner: str) -> None:
+    def _remind(self, pane: str, role: str, owner: str, ws: str = "") -> None:
         """动作：提醒该 agent 立即回执（含具体动作，spec §5.3）。"""
         peer = self.agents.get(pane)  # 全名（w2p-reviewer），agent.list 建立（P1）
         if not peer:
-            peer = f"{self.ws}-{role}" if self.ws else role
+            peer = f"{ws}-{role}" if ws else role
         msg = f"[watch] {REMIND_TMPL.format(sender=owner).rstrip()}（pane={pane} idle 未回执）"
         # 提醒失败不致命：账本仍在，下轮事件会再判
         send = self.sender
@@ -464,9 +459,9 @@ class Watch:
             with contextlib.suppress(Exception):
                 send(peer, msg)
 
-    def _escalate(self, pane: str, role: str, owner: str) -> None:
+    def _escalate(self, pane: str, role: str, owner: str, ws: str = "") -> None:
         """动作：升级到 coordinator / 用户（写 stderr 兜底报用户可见）。"""
-        target = self.escalate_agent or (f"{self.ws}-coordinator" if self.ws else None)
+        target = self.escalate_agent or (f"{ws}-coordinator" if ws else None)
         msg = ESCALATE_TMPL.format(receiver=role, sender=owner)
         send = self.sender
         if target and send:

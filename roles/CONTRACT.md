@@ -9,12 +9,12 @@
 
 | 术语 | 含义（本契约内固定） | 出处 |
 | ------ | ------ | ------ |
-| push / 推送 | `coherd push <name> "<消息>"`：主动发消息给 peer 的**记账 wrapper**——内部调 `herdr agent prompt <name>` 送达（**会自动唤醒 idle 待机者**）+ 向 `push-events.log` append 一行 JSON 记账。任务交互口消息必须走它（watcher 靠账本判 pending 兜底断链）；但 **standby 握手 / watcher 系统唤醒提醒** 例外走裸 `herdr agent prompt`（不记账，见 §2 记账边界） | §2 |
+| feedback / 期待回执 | `coherd feedback <name> "<消息>"`：期待回执的记账 wrapper——内部调 `herdr agent prompt <name>` 送达（**会自动唤醒 idle 待机者**）+ 向 `push-events.log` append 一行 `expect_reply=true` **挂账**，收方必须回一条 feedback 清账。关键交接（分派/revise/讨论）用它；命令名即语义，无缺省值陷阱 | §2/§7 |
+| notify / 单向 | `coherd notify <name> "<消息>"`：纯单向——同经 `herdr agent prompt <name>` 送达，写账本 `expect_reply=false` **不挂账**、无需清。单向上报/回流/ack/握手用它；delivered 假 → 非零退出提示转 feedback 重发 | §2/§7 |
 | pull / 拉取 | `herdr agent read <name>`：被动读 peer 最新内容；**仅用于核对状态/查证据，不是等待手段** | §2 |
 | fire-and-forget / 即发即走 | 发 prompt 不带 `--wait/--timeout`，发出即止、不等回复 | §2 |
 | event / 事件 | herdr 生命周期事件（如 idle/done），契约交接的触发信号 | §7 |
-| idle / 待机 | herdr 层 pane 挂起态：不运行、等待 push 唤醒；**≠ agent CLI 层（如 pi hub-wait）的空闲表示**（后者不阻塞 ≠ pane 挂起，不可用作等待或状态检查手段）；**"等待下一环" = 转 idle，不是轮询** | §7 |
-| standby / 握手 | 启动时向 coordinator 发一次 `[role]: standby` 的单向一次性上报（宣告就绪）；**是事件不是状态，收到后转 idle** | §7 |
+| idle / 待机 | herdr 层 pane 挂起态：不运行、等待 feedback/notify 唤醒；**≠ agent CLI 层（如 pi hub-wait）的空闲表示**（后者不阻塞 ≠ pane 挂起，不可用作等待或状态检查手段）；**"等待下一环" = 转 idle，不是轮询** | §7 |
 | 轮询 (polling) | sleep 循环 + 反复 pull 取消息；契约**禁止**的等待方式 | §7 |
 | 分派 (dispatch) | coordinator→executor 带 4 字段（objective/DoD/输出/边界）的任务消息 | §3 |
 | 回流 | 结论/状态消息上报 coordinator（approve/revise/阻塞/已交审） | §2 |
@@ -32,18 +32,18 @@
 
 ## 2. 通信协议
 
-- 有来有往: 收到 peer 消息（`[<role>]:` 前缀）即产生 push back 义务——回复 = `coherd push` 送达发起方（记账 wrapper）, 非 pane 内自答; pane 内答了不 push = 未完成。问询/讨论型消息同样触发, 调查中可回状态级（"收到, 调查中"）, 不必等结论齐。回复义务按任务闭环计, 不按消息条数计; 同一任务重发或纯 ack 不产生新义务。**作用域: 任务交互过程（分派→执行→交审→结论回流）; 启动 standby 握手不在内（见 §7）。**
-- **事件驱动铁律**：做事的 agent 完成动作后，主动 `coherd push` push 对端。**不等待、不轮询、不靠对端 read 探活；不 push = 任务未完成。**
+- 有来有往: 收到 peer 消息（`[<role>]:` 前缀）即产生回执义务——回复走记账 wrapper（按环节映射表 §7 D10 选命令：期待回执的交接回 `coherd feedback` 清账、单向上报回 `coherd notify` 不挂账），非 pane 内自答; pane 内答了不走 wrapper = 未完成。问询/讨论型消息同样触发, 调查中可回状态级（"收到, 调查中"）, 不必等结论齐。回复义务按任务闭环计, 不按消息条数计; 同一任务重发或纯 ack 不产生新义务。**作用域: 任务交互过程（分派→执行→交审→结论回流）; 启动 standby 握手不在内（见 §7）。**
+- **事件驱动铁律**：做事的 agent 完成动作后，主动 `coherd feedback`/`coherd notify` 对端。**不等待、不轮询、不靠对端 read 探活；不反馈 = 任务未完成。**
 - **内容/信号分离**：prompt 只送短结构化信号 + 路径指针（approve 要点 / revise 摘要 ≤ 一句），结论正文与完整论证落文件。文件是内容载体（持久锚点、天然 EOF、可校验），prompt 是事件信号。完整结论格式见 §9 ①。
-- **push 格式**：`[<role>]: <信号> <任务名> — 详见 <文件绝对路径>`
-- agent 间任务交互用 `coherd push <name> "<消息>"` 通信（记账 wrapper，内部送达 + 记账）；读取用 `herdr agent read <name>`。
+- **消息格式**：`[<role>]: <信号> <任务名> — 详见 <文件绝对路径>`
+- agent 间任务交互消息：期待回执用 `coherd feedback <name> "<消息>"`（挂账待清），单向上报/回流/握手用 `coherd notify <name> "<消息>"`（不挂账）；两者内部均调 `herdr agent prompt <name>` 送达 + 唤醒。读取用 `herdr agent read <name>`。
 - 发 prompt 不用 --wait/--timeout: 分派即发(fire-and-forget), 转 idle 等 peer 主动上报(§7)。--wait 超时路径会 abort-but-delivered, 重发致消息堆积/死循环; 需确认状态用 herdr agent read, 不重发。
 - 防重复成环: 疑似未达先 herdr agent read 查证据; 有证据即停, 无证据可重发 1 次; 仍无果上报 coordinator 仲裁。
 - 用户可能用自定义昵称称呼各 agent; 遇未定义别名按上下文推断或询问, 不假设亦不硬编码映射。
 - 每个集群的 herdr agent 名是 `${WS_SLUG}-<role>`（workspace 短号小写，如 `w1p-coordinator`），非裸单词；各角色从自身 agent 名前缀（`${WS_SLUG}-`）派生 peer 名互寻址，用完整名。
 - 消息以 `[<role>]:` 前缀开头 = 同级 agent 发言；无前缀 = 用户直接输入。
 - 每个 pane 自动注入 `HERDR_WORKSPACE_ID` / `HERDR_TAB_ID` / `HERDR_PANE_ID`。
-- 汇报对称义务：executor 完成后直接提交 reviewer 审查（附 DoD + 输出路径，不转发产物正文），并轻量上报 coordinator 已交审（状态级）；阻塞以 `[executor]:` 上报 coordinator（原因 + 已尝试手段）；reviewer 审查结论（approve/revise）以 `[reviewer]:` 上报 coordinator；coordinator 整合交付以 `[coordinator]:` 上报用户。
+- 汇报对称义务：executor 完成后直接提交 reviewer 审查（附 DoD + 输出路径，不转发产物正文），并轻量上报 coordinator 已交审（状态级）；阻塞以 `[executor]:` 上报 coordinator（原因 + 已尝试手段）；reviewer 审查结论以 `[reviewer]:` 上报 coordinator（**approve 只回流 coordinator、不通知 executor；revise 另以 feedback 退回 executor**）；coordinator 整合交付以 `[coordinator]:` 上报用户。
 - **token 控制**：① 通信精简——结论结构化 `approve: <要点>` / `revise: <问题清单逐条>`，要点式不叙述；executor 交审消息保 DoD + 路径 + 关键取舍一句，不可瘦到只剩路径。② 输入端控制——消息引用路径不贴大文件正文，交审附 git diff 范围 reviewer 只读变更行，长任务串轮换 session。③ revise 循环最贵：一次返工 > 一切通信压缩，投资分派质量优先。
 
 ## 3. 分派契约模板（A）
@@ -68,6 +68,7 @@ coordinator→executor 每条任务**必须**包含以下 4 字段，缺失即�
 ```
 
 约定：字段缺失 → executor 先向 coordinator 补齐再动工；模糊分派导致的重复/遗漏由分派方负责。
+
 - **tracker 权威副本**：分派前 coordinator 把 4 字段落盘 `~/.config/coherd/tasks/<ws>/<id>.md`，executor 契约上不可写（运行时不强制，靠流程保障 + 事后对账，见 §5）。
 - **自举过渡（CLI 落地前）**：tracker/reviews/archive 统一路径 `~/.config/coherd/{tasks,reviews,archive}/<ws>/<id>.md`，`<id>` 取任务名；目录由首写方 `mkdir -p` 兜底；`coherd task` CLI 就绪后接管路径与 `<id>` 生成（HANDOFF §3）。
 - executor **先读 tracker 再动工**；产出写 tracker「输出」字段指定路径。
@@ -129,11 +130,11 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 
 - 基于 herdr idle/done 事件交接：上一环完成 → 下一环主动拉取（`herdr agent read`）。
 - **待机动作界外声明**：任一环执行完毕、无下一环时（如 executor 交审且 reviewer approve 后、coordinator 交付后），直接 **转 idle 待机**；`herdr agent prompt` 会自动唤醒 idle 待机者，peer 无需 sleep 阻塞或轮询消息。`herdr agent read` 仅用于核对状态/查证据，**不作轮询等待**（详见 executor.md「待机」节）。
-- executor/reviewer 启动后读 CONTRACT.md 确认身份, 向 coordinator 用裸 `herdr agent prompt` 发一次 `[<role>]: standby` 上报（§0 standby/握手, **不记账**——coordinator 不回 standby, 记账会残留 pending 致 watcher 死循环; 见 §2 记账边界）, 随即**转 idle 待机**（herdr 层 pane 挂起; 非 agent CLI 层 hub-wait 等机制, 见 §0 idle）; coordinator 收到两份上报后判集群起步就绪, 自身转 idle 待机后开始按用户意图分派, 之后全程事件驱动(§7 下条)。**此握手单向、一次性、不触发 §2 回复义务**——coordinator 不回"收到", exec/rev 不等回复。coordinator 不轮询(§0)、不检测 exec/rev 状态; 未收到上报也不追究、不重发——沉默即故障信号, 用户自然察觉。
+- executor/reviewer 启动后读 CONTRACT.md 确认身份, 以 `coherd notify` 向 coordinator 发一次 `[<role>]: standby` 上报（§0 standby/握手, notify 单向**不挂账**——coordinator 不回 standby, 挂账会残留 pending 致 watcher 死循环; 见 §2 记账边界）, 随即**转 idle 待机**（herdr 层 pane 挂起; 非 agent CLI 层 hub-wait 等机制, 见 §0 idle）; coordinator 收到两份上报后判集群起步就绪, 自身转 idle 待机后开始按用户意图分派, 之后全程事件驱动(§7 下条)。**此握手单向、一次性、不触发 §2 回复义务**——coordinator 不回"收到", exec/rev 不等回复。coordinator 不轮询(§0)、不检测 exec/rev 状态; 未收到上报也不追究、不重发——沉默即故障信号, 用户自然察觉。
 - executor 完成 → 直接提交 reviewer 审查（reviewer 读产物 / `herdr agent read` 验证），结论 approve/revise 回流 coordinator；阻塞 → 上报 coordinator（原因 + 已尝试手段）；revise 循环 rev→exe→rev 不经 coordinator，超 §4 上限（2 轮）才介入仲裁。
-- push 内容遵循 §2 三铁律（见 §2）；pane 输出退化为辅助。
-- **记账边界（D10）**：`coherd push` 记入 `push-events.log` 账本，供 watcher 判 `pending` 兜底断链。**可判定锚点**：凡「§7 standby 握手（一次性，coordinator 不回）」或「watcher 发起的系统唤醒提醒」→ 用裸 `herdr agent prompt`（**不记账**，防 pending 残留/提醒成环）；**其余**一切 peer 间 `[<role>]:` 任务交互消息（分派 / 交审 / approve·revise / 讨论 / 回流）→ 一律 `coherd push`（记账）。一句话：任务交互记账、handshake 与系统提醒裸发。
-- **回执语义**：`coherd push` 缺省**期待回执**（watch 登记 pending，防忘回执）；单向上报/回流/ack/纯通知用 `coherd push --no-reply`（不登记 pending，不产生新欠）。不标 --no-reply 的上报令收方永久欠账 → watch 误报。任务交互内再分两态：**期待回执（默认 push）** / **单向上报（--no-reply push）**；handshake 与系统提醒仍裸发不记账（不变）。
+- feedback/notify 遵循 §2 三铁律（见 §2）；pane 输出退化为辅助。
+- **记账边界（D10）**：`coherd feedback` 记入 `push-events.log` 账本（`expect_reply=true`），供 watcher 判 `pending` 兜底断链；`coherd notify` 写账本 `expect_reply=false` **不挂账**。**环节→命令映射表是唯一权威**（coordinator 分派 / 讨论 / rev revise 退回 = `feedback` 挂账；exec 交审 / 改完重交(反向清 exec 欠 rev) / 开工 ack / 交审上报 / approve 回流 / standby 握手 / 纯通知 = `notify` 不挂账）。**例外**：watcher 发起的系统唤醒提醒仍裸 `herdr agent prompt`（**不记账**，防提醒成环）。一句话：任务交互看映射表定 feedback/notify，系统提醒裸发。
+- **回执语义**：`coherd feedback` = 期待回执（watch 登记 pending，收方必须回一条 feedback 清账）；`coherd notify` = 纯单向（不登记 pending，不产生新欠）。命令名即语义，无缺省值陷阱——解除"忘了标 `--no-reply` = 挂账"缺陷。notify 送达失败不挂账 → CLI 非零退出提示转 feedback 重发（spec §A），关键交接仍用 feedback 兜底。
 
 ## 9. token 控制
 
@@ -142,6 +143,6 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 **三块核心条款**：
 
 - **① 通信精简**：结论结构化——`approve: <理由要点>` / `revise: <问题清单逐条>`；agent 间消息用要点式，避免叙述铺陈。executor 交审消息**底线**：保 DoD + 输出路径 + 关键取舍一句，不可瘦到只剩路径。
-- **② 输入端控制**（token 大头）：消息引用路径不贴大文件正文；交审附 `git diff` 范围，reviewer 只读变更行；长任务串轮换 session，防上下文膨胀。**文件交互降 token**：结论/产物落文件，push 只送路径指针，peer 按需读，避免整段折入消息。
+- **② 输入端控制**（token 大头）：消息引用路径不贴大文件正文；交审附 `git diff` 范围，reviewer 只读变更行；长任务串轮换 session，防上下文膨胀。**文件交互降 token**：结论/产物落文件，feedback/notify 只送路径指针，peer 按需读，避免整段折入消息。
 - **③ revise 循环最贵**：一次返工消耗 > 一切通信压缩的收益；投资分派质量（清晰 objective / 可测 DoD / 精确边界）优先于压缩单条消息。
 - **④ 规模缩放判据**：简单任务跳过 reviewer 全链路须**同时满足** ≤2 文件改动 + 无安全/正确性敏感面；任一不满足 → 必走 executor → reviewer → coordinator 全链路（判据出处与决策细节见 coordinator.md `§6`）。
