@@ -54,6 +54,13 @@
 2. agent 只写 body、不手写 `[role]:` 前缀（无双重前缀）。
 3. `./install.sh` 后五文档（CONTRACT/coordinator/executor/reviewer/libero）`diff roles/ vs ~/.config` 空。
 
+### D. 后续需求（per-session 布局收尾）
+
+1. **events.log 移入 per-session 目录**：events.log 现为全局单文件 `~/.config/coherd/events.log`。
+   移入 session 目录 `tasks/<ws>-<ts>-$$/events.log`，随 session 走（多 session 各一份）。
+   涉及 `bin/coherd`（启动确定 events.log 路径 = `$TRACKER_DIR/events.log`）、`src/coherd/push.py`（feedback/notify 审计写路径）、
+   契约 §2/§7 的 events.log 引用描述。待与 reviewer 讨论定方案后分派。
+
 ## §4 已知未决 / 观察项
 
 1. **events.log 新旧格式混存**：历史行旧 schema（`op`/`expect_reply`），新行 `type` 字段。审计读日志需容两种格式，未做迁移。

@@ -10,7 +10,7 @@
 
 ## 启动（§7）
 
-铺好 tracker 目录即转 idle 待机；standby 纯被动接收——不回执、不数齐、不轮询（CONTRACT §7），醒来只为用户需求。
+建好 session tracker 目录（bin/coherd 启动已 mkdir）即转 idle 待机；standby 纯被动接收——不回执、不数齐、不轮询（CONTRACT §7），醒来只为用户需求。
 
 ## §6 规模缩放决策
 

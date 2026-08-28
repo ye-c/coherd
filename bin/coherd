@@ -291,16 +291,18 @@ _role_doc() { # role 名 → per-role 契约文档路径 (安装目录)
     reviewer)    printf '%s' "$HOME/.config/coherd/reviewer.md" ;;
   esac
 }
-TRACKER_DIR="$HOME/.config/coherd/tasks"
-_brief() { # 统一模板基干: 身份 + agent 名 + 双 @ 指路 (CONTRACT + per-role) + tracker 目录 + 待机 + 回执登记映射
-  # standby 措辞按角色分支 (CONTRACT §7): 仅 executor/reviewer 向 coordinator 发 standby (notify 单向);
-  # coordinator 纯被动接收 exec/rev 的 standby, 自身转 idle, 不向任何 peer 发 standby
+# session 目录: 每启动一目录, 平铺任务文档; $$ 防同 ws 秒级二次启动撞目录 (不 export, agent pane 不继承 env)
+TASK_TS="$(date +%Y%m%d%H%M%S)"
+TRACKER_DIR="$HOME/.config/coherd/tasks/${WS_SLUG}-${TASK_TS}-$$"
+mkdir -p "$TRACKER_DIR"
+_brief() { # 身份+名字 + 双@指路 + tracker + 待机 + 回执唯一权威 (精简版, 只引不重述)
   local _standby; case "$1" in
-    executor)   _standby='确认身份后经 coherd notify 向 coordinator 发一次 [executor]: standby 上报, 随即转 idle 待机 (standby 单向 notify, 不回执、不等回复)' ;;
-    reviewer)   _standby='确认身份后经 coherd notify 向 coordinator 发一次 [reviewer]: standby 上报, 随即转 idle 待机 (standby 单向 notify, 不回执、不等回复)' ;;
-    coordinator) _standby='确认身份后转 idle 待机; exec/reviewer 的 standby 上报纯被动接收, 不回执, 不向任何 peer 发 standby' ;;
+    executor|reviewer) _standby="读 CONTRACT 确认身份后发 \`coherd notify $COORD_NAME \"standby\"\` 再转 idle" ;;
+    coordinator)       _standby="确认身份转 idle; exec/rev 的 standby 被动接收不回执" ;;
   esac
-  printf '你是%s。你的 herdr agent 名: %s。集群公共契约见 @%s (先读), 角色执行细节见 @%s (先读), 任务 tracker 目录见 %s (分派/审查结论落文件)。%s, 按收到的消息行动。回执登记: 环节→feedback/notify 映射以 CONTRACT §7 D10 为唯一权威 (命令名即语义: feedback 期待回执、notify 单向), 不在此重述。' "$1" "$2" "$CONTRACT" "$(_role_doc "$1")" "$TRACKER_DIR" "$_standby"; }
+  printf '你是 %s · agent 名 %s\n公共契约 @%s\n角色细节 @%s\ntracker %s\n\n待机: %s\n回执: CONTRACT §7 D10 (唯一权威)' \
+    "$1" "$2" "$CONTRACT" "$(_role_doc "$1")" "$TRACKER_DIR" "$_standby"
+}
 # 送达确认: 用 state_change_seq 有界重投递。先取三角色基线 seq (agent get 失败→空串),
 # 每轮 sleep BRIEF_GRACE 后重读 seq; 涨=已消费跳过, 未涨且非 blocked → send-keys enter 补提交
 # (只提交不重发 brief 文本, 防双处理); 最多 2 轮宽限, 到期仍无变化 → WARN 不 die

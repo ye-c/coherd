@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import re
+from datetime import datetime
 from pathlib import Path
 
 # 存储根（可用 COHERD_CONFIG_HOME 覆盖，测试隔离用）
@@ -112,19 +113,51 @@ def validate(data: dict) -> None:
 
 
 def tracker_path(task_id: str) -> Path:
-    """tracker 文件路径：tasks/<id>/task.md（一任务一目录，目录名 = id）。id 走 ID_RE 防注入。"""
+    """tracker 文件路径：session 目录平铺 <id>.task.md，跨 session 目录搜索（同 ws 先后多 session 均可达）。
+    id 走 ID_RE 防注入；找不到抛 FileNotFoundError。"""
     if not ID_RE.match(task_id):
         raise ValueError(f"task id 含非法字符: {task_id!r}（需 [a-zA-Z0-9_-]）")
-    return TASKS_DIR / task_id / "task.md"
+    matches = sorted(TASKS_DIR.glob(f"*/{task_id}.task.md"))
+    if not matches:
+        raise FileNotFoundError(f"tracker 不存在: {task_id}")
+    return matches[-1]
+
+
+def glob_session_dir(ws: str) -> Path | None:
+    """按 ws 定位最新 session 目录：glob tasks/<ws>-*/，判定 = 目录 && 内含 <id>.task.md
+    （防误匹配旧存量子目录式/空目录），按名排序取最新。ws 走 ID_RE 防注入。无 → None。"""
+    if not ID_RE.match(ws):
+        raise ValueError(f"ws 含非法字符: {ws!r}（需 [a-zA-Z0-9_-]）")
+    if not TASKS_DIR.is_dir():
+        return None
+    cands = [
+        p
+        for p in TASKS_DIR.glob(f"{ws}-*/")
+        if p.is_dir() and any(p.glob("*.task.md"))
+    ]
+    return sorted(cands)[-1] if cands else None
+
+
+def session_dir_for(ws: str, create: bool = False) -> Path:
+    """解析 ws 的 session 目录：有合格者 → 最新；无且 create → 自建 tasks/<ws>-<本地ts>-<pid>（平铺写入口）。"""
+    session = glob_session_dir(ws)
+    if session is not None:
+        return session
+    if not create:
+        raise FileNotFoundError(f"无 session 目录（ws={ws}）: {TASKS_DIR}")
+    ts = datetime.now().strftime("%Y%m%d%H%M%S")
+    session = TASKS_DIR / f"{ws}-{ts}-{os.getpid()}"
+    session.mkdir(parents=True, exist_ok=True)
+    return session
 
 
 def write_new(data: dict, body: str = "") -> Path:
-    """写新 tracker 到 tasks/<id>/task.md（自动 mkdir tasks/<id>）。已存在即抛 FileExistsError（查重兜底）。"""
+    """写新 tracker 到 session 目录平铺 <id>.task.md（无 session 目录自动自建）。已存在即抛 FileExistsError（查重兜底）。"""
     validate(data)
-    p = tracker_path(data["id"])
+    session = session_dir_for(data["ws"], create=True)
+    p = session / f"{data['id']}.task.md"
     if p.exists():
         raise FileExistsError(f"tracker 已存在: {p}")
-    p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(render_frontmatter(data, body), encoding="utf-8")
     return p
 
@@ -141,7 +174,7 @@ def load(track: Path) -> dict:
 
 
 def find_tracker(task_id: str) -> dict:
-    """按 id 定位 tracker：tasks/<id>/task.md（无 ws 目录层）。不存在抛 FileNotFoundError。"""
+    """按 id 定位 tracker：session 目录平铺 <id>.task.md（跨 session 搜索）。不存在抛 FileNotFoundError。"""
     if not ID_RE.match(task_id):
         raise FileNotFoundError(f"非法 task id: {task_id!r}")
     p = tracker_path(task_id)

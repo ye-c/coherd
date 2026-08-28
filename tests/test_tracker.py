@@ -1,13 +1,14 @@
-"""coherd.tracker 单元测试：扁平布局（一任务一目录 tasks/<id>/task.md 等）。
+"""coherd.tracker 单元测试：session 目录平铺布局（tasks/<ws>-<ts>-<pid>/<id>.task.md 等）。
 
-零依赖（stdlib unittest），用 mock patch T.TASKS_DIR 指向临时目录隔离，
-不触碰真实 ~/.config/coherd/tasks/。
+零依赖（stdlib unittest），用 COHERD_CONFIG_HOME 指向临时目录 + importlib.reload(T)
+隔离，不触碰真实 ~/.config/coherd/tasks/。
 """
 
+import importlib
+import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest import mock
 
 from coherd import tracker as T
 
@@ -29,26 +30,35 @@ def make_data(task_id: str, status: str = "pending", ws: str = WS) -> dict:
 
 
 class TasksDirMixin:
-    """把 T.TASKS_DIR 指向临时目录，测试隔离。"""
+    """把 TASKS_DIR 经 COHERD_CONFIG_HOME 指向临时目录（reload 生效），测试隔离。"""
 
     def setUp(self):
         self._tmp = TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
-        self.tasks = Path(self._tmp.name) / "tasks"
-        self.patcher = mock.patch.object(T, "TASKS_DIR", self.tasks)
-        self.patcher.start()
-        self.addCleanup(self.patcher.stop)
+        os.environ["COHERD_CONFIG_HOME"] = self._tmp.name
+        importlib.reload(T)
+        self.tasks = T.TASKS_DIR
+        self.addCleanup(self._restore_env)
+
+    def _restore_env(self):
+        os.environ.pop("COHERD_CONFIG_HOME", None)
+        importlib.reload(T)
 
 
 class LayoutTest(TasksDirMixin, unittest.TestCase):
-    def test_write_new_flat_task_dir(self):
+    def test_write_new_flat_session_dir(self):
         p = T.write_new(make_data("w37-20260828084854"))
-        # 目录名 = id，文件固定名 task.md，无 <ws>/<id>.md 分桶
-        self.assertEqual(p, self.tasks / "w37-20260828084854" / "task.md")
+        # 平铺: session 目录下 <id>.task.md；无固定 task.md / 无 <ws>/<id>.md 分桶
+        self.assertEqual(p.name, "w37-20260828084854.task.md")
+        self.assertTrue(p.parent.name.startswith("w37-"))
         self.assertTrue(p.is_file())
+        self.assertFalse((p.parent / "task.md").exists())
         self.assertFalse((self.tasks / WS / "w37-20260828084854.md").exists())
-        # 目录由 write_new 自动 mkdir（不用手动建）
-        self.assertTrue(p.parent.is_dir())
+
+    def test_write_new_reuses_latest_session(self):
+        p1 = T.write_new(make_data("w37-20260828084854"))
+        p2 = T.write_new(make_data("w37-20260828091158"))
+        self.assertEqual(p1.parent, p2.parent)
 
     def test_write_new_dup_raises(self):
         d = make_data("w37-20260828084854")
@@ -63,9 +73,7 @@ class LayoutTest(TasksDirMixin, unittest.TestCase):
         d2 = T.find_tracker("w2c-202608260001")
         self.assertEqual(d1["ws"], "w37")
         self.assertEqual(d2["ws"], "w2c")
-        self.assertEqual(
-            Path(d1["_path"]), self.tasks / "w37-20260828084854" / "task.md"
-        )
+        self.assertEqual(Path(d1["_path"]).name, "w37-20260828084854.task.md")
 
     def test_find_tracker_missing_raises(self):
         with self.assertRaises(FileNotFoundError):
@@ -75,7 +83,7 @@ class LayoutTest(TasksDirMixin, unittest.TestCase):
         d = make_data("w37-20260828084854", ws="w2c")
         p = T.write_new(d)
         data = T.load(p)
-        # _ws 从 frontmatter ws 字段读，不再取目录名（目录名 = id）
+        # _ws 从 frontmatter ws 字段读，不再从目录名取
         self.assertEqual(data["_ws"], "w2c")
 
     def test_set_status_roundtrip(self):
@@ -93,15 +101,66 @@ class LayoutTest(TasksDirMixin, unittest.TestCase):
         self.assertFalse(hasattr(T, "ARCHIVE_DIR"))
 
 
-class CliListTest(TasksDirMixin, unittest.TestCase):
-    """task list 单层 glob 遍历 + frontmatter 过滤。"""
+class SessionDirTest(TasksDirMixin, unittest.TestCase):
+    """glob_session_dir: 最新合格 session / 排除旧存量。"""
+
+    def test_glob_latest_qualified_session(self):
+        T.write_new(make_data("w37-20260828084854"))
+        first = T.glob_session_dir("w37")
+        # 后续第二个启动的 session（内含任务）→ 取最新
+        later = self.tasks / "w37-20270101000000-99999"
+        later.mkdir(parents=True)
+        (later / "w37-20270101000000.task.md").write_text(
+            (first / "w37-20260828084854.task.md").read_text(), encoding="utf-8"
+        )
+        self.assertEqual(T.glob_session_dir("w37"), later)
+        self.assertNotEqual(first, later)
+
+    def test_glob_excludes_empty_and_legacy_dirs(self):
+        T.write_new(make_data("w37-20260828084854"))
+        session = T.glob_session_dir("w37")
+        # 空目录（旧存量 w2y-* 式）不计入
+        (self.tasks / "w2y-20260101000000-111").mkdir(parents=True)
+        self.assertIsNone(T.glob_session_dir("w2y"))
+        # 旧子目录式（dir/task.md 固定名，非 *.task.md）不计入
+        legacy = self.tasks / "w37-20260828132220"
+        legacy.mkdir()
+        (legacy / "task.md").write_text("x", encoding="utf-8")
+        self.assertEqual(T.glob_session_dir("w37"), session)
+
+    def test_find_tracker_across_sessions(self):
+        """老 session 任务在最新 session 存在时仍可达（跨 session 搜索）。"""
+        p1 = T.write_new(make_data("w37-20260828084854"))
+        later = self.tasks / "w37-20270101000000-99999"
+        later.mkdir(parents=True)
+        (later / "w37-20270101000000.task.md").write_text(
+            (p1.parent / p1.name).read_text(), encoding="utf-8"
+        )
+        # 老 session 的历史任务（模拟存量）
+        old = p1.parent / "w37-20150101000000.task.md"
+        old.write_text((p1.parent / p1.name).read_text(), encoding="utf-8")
+        data = T.find_tracker("w37-20150101000000")
+        self.assertEqual(data["_path"], str(old))
+
 
     def _runner(self):
         from typer.testing import CliRunner
 
         from coherd import cli
 
-        return CliRunner(mix_stderr=False), cli.app
+        try:
+            return CliRunner(mix_stderr=False), cli.app  # 新 typer/click
+        except TypeError:
+            return CliRunner(), cli.app  # 旧 typer 不支持 mix_stderr
+
+    def _output(self, res) -> str:
+        """合并 stdout/stderr（旧 typer 无独立 stderr 缓冲）。"""
+        out = res.stdout
+        try:
+            out += res.stderr
+        except AttributeError:
+            pass
+        return out
 
     def test_list_flat_glob_and_ws_filter(self):
         T.write_new(make_data("w37-20260828084854", ws="w37"))
@@ -124,22 +183,44 @@ class CliListTest(TasksDirMixin, unittest.TestCase):
         self.assertNotIn("w37-20260828084854", res.stdout)
 
     def test_list_skips_malformed_with_warning(self):
-        T.write_new(make_data("w37-20260828084854"))
-        bad = self.tasks / "w37-bad1" / "task.md"
-        bad.parent.mkdir(parents=True)
+        p = T.write_new(make_data("w37-20260828084854"))
+        bad = p.parent / "w37-malformed.task.md"
         bad.write_text("no frontmatter here", encoding="utf-8")
         runner, app = self._runner()
         res = runner.invoke(app, ["task", "list"])
-        self.assertEqual(res.exit_code, 0, res.stdout + res.stderr)
+        self.assertEqual(res.exit_code, 0, self._output(res))
         self.assertIn("w37-20260828084854", res.stdout)
-        self.assertIn("警告", res.stderr)
+        self.assertIn("警告", self._output(res))
+
+    def test_new_creates_session_dir_when_none(self):
+        runner, app = self._runner()
+        res = runner.invoke(
+            app,
+            [
+                "task",
+                "new",
+                "--task-name",
+                "t1",
+                "--objective",
+                "o",
+                "--dod",
+                "d",
+                "--output",
+                "out.md",
+                "--ws",
+                "w37",
+            ],
+        )
+        self.assertEqual(res.exit_code, 0, res.stdout + res.stderr)
+        self.assertIn("已创建 tracker", res.stdout)
+        self.assertIsNotNone(T.glob_session_dir("w37"))
 
     def test_show_and_status_cli(self):
         T.write_new(make_data("w37-20260828084854"))
         runner, app = self._runner()
         res = runner.invoke(app, ["task", "show", "w37-20260828084854"])
         self.assertEqual(res.exit_code, 0, res.stdout + res.stderr)
-        self.assertIn("task.md", res.stdout)
+        self.assertIn(".task.md", res.stdout)
         res2 = runner.invoke(
             app, ["task", "status", "w37-20260828084854", "--set", "active"]
         )
