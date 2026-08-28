@@ -1,7 +1,7 @@
 # HANDOFF.md — coherd 现状 + 断链兜底排查手册
 
-> **定位**：当前及后续集群的**清晰起点** + **出问题好查**的排查入口。本文件反映最近 3 提交（`c3a7316`→`982c546`→`679fd5e`）
-> 落地后的最新状态：watch 全局化 + push 拆 feedback/notify + 契约回执登记边界收口 + 事件日志命名 events.log + 注释清理。
+> **定位**：当前及后续集群的**清晰起点** + **出问题好查**的排查入口。本文件反映最近 5 提交（`c3a7316`→`982c546`→`679fd5e`→`06d9710`→`1d22dd1`）
+> 落地后的最新状态：watch 全局化 + push 拆 feedback/notify + **交审回执闭环（方案A）** + 术语统一事件驱动 + CONTRACT §10 事实源 + 备份覆盖式 `.bak` + 事件日志命名 events.log。
 > **分支**：`feat/push-watch-brokenlink`（均**已 commit**，未 push 远程，见 §5）。
 > **命令面**：`coherd push` 已删不留别名，拆为 `coherd feedback`（期待回执·登记待回执）/ `coherd notify`（单向·不登记待回执）；
 > `coherd watch` 为**全局单例绑 herdr server**；事件日志统一 `events.log`。
@@ -10,7 +10,7 @@
 
 ---
 
-## §1 当前状态（最近 3 提交落地后）
+## §1 当前状态（最近 5 提交落地后）
 
 ### 已实现（全链路 approve + 吃狗粮）
 
@@ -120,11 +120,11 @@ agent A ── coherd feedback/notify <B> "[role]: ..." ──► ① append eve
 
 - **症状**：某任务改了 `~/.config/coherd/CONTRACT.md`（或 per-role 文档）并过了审，但 `./install.sh` 后改写**凭空消失**，
   新集群 agent 读到旧契约、用已删的命令（如 `coherd push`）→ 全线报错。
-- **根因**：契约**事实源是 repo `roles/*.md`**，`install.sh` 单向 `repo → ~/.config`（覆盖前把旧副本存 `.bak.<ts>`）。
+- **根因**：契约**事实源是 repo `roles/*.md`**，`install.sh` 单向 `repo → ~/.config`（覆盖前把旧副本存 `.bak`，覆盖式只留一份，见 `06d9710`）。
   executor 若只改 `~/.config` 副本、**没回写 `roles/`**，则副本改动是「一次性」的——下次 install/re-init 即被旧 repo 冲掉。
   这是 §3.5「副本与源必须同步」的**加强复发**：`feedback/notify` 契约改写就栽在这，靠 `.bak` 捞回。
 - **定位**：`grep -c feedback roles/CONTRACT.md` vs `grep -c feedback ~/.config/coherd/CONTRACT.md`——repo=0 而副本>0 即中招；
-  改写丢失时 `grep -l feedback ~/.config/coherd/CONTRACT.md.bak.* | head -1` 可捞最近含改写的备份。
+  改写丢失时 `~/.config/coherd/CONTRACT.md.bak`（覆盖式单份）可捞最近一次 install 前的旧契约。
 - **铁律**：**任何契约/角色文档改写，一律直接写 repo `roles/<doc>.md`**（事实源），写完再 `./install.sh` 同步到 `~/.config`。
   分派 tracker 的「边界」字段应写 `roles/CONTRACT.md` 而非 `~/.config/coherd/CONTRACT.md`。
 
@@ -157,20 +157,22 @@ agent A ── coherd feedback/notify <B> "[role]: ..." ──► ① append eve
 
 ### 收尾待办（w2y 遗留）
 
-- **push 远程 + PR**：`feat/push-watch-brokenlink` 最近 3 提交（`c3a7316`/`982c546`/`679fd5e`）已本地 commit、**未 push 远程**，待 push origin + 开 PR 合 main。
-- **重启验证（用户即将做）**：`./install.sh` 后 `coherd init`，必验——① §3.1 全局 `coherd watch`（无 --ws）存活；
+- **push 远程 + PR**：`feat/push-watch-brokenlink` 领先 origin **7 提交**（`dc3a4a6`/`c3a7316`/`982c546`/`679fd5e`/`33ffdc2`/`06d9710`/`1d22dd1`）已本地 commit、**未 push 远程**，待 push origin + 开 PR 合 main。
+- **重启验证（新集群测试，用户即将做）**：`./install.sh` 后 `coherd init`，必验——① §3.1 全局 `coherd watch`（无 --ws）存活；
   ② 多集群并存只起**一个**全局 watch、覆盖双 ws 兜底；③ §3.8 契约 `grep feedback roles/CONTRACT.md`>0 且 install 后 diff roles/ vs ~/.config 五文档一致（§10 镜像校验）；
-  ④ feedback 登记待回执 / notify 不登记待回执，无 §3.5 误报；⑤ EOF：kill server → watch 自动退且 `watch.pid` 释放（无 zombie）。
+  ④ feedback 登记待回执 / notify 不登记待回执，无 §3.5 误报；⑤ **方案A：exec 交审走 `feedback` 登记 reviewer 待回执；reviewer approve 走 `notify` 回执 executor 清除待回执 + `notify` 回流 coordinator**（验证 reviewer 不审时 watch 能兜底提醒，无待回执挂死）；⑥ EOF：kill server → watch 自动退且 `watch.pid` 释放（无 zombie）。
 - **events.log 噪声**：`events.log` 有 6 条 `w2x/w2z-nonexistent-peer` 测试遗留（无害、不触提醒）；后续验证一律用临时
   `log_path`（`push.run` 已支持注入）勿污染真实事件日志。
 
 ---
 
-## §6 历史（只留最近 3 提交；更早归档在 `archive/<ws>/` + 各 commit message）
+## §6 历史（只留最近 5 提交；更早归档在 `archive/<ws>/` + 各 commit message）
 
 - **`c3a7316`** feat(cli)：push 拆为 feedback/notify，watch 锁按 ws 派生。
 - **`982c546`** feat：watch 全局化（生命周期绑 server、per-agent ws 派生 role、EOF→stop→释放锁）+ push 拆分 + 契约回执登记边界收口（交审降 notify、approve 只回流 coord）。
 - **`679fd5e`** refactor：事件日志统一命名 `push-events.log`→`events.log`（读写端点对齐）+ 清理开发遗留注释 + ruff 格式化。
+- **`06d9710`** chore(install)：备份改覆盖式 `.bak` 只留一份（三处 `bak.$(date +%s)` 时间戳备份 → 固定 `.bak` 覆盖式）。
+- **`1d22dd1`** fix(coherd)：交审恢复回执闭环（方案A：交审=feedback、approve=notify 回执 executor 清除待回执）+ brief 映射单一事实源引 D10 + CONTRACT §10 事实源条款 + 术语统一事件驱动（去账务隐喻）。
 
 > 更早的 issue #8 断链修复、w2t 三项巩固、w2y 四任务详述均已归档（`archive/w2p`、`archive/w2t`、`archive/w2y` 含各自 tracker + approve/discuss 结论），不在此复述。
 
