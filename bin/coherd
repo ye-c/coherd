@@ -24,7 +24,7 @@ set -euo pipefail
 
 bash -n "$0" # 启动自检: 本脚本语法错误即由 set -e 早退, 避免半路挂起
 # ── 0. coherd task/feedback/notify/watch → re-exec 到 venv typer CLI（同一 typer app）──
-# 置于最顶部 (herdr/jq 检查前): 纯数据 CRUD/记账/兜底不被 launcher runtime 依赖卡死; 且须在 REPO="${1:-$PWD}" 前
+# 置于最顶部 (herdr/jq 检查前): 纯数据 CRUD/回执登记/兜底不被 launcher runtime 依赖卡死; 且须在 REPO="${1:-$PWD}" 前
 # 截获, 防 "task"/"push"/"watch" 被误当 REPO 路径 cd。re-exec 用 repo 根 .venv (install.sh 建), 缺则指引装 install.sh。
 HERE_BIN="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")" && pwd)"
 # case 保留 push token：push 命令已移除，但经此路由到 venv CLI 报干净的 "No such command 'push'"
@@ -292,7 +292,7 @@ _role_doc() { # role 名 → per-role 契约文档路径 (安装目录)
   esac
 }
 TRACKER_DIR="$HOME/.config/coherd/tasks/$WS_SLUG"
-_brief() { printf '你是%s。你的 herdr agent 名: %s。集群公共契约见 @%s (先读), 角色执行细节见 @%s (先读), 任务 tracker 目录见 %s (分派/审查结论落文件)。确认身份后发 standby 握手 (notify 单向) 并转 idle 待机, 按收到的消息行动。记账边界 (CONTRACT §2) 环节→命令: 期待回执的任务交互 (分派/交审/讨论/revise) 用 coherd feedback <peer> "[role]: ..." 挂账待清; 单向上报/回流/握手 (开工 ack / 交审上报 / approve 回流 / standby) 用 coherd notify <peer> "[role]: ..." 不挂账。' "$1" "$2" "$CONTRACT" "$(_role_doc "$1")" "$TRACKER_DIR"; }
+_brief() { printf '你是%s。你的 herdr agent 名: %s。集群公共契约见 @%s (先读), 角色执行细节见 @%s (先读), 任务 tracker 目录见 %s (分派/审查结论落文件)。确认身份后发 standby 握手 (notify 单向) 并转 idle 待机, 按收到的消息行动。回执登记: 环节→feedback/notify 映射以 CONTRACT §7 D10 为唯一权威 (命令名即语义: feedback 期待回执、notify 单向), 不在此重述。' "$1" "$2" "$CONTRACT" "$(_role_doc "$1")" "$TRACKER_DIR"; }
 # 送达确认: 用 state_change_seq 有界重投递。先取三角色基线 seq (agent get 失败→空串),
 # 每轮 sleep BRIEF_GRACE 后重读 seq; 涨=已消费跳过, 未涨且非 blocked → send-keys enter 补提交
 # (只提交不重发 brief 文本, 防双处理); 最多 2 轮宽限, 到期仍无变化 → WARN 不 die

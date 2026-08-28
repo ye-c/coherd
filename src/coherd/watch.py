@@ -1,19 +1,19 @@
 """coherd.watch — coherd watch 单例断链兜底 watcher（T-B，spec §5/§6/§8）。
 
 把「靠自觉 push」换成「运行时兜底 + 超限升级到人」：订阅 herdr socket 的
-`pane.agent_status_changed` 事件，重放 `events.log` 维护账本
-`pending[ws][receiver]=sender`，idle ∧ pending 未清 → 提醒；幂等去重；连续 2 次
-未清 → escalate（coordinator / 用户）。
+`pane.agent_status_changed` 事件，重放 `events.log` 维护待回执映射
+`pending[ws][receiver]=sender`，idle ∧ 待回执未清除 → 提醒；幂等去重；连续 2 次
+未清除 → escalate（coordinator / 用户）。
 
 设计拆分（便于单测）：
-- `Ledger`：账本重放（offset 续读）+ 反向清账，纯数据逻辑，可注入日志路径。
+- `Ledger`：事件日志重放（offset 续读）+ 回执清除，纯数据逻辑，可注入日志路径。
 - `decide`：idle 判定纯函数（幂等 / 节流 / escalate），可注入 now 与 throttle。
 - `Watch`：socket 读线程 → 有界队列 → 单 consumer 的编排壳（socket 可注入 mock）。
 
 遵守 spec §8 不变量 1-4：
-  1. push 不依赖 watcher 存活 —— 本模块只读账本，不写 push 路径。
+  1. push 不依赖 watcher 存活 —— 本模块只读事件日志，不写 push 路径。
   2. 同一 pane 同一 pending 最多提醒 2 次，之后必 escalate。
-  3. offset/账本续读由 Ledger 持久化（重启不丢）。
+  3. offset/事件日志续读由 Ledger 持久化（重启不丢）。
   4. 不改 herdr 源码、不侵入 agent 循环，只调既有 socket API + `herdr agent prompt`。
 """
 
@@ -39,7 +39,7 @@ from .tracker import CONFIG_HOME
 EVENT_STATUS_CHANGED = "pane.agent_status_changed"
 IDLE = "idle"
 
-# 默认账本文件（可被 COHERD_CONFIG_HOME 覆盖，测试隔离）
+# 默认事件日志文件（可被 COHERD_CONFIG_HOME 覆盖，测试隔离）
 PUSH_LOG = CONFIG_HOME / "events.log"
 # 状态（offset 续读 + pid 锁）落盘
 STATE_FILE = CONFIG_HOME / "watch-state.json"
@@ -66,31 +66,31 @@ ESCALATE_TMPL = (
 
 
 # ---------------------------------------------------------------------------
-# 账本（L）
+# 事件日志重放（L）
 # ---------------------------------------------------------------------------
 @dataclass
 class Ledger:
-    """events.log 重放账本：pending[(ws, receiver)] = sender。
+    """events.log 重放事件日志：pending[(ws, receiver)] = sender（待回执映射）。
 
     - offset 记录已重放到日志的字节位置，重启从 offset 续读（spec §8 不变量 3）。
-    - 每条 `send(from=F, to=T)` 事件说明「F 发消息给 T」→ T 欠 F 回执。
-    - 反向清账（D7）：看到 `from==原 sender 且 to==原 receiver` 的消息，
-      表示原 receiver 已主动回执 → 清 pending。本条自身再登记新欠。
+    - 每条 `send(from=F, to=T)` 事件说明「F 发消息给 T」→ T 待回执 F。
+    - 回执清除（D7）：看到 `from==待回执方 且 to==原期待方` 的消息，
+      表示已回执 → 清除该待回执。本条自身若期待回执则登记新待回执。
     """
 
     pending: dict[tuple[str, str], str] = field(default_factory=dict)
     offset: int = 0
 
     def apply(self, rec: dict) -> None:
-        """应用一条账本记录（send 事件），维护欠账 + 反向清账。"""
+        """应用一条事件日志记录（send 事件），维护待回执 + 回执清除。"""
         op = rec.get("op")
         ws, f, t = rec.get("ws"), rec.get("from"), rec.get("to")
         if op != "send" or not (ws and f and t):
             return
-        # 反向清账：F 曾欠 T，现 F 发消息给 T → 已回执（无条件：F 的回应即清偿，回应是否期待再回执无关）
+        # 回执清除：F 待回执 T，现 F 发消息给 T → 已回执（无条件：F 的回应即清偿，与消息是否期待回执无关）
         if self.pending.get((ws, f)) == t:
             del self.pending[(ws, f)]
-        # 本消息：T 欠 F（仅期待回执的消息登记；notify/expect_reply=false 上报不产生新欠）
+        # 本消息：T 待回执 F（仅期待回执的消息登记；notify/expect_reply=false 上报不产生新待回执）
         if rec.get("expect_reply", True):
             self.pending[(ws, t)] = f
 
@@ -118,7 +118,7 @@ class Ledger:
         return size
 
     def owner(self, ws: str, receiver: str) -> str | None:
-        """返回 receiver 欠谁的账（无欠账返回 None）。"""
+        """返回 receiver 待谁的回执（无待回执返回 None）。"""
         return self.pending.get((ws, receiver))
 
 
@@ -150,10 +150,10 @@ def decide(
 ) -> tuple[str, int, float]:
     """判定一条 idle 事件该做什么。
 
-    - owner=None（无欠账）→ SKIP，状态不变。
+    - owner=None（无待回执）→ SKIP，状态不变。
     - count==0（未提醒过）→ REMIND，count=1，记 last_remind=now。
     - count>=1 且距上次提醒 < throttle → SKIP（防抖，不重复连发）。
-    - count==1 且节流过了 → ESCALATE，count=2（连续 2 次未清，停止循环，不变量 2）。
+    - count==1 且节流过了 → ESCALATE，count=2（连续 2 次未清除，停止循环，不变量 2）。
     - count>=2 → SKIP（已 escalate，幂等不再动该 pane）。
 
     幂等（D5）：同 pane 已提醒且 pending 未清 → 节流窗口内 SKIP，不重复 warning。
@@ -278,13 +278,13 @@ class Watch:
 
     # ---- 事件循环 ----
     def run(self) -> int:
-        """主循环：replay 账本 → 订阅 socket → 读线程入队 → 单 consumer。"""
+        """主循环：replay 事件日志 → 订阅 socket → 读线程入队 → 单 consumer。"""
         if not self.socket_path:
             raise RuntimeError("HERDR_SOCKET_PATH 未设置，无法订阅 herdr 事件")
         if not self.acquire_pid_lock():
             raise RuntimeError("已有 watch 实例运行（pid 锁占用），拒绝并发第二实例")
 
-        # 账本：从持久化 offset 续读（不变量 3）
+        # 事件日志：从持久化 offset 续读（不变量 3）
         self.ledger.offset = load_state(self.state_path)
         self.ledger.offset = self.ledger.replay(self.log_path, self.ledger.offset)
         save_state(self.state_path, self.ledger.offset)
@@ -426,7 +426,7 @@ class Watch:
             return
         self.panes[pane] = role
 
-        # replay 增量账本（跨进程 O_APPEND 时序：处理事件前补拉新行，备注 1）
+        # replay 增量事件日志（跨进程 O_APPEND 时序：处理事件前补拉新行，备注 1）
         self.ledger.offset = self.ledger.replay(self.log_path, self.ledger.offset)
         save_state(self.state_path, self.ledger.offset)
 
@@ -453,7 +453,7 @@ class Watch:
         if not peer:
             peer = f"{ws}-{role}" if ws else role
         msg = f"[watch] {REMIND_TMPL.format(sender=owner).rstrip()}（pane={pane} idle 未回执）"
-        # 提醒失败不致命：账本仍在，下轮事件会再判
+        # 提醒失败不致命：事件日志仍在，下轮事件会再判
         send = self.sender
         if send:
             with contextlib.suppress(Exception):

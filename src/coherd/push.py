@@ -1,7 +1,7 @@
-"""coherd.push — feedback/notify 共用核心逻辑（runtime 记账 wrapper + 送达）。
+"""coherd.push — feedback/notify 共用核心逻辑（runtime 回执登记 wrapper + 送达）。
 
-把 peer 间发消息的"回执义务"从 agent 心智变成可观测账本（events.log），
-是（coherd watch 兜底）判定"谁欠谁回执"的前提。
+把 peer 间发消息的"回执义务"从 agent 心智变成可观测事件日志（events.log），
+是（coherd watch 兜底）判定"谁待回执"的前提。
 
 职责：
   1. 派生自身 role / ws / peer role
@@ -26,7 +26,7 @@ from pathlib import Path
 from .client import agent_list
 from .tracker import CONFIG_HOME
 
-# 全局账本：每行 JSON 带 ws 字段，单例 watcher 跨 ws 分桶
+# 全局事件日志：每行 JSON 带 ws 字段，单例 watcher 跨 ws 分桶
 DEFAULT_LOG = CONFIG_HOME / "events.log"
 
 # 送达执行器签名（可注入以便测试替换真实 herdr 调用）
@@ -77,7 +77,7 @@ def make_event(
     ts: str | None = None,
     expect_reply: bool = True,
 ) -> dict:
-    """账本事件 dict（字段序 op,ws,from,to,msg_id,ts,expect_reply）。"""
+    """事件日志条目 dict（字段序 op,ws,from,to,msg_id,ts,expect_reply）。"""
     return {
         "op": op,
         "ws": ws,
@@ -85,7 +85,7 @@ def make_event(
         "to": to,
         "msg_id": msg_id,
         "ts": ts or datetime.now(timezone.utc).isoformat(),
-        "expect_reply": expect_reply,  # feedback(期待回执) / notify(单向) 决定挂账与否
+        "expect_reply": expect_reply,  # feedback(期待回执) / notify(单向) 决定是否登记待回执
     }
 
 
@@ -126,9 +126,9 @@ def run(
     self_role_fn: Callable[[], str | None] | None = None,
     expect_reply: bool = True,
 ) -> dict:
-    """push 主流程：① 派生（env → 显参 → 报错）② 记账 ③ 送达。
+    """push 主流程：① 派生（env → 显参 → 报错）② 登记待回执 ③ 送达。
 
-    - 日志先行：append 成功即记账完成，后续送达失败不丢行。
+    - 日志先行：append 成功即登记完成，后续送达失败不丢行。
     - 返回含 from/to/msg_id/ts/delivered，供调用方回显与测试断言。
     """
     if not peer_agent or not msg:
@@ -155,7 +155,7 @@ def run(
 
     peer_role = derive_role(peer_agent, resolved_ws)
 
-    # ② 记账（O_APPEND，日志先行）
+    # ② 登记待回执（O_APPEND，日志先行）
     event = make_event(
         "send",
         resolved_ws,

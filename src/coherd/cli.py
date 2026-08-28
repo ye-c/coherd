@@ -44,7 +44,7 @@ def feedback(
         None, "--role", help="自身 role（缺省从 COHERD_ROLE / agent 名派生）"
     ),
 ) -> None:
-    """期待回执：写 events.log 挂账，收方必须回一条 feedback 清账。
+    """期待回执：写 events.log 登记待回执，收方必须回一条 feedback 清除待回执。
 
     命令名即语义，无缺省值陷阱；送达失败不丢行（watch 兜底）。
     """
@@ -58,7 +58,7 @@ def feedback(
         )
     else:
         typer.echo(
-            f"[feedback] 送达失败但已记账 {r['from']} -> {r['to']} ({r['msg_id']}) "
+            f"[feedback] 送达失败但已登记待回执 {r['from']} -> {r['to']} ({r['msg_id']}) "
             f"- watch 将兜底提醒；日志 {r['log_path']}",
             err=True,
         )
@@ -77,7 +77,7 @@ def notify(
         None, "--role", help="自身 role（缺省从 COHERD_ROLE / agent 名派生）"
     ),
 ) -> None:
-    """纯单向：写账本 expect_reply=false，不挂 pending、无需回执。
+    """纯单向：写 events.log expect_reply=false，不登记待回执、无需回执。
 
     命令名即语义；丢包自兜：delivered 假 → 非零退出提示转 feedback 重发。
     """
@@ -92,7 +92,7 @@ def notify(
     else:
         typer.echo(
             f"[notify] 送达失败 {r['from']} -> {r['to']} ({r['msg_id']}) "
-            f"- 已记账 expect_reply=false 无兜底，改用 `coherd feedback` 重发",
+            f"- 已写 events.log（expect_reply=false）无兜底，改用 `coherd feedback` 重发",
             err=True,
         )
         raise typer.Exit(code=1)
