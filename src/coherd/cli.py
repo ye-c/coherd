@@ -26,31 +26,55 @@ def _fatal(msg: str) -> None:
     typer.echo(f"错误: {msg}", err=True)
     raise typer.Exit(code=1)
 
-@app.command(name="push")
-def push(
+@app.command(name="feedback")
+def feedback(
     peer_agent: str = typer.Argument(..., help="对端 herdr agent 全名，如 w2p-reviewer"),
     msg: str = typer.Argument(..., help="消息，须带 [role]: 前缀（契约 §2）"),
     ws: str = typer.Option(None, "--ws", help="自身 ws 短号（缺省取 HERDR_WORKSPACE_ID 小写）"),
     role: str = typer.Option(None, "--role", help="自身 role（缺省从 COHERD_ROLE / agent 名派生）"),
-    no_reply: bool = typer.Option(False, "--no-reply",
-                                  help="单向上报/回流/ack/纯通知：不期待回执（watch 不登记 pending）"),
 ) -> None:
-    """runtime 记账 wrapper + 送达：追 push-events.log + herdr agent prompt。
+    """期待回执：写 push-events.log 挂账，收方必须回一条 feedback 清账。
 
-    把回执义务变成可观测账本；日志先行，送达失败不丢行（watch 兜底）。
+    命令名即语义，无缺省值陷阱；送达失败不丢行（watch 兜底）。
     """
     try:
-        r = _push.run(peer_agent, msg, ws=ws, role=role, expect_reply=not no_reply)
+        r = _push.run(peer_agent, msg, ws=ws, role=role, expect_reply=True)
     except ValueError as e:
         _fatal(str(e))
     if r["delivered"]:
-        typer.echo(f"[push] 已送达 {r['from']} -> {r['to']} ({r['msg_id']}) 记于 {r['log_path']}")
+        typer.echo(f"[feedback] 已送达 {r['from']} -> {r['to']} ({r['msg_id']}) 记于 {r['log_path']}")
     else:
         typer.echo(
-            f"[push] 送达失败但已记账 {r['from']} -> {r['to']} ({r['msg_id']}) "
+            f"[feedback] 送达失败但已记账 {r['from']} -> {r['to']} ({r['msg_id']}) "
             f"- watch 将兜底提醒；日志 {r['log_path']}",
             err=True,
         )
+
+
+@app.command(name="notify")
+def notify(
+    peer_agent: str = typer.Argument(..., help="对端 herdr agent 全名，如 w2p-reviewer"),
+    msg: str = typer.Argument(..., help="消息，须带 [role]: 前缀（契约 §2）"),
+    ws: str = typer.Option(None, "--ws", help="自身 ws 短号（缺省取 HERDR_WORKSPACE_ID 小写）"),
+    role: str = typer.Option(None, "--role", help="自身 role（缺省从 COHERD_ROLE / agent 名派生）"),
+) -> None:
+    """纯单向：写账本 expect_reply=false，不挂 pending、无需回执。
+
+    命令名即语义；丢包自兜：delivered 假 → 非零退出提示转 feedback 重发（spec §A）。
+    """
+    try:
+        r = _push.run(peer_agent, msg, ws=ws, role=role, expect_reply=False)
+    except ValueError as e:
+        _fatal(str(e))
+    if r["delivered"]:
+        typer.echo(f"[notify] 已送达 {r['from']} -> {r['to']} ({r['msg_id']}) 记于 {r['log_path']}")
+    else:
+        typer.echo(
+            f"[notify] 送达失败 {r['from']} -> {r['to']} ({r['msg_id']}) "
+            f"- 已记账 expect_reply=false 无兜底，改用 `coherd feedback` 重发",
+            err=True,
+        )
+        raise typer.Exit(code=1)
 
 
 @app.command(name="watch")

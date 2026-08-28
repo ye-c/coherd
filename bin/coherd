@@ -28,10 +28,10 @@ bash -n "$0" # 启动自检: 本脚本语法错误即由 set -e 早退, 避免�
 # 截获, 防 "task"/"push"/"watch" 被误当 REPO 路径 cd。re-exec 用 repo 根 .venv (install.sh 建), 缺则指引装 install.sh。
 HERE_BIN="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")" && pwd)"
 case "${1:-}" in
-  task|push|watch)
+  task|push|watch|feedback|notify)
     VENV_COHERD="$HERE_BIN/../.venv/bin/coherd"
     if [ ! -x "$VENV_COHERD" ]; then
-      echo "coherd: 未找到 .venv/bin/coherd — 先跑 install.sh (装 coherd task/push/watch CLI)" >&2
+      echo "coherd: 未找到 .venv/bin/coherd — 先跑 install.sh (装 coherd task/feedback/notify/watch CLI)" >&2
       exit 1
     fi
     exec "$VENV_COHERD" "$@"
@@ -290,7 +290,7 @@ _role_doc() { # role 名 → per-role 契约文档路径 (安装目录)
   esac
 }
 TRACKER_DIR="$HOME/.config/coherd/tasks/$WS_SLUG"
-_brief() { printf '你是%s。你的 herdr agent 名: %s。集群公共契约见 @%s (先读), 角色执行细节见 @%s (先读), 任务 tracker 目录见 %s (分派/审查结论落文件)。确认身份后发 standby 握手 (事件) 并转 idle 待机, 按收到的消息行动。记账边界 (CONTRACT §2): peer 间任务交互消息 (分派/交审/讨论/回流) 用 coherd push <peer> "[role]: ..." 记账; standby 握手用裸 herdr agent prompt 不记账。' "$1" "$2" "$CONTRACT" "$(_role_doc "$1")" "$TRACKER_DIR"; }
+_brief() { printf '你是%s。你的 herdr agent 名: %s。集群公共契约见 @%s (先读), 角色执行细节见 @%s (先读), 任务 tracker 目录见 %s (分派/审查结论落文件)。确认身份后发 standby 握手 (notify 单向) 并转 idle 待机, 按收到的消息行动。记账边界 (CONTRACT §2) 环节→命令: 期待回执的任务交互 (分派/交审/讨论/revise) 用 coherd feedback <peer> "[role]: ..." 挂账待清; 单向上报/回流/握手 (开工 ack / 交审上报 / approve 回流 / standby) 用 coherd notify <peer> "[role]: ..." 不挂账。' "$1" "$2" "$CONTRACT" "$(_role_doc "$1")" "$TRACKER_DIR"; }
 # 送达确认: 用 state_change_seq 有界重投递。先取三角色基线 seq (agent get 失败→空串),
 # 每轮 sleep BRIEF_GRACE 后重读 seq; 涨=已消费跳过, 未涨且非 blocked → send-keys enter 补提交
 # (只提交不重发 brief 文本, 防双处理); 最多 2 轮宽限, 到期仍无变化 → WARN 不 die
@@ -355,15 +355,15 @@ unset _n _i _round _all_done _st_blocked _seq_names _seq_base _seq_now _seq_done
 # ── 7.5. 拉起单例 watcher（断链兜底, spec §7/§8 不变量 1）──
 # nohup + disown 起 coherd watch --ws $WS_SLUG：逃逸父 shell 退出(SIGHUP), 兜底常驻存活;
 # watcher 挂=只失兜底, 不拖垮起集群主流程。
-# 幂等: 先探测 pid 锁文件 (~/.config/coherd/watch.pid) 有存活进程则跳过; watch 自身 pid 锁(已实现)是第二道防。
+# 幂等: 先探测 pid 锁文件 (~/.config/coherd/watch-$WS_SLUG.pid) 有存活进程则跳过; watch 自身 pid 锁(已实现)是第二道防。
 # 起失败 / 探测出错 → WARN 不 die（收敛于不变量 1: push 不依赖 watcher 存活, 集群照常就绪）。
 VCOHERD="$HERE_BIN/../.venv/bin/coherd"
 _watch_alive=0
-# 探测路径与 watch 写锁路径对齐: watch.py 用 CONFIG_HOME=COHERD_CONFIG_HOME 派生 PID_FILE
+# 探测路径与 watch 写锁路径对齐: watch.py 按 ws 派生 PID（watch-<ws>.pid, <ws> 小写短号）
 # (缺省 ~/.config/coherd)。不一致会导致幂等探测失准(多起一次,仍被 watch 自身锁拒)。
 _WATCH_CONFIG_HOME="${COHERD_CONFIG_HOME:-$HOME/.config/coherd}"
-if [ -f "$_WATCH_CONFIG_HOME/watch.pid" ]; then
-  _wpid="$(cat "$_WATCH_CONFIG_HOME/watch.pid" 2>/dev/null || true)"
+if [ -f "$_WATCH_CONFIG_HOME/watch-$WS_SLUG.pid" ]; then
+  _wpid="$(cat "$_WATCH_CONFIG_HOME/watch-$WS_SLUG.pid" 2>/dev/null || true)"
   if [ -n "$_wpid" ] && kill -0 "$_wpid" 2>/dev/null; then
     _watch_alive=1
   fi

@@ -1,4 +1,4 @@
-"""coherd.push — coherd push 子命令核心逻辑（runtime 记账 wrapper + 送达）。
+"""coherd.push — feedback/notify 共用核心逻辑（runtime 记账 wrapper + 送达）。
 
 把 peer 间发消息的"回执义务"从 agent 心智变成可观测账本（push-events.log），
 是 T-B（coherd watch 兜底）判定"谁欠谁回执"的前提。
@@ -9,7 +9,7 @@
   3. 调 `herdr agent prompt <peer-agent> "<msg>"` 送达
 落地顺序：日志先行，再送达 —— 送达失败不丢日志行（watcher 靠它兜底）。
 
-不依赖 watcher 存活（不变量 1）：只 append 日志，watcher 挂时 push 仍可用。
+不依赖 watcher 存活（不变量 1）：只 append 日志，watcher 挂时 feedback/notify 仍可用。
 """
 
 from __future__ import annotations
@@ -78,7 +78,7 @@ def make_event(op: str, ws: str, from_: str, to: str, msg_id: str,
         "to": to,
         "msg_id": msg_id,
         "ts": ts or datetime.now(timezone.utc).isoformat(),
-        "expect_reply": expect_reply,  # 缺省期待回执；--no-reply 上报置 False
+        "expect_reply": expect_reply,  # feedback(期待回执) / notify(单向) 决定挂账与否
     }
 
 

@@ -43,7 +43,10 @@ IDLE = "idle"
 PUSH_LOG = CONFIG_HOME / "push-events.log"
 # 状态（offset 续读 + pid 锁）落盘
 STATE_FILE = CONFIG_HOME / "watch-state.json"
-PID_FILE = CONFIG_HOME / "watch.pid"
+# pid 锁按 ws 派生，异 ws 独立锁、互不占（修跨集群占锁）
+def ws_pid_path(ws: str) -> Path:
+    """派生本 ws 的 pid 锁文件名：watch-<ws>.pid（<ws> 小写短号）。"""
+    return CONFIG_HOME / f"watch-{ws}.pid"
 
 # 升级阈值：提醒次数达此即 escalate（不变量 2）
 ESCALATE_AT = 2
@@ -58,7 +61,7 @@ REMIND = "remind"
 ESCALATE = "escalate"
 
 # 默认提醒/升级消息模板（含具体动作，spec §5.3）
-REMIND_TMPL = "你对 [{sender}] 有未回执，立即 `coherd push {sender} ...` 回复。"
+REMIND_TMPL = "你对 [{sender}] 有未回执，立即 `coherd feedback {sender} ...` 回复。"
 ESCALATE_TMPL = (
     "[watch] {receiver} 对 {sender} 连续 2 次 idle 未回执（断链），转入人工。"
 )
@@ -204,7 +207,7 @@ class Watch:
 
     log_path: Path = PUSH_LOG
     state_path: Path = STATE_FILE
-    pid_path: Path = PID_FILE
+    pid_path: Path | None = None
     ws: str | None = None
     socket_path: str | None = None
     sender: Callable[[str, str], bool] | None = None
@@ -225,6 +228,9 @@ class Watch:
                 or os.environ.get("HERDR_WORKSPACE_ID", "").lower()
                 or ""
             )
+        if self.pid_path is None:
+            # pid 锁按 ws 派生：异 ws 独立锁，同 ws 仍单例
+            self.pid_path = ws_pid_path(self.ws)
         if self.socket_path is None:
             self.socket_path = os.environ.get("HERDR_SOCKET_PATH")
         if not self.socket_path:

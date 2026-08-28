@@ -238,7 +238,7 @@ class HandleEventTest(unittest.TestCase):
         peer, msg = self.sent[0]
         self.assertEqual(peer, "w2p-reviewer")
         self.assertIn("coordinator", msg)
-        self.assertIn("coherd push", msg)
+        self.assertIn("coherd feedback", msg)
         # 反向清账（reviewer 主动回复 coordinator，追加而非覆盖）→ pending 清
         with open(self.log, "a", encoding="utf-8") as f:
             f.write(json.dumps({"op": "send", "ws": "w2p", "from": "reviewer", "to": "coordinator", "msg_id": "2", "ts": "t"}) + "\n")
