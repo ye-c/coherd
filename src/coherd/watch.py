@@ -1,7 +1,7 @@
 """coherd.watch — coherd watch 单例断链兜底 watcher（T-B，spec §5/§6/§8）。
 
 把「靠自觉 push」换成「运行时兜底 + 超限升级到人」：订阅 herdr socket 的
-`pane.agent_status_changed` 事件，重放 `push-events.log` 维护账本
+`pane.agent_status_changed` 事件，重放 `events.log` 维护账本
 `pending[ws][receiver]=sender`，idle ∧ pending 未清 → 提醒；幂等去重；连续 2 次
 未清 → escalate（coordinator / 用户）。
 
@@ -40,7 +40,7 @@ EVENT_STATUS_CHANGED = "pane.agent_status_changed"
 IDLE = "idle"
 
 # 默认账本文件（可被 COHERD_CONFIG_HOME 覆盖，测试隔离）
-PUSH_LOG = CONFIG_HOME / "push-events.log"
+PUSH_LOG = CONFIG_HOME / "events.log"
 # 状态（offset 续读 + pid 锁）落盘
 STATE_FILE = CONFIG_HOME / "watch-state.json"
 # pid 锁回全局单例：watch 生命周期绑 server（全局单 watch），锁与 server 一对一
@@ -70,7 +70,7 @@ ESCALATE_TMPL = (
 # ---------------------------------------------------------------------------
 @dataclass
 class Ledger:
-    """push-events.log 重放账本：pending[(ws, receiver)] = sender。
+    """events.log 重放账本：pending[(ws, receiver)] = sender。
 
     - offset 记录已重放到日志的字节位置，重启从 offset 续读（spec §8 不变量 3）。
     - 每条 `send(from=F, to=T)` 事件说明「F 发消息给 T」→ T 欠 F 回执。

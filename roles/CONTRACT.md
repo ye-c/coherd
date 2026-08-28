@@ -9,7 +9,7 @@
 
 | 术语 | 含义（本契约内固定） | 出处 |
 | ------ | ------ | ------ |
-| feedback / 期待回执 | `coherd feedback <name> "<消息>"`：期待回执的记账 wrapper——内部调 `herdr agent prompt <name>` 送达（**会自动唤醒 idle 待机者**）+ 向 `push-events.log` append 一行 `expect_reply=true` **挂账**，收方必须回一条 feedback 清账。关键交接（分派/revise/讨论）用它；命令名即语义，无缺省值陷阱 | §2/§7 |
+| feedback / 期待回执 | `coherd feedback <name> "<消息>"`：期待回执的记账 wrapper——内部调 `herdr agent prompt <name>` 送达（**会自动唤醒 idle 待机者**）+ 向 `events.log` append 一行 `expect_reply=true` **挂账**，收方必须回一条 feedback 清账。关键交接（分派/revise/讨论）用它；命令名即语义，无缺省值陷阱 | §2/§7 |
 | notify / 单向 | `coherd notify <name> "<消息>"`：纯单向——同经 `herdr agent prompt <name>` 送达，写账本 `expect_reply=false` **不挂账**、无需清。单向上报/回流/ack/握手用它；delivered 假 → 非零退出提示转 feedback 重发 | §2/§7 |
 | pull / 拉取 | `herdr agent read <name>`：被动读 peer 最新内容；**仅用于核对状态/查证据，不是等待手段** | §2 |
 | fire-and-forget / 即发即走 | 发 prompt 不带 `--wait/--timeout`，发出即止、不等回复 | §2 |
@@ -133,7 +133,7 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 - executor/reviewer 启动后读 CONTRACT.md 确认身份, 以 `coherd notify` 向 coordinator 发一次 `[<role>]: standby` 上报（§0 standby/握手, notify 单向**不挂账**——coordinator 不回 standby, 挂账会残留 pending 致 watcher 死循环; 见 §2 记账边界）, 随即**转 idle 待机**（herdr 层 pane 挂起; 非 agent CLI 层 hub-wait 等机制, 见 §0 idle）; coordinator 收到两份上报后判集群起步就绪, 自身转 idle 待机后开始按用户意图分派, 之后全程事件驱动(§7 下条)。**此握手单向、一次性、不触发 §2 回复义务**——coordinator 不回"收到", exec/rev 不等回复。coordinator 不轮询(§0)、不检测 exec/rev 状态; 未收到上报也不追究、不重发——沉默即故障信号, 用户自然察觉。
 - executor 完成 → 直接提交 reviewer 审查（reviewer 读产物 / `herdr agent read` 验证），结论 approve/revise 回流 coordinator；阻塞 → 上报 coordinator（原因 + 已尝试手段）；revise 循环 rev→exe→rev 不经 coordinator，超 §4 上限（2 轮）才介入仲裁。
 - feedback/notify 遵循 §2 三铁律（见 §2）；pane 输出退化为辅助。
-- **记账边界（D10）**：`coherd feedback` 记入 `push-events.log` 账本（`expect_reply=true`），供 watcher 判 `pending` 兜底断链；`coherd notify` 写账本 `expect_reply=false` **不挂账**。**环节→命令映射表是唯一权威**（coordinator 分派 / 讨论 / rev revise 退回 = `feedback` 挂账；exec 交审 / 改完重交(反向清 exec 欠 rev) / 开工 ack / 交审上报 / approve 回流 / standby 握手 / 纯通知 = `notify` 不挂账）。**例外**：watcher 发起的系统唤醒提醒仍裸 `herdr agent prompt`（**不记账**，防提醒成环）。一句话：任务交互看映射表定 feedback/notify，系统提醒裸发。
+- **记账边界（D10）**：`coherd feedback` 记入 `events.log` 账本（`expect_reply=true`），供 watcher 判 `pending` 兜底断链；`coherd notify` 写账本 `expect_reply=false` **不挂账**。**环节→命令映射表是唯一权威**（coordinator 分派 / 讨论 / rev revise 退回 = `feedback` 挂账；exec 交审 / 改完重交(反向清 exec 欠 rev) / 开工 ack / 交审上报 / approve 回流 / standby 握手 / 纯通知 = `notify` 不挂账）。**例外**：watcher 发起的系统唤醒提醒仍裸 `herdr agent prompt`（**不记账**，防提醒成环）。一句话：任务交互看映射表定 feedback/notify，系统提醒裸发。
 - **回执语义**：`coherd feedback` = 期待回执（watch 登记 pending，收方必须回一条 feedback 清账）；`coherd notify` = 纯单向（不登记 pending，不产生新欠）。命令名即语义，无缺省值陷阱——解除"忘了标 `--no-reply` = 挂账"缺陷。notify 送达失败不挂账 → CLI 非零退出提示转 feedback 重发（spec §A），关键交接仍用 feedback 兜底。
 
 ## 9. token 控制

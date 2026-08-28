@@ -16,7 +16,7 @@
 | 能力 | 说明 | 状态 |
 | --- | --- | --- |
 | `coherd task` CLI | `new / list / show / archive / status` | ✅ |
-| `coherd feedback` | **期待回执**：写 `push-events.log` `expect_reply=true` 挂账，收方必须回一条 feedback 清账（关键交接：分派/交审/revise/讨论）。命令名即语义，无缺省陷阱 | ✅ T-A→w2y 拆 |
+| `coherd feedback` | **期待回执**：写 `events.log` `expect_reply=true` 挂账，收方必须回一条 feedback 清账（关键交接：分派/交审/revise/讨论）。命令名即语义，无缺省陷阱 | ✅ T-A→w2y 拆 |
 | `coherd notify` | **纯单向**：写账本 `expect_reply=false` 不挂账；delivered 假→非零退出提示转 feedback 重发（上报/回流/ack/握手） | ✅ w2y 拆 |
 | `coherd watch` | **全局单例**断链兜底（绑 server：无 `--ws`，订阅全部 ws/pane，靠 per-agent workspace_id 派生 role，per-event ws 判账/投递） | ✅ T-B→w2y 改 |
 | 入口 | `bin/coherd` switch `task\|feedback\|notify\|watch`（`push` 已移除）→ re-exec venv python | ✅ w2y 拆 |
@@ -39,7 +39,7 @@
 
 - **两入口**：`bin/coherd`（bash，拉集群 + 入口路由）；`coherd {task,push,watch}`（python/typer，功能 CLI，**不做角色决策**）。
 - **依赖**：python + typer + uv，editable install（改 `src/` 即时生效）。
-- **目录**：`~/.config/coherd/{tasks,reviews,archive}/<ws>/`；账本 `~/.config/coherd/push-events.log`（`COHERD_CONFIG_HOME` 可覆盖隔离）。
+- **目录**：`~/.config/coherd/{tasks,reviews,archive}/<ws>/`；账本 `~/.config/coherd/events.log`（`COHERD_CONFIG_HOME` 可覆盖隔离）。
 - **共享 helper**：`src/coherd/client.py`（domstring 注 herdr_client）提供 `agent_list(socket_path)` + `_recv_full_json`，
   push 自派生与 watch.enum_panes 同源复用，避免复制 socket 代码。
 
@@ -48,7 +48,7 @@
 ## §2 断链兜底架构（一页讲清）
 
 ```
-agent A ── coherd feedback/notify <B> "[role]: ..." ──► ① append push-events.log (feedback: expect_reply=true 挂账; notify: false 不挂)
+agent A ── coherd feedback/notify <B> "[role]: ..." ──► ① append events.log (feedback: expect_reply=true 挂账; notify: false 不挂)
                                                         ② herdr agent prompt <B>    (送达+唤醒)
                                                         ③ B 回一条 feedback/notify → 反向清 pending
                                                         ④ 全局 watch 见 B idle ∧ pending 未清 → 提醒(裸 prompt)
@@ -86,7 +86,7 @@ agent A ── coherd feedback/notify <B> "[role]: ..." ──► ① append pus
 
 - **症状**：watch 活着但从不提醒（无 pending 可判）。
 - **根因**：peers 读了旧契约/没读 brief，仍用裸 `herdr agent prompt` 发任务交互消息 → 不记账。
-- **定位**：`tail -20 ~/.config/coherd/push-events.log` 有无 `op:send` 行；没有即此因。
+- **定位**：`tail -20 ~/.config/coherd/events.log` 有无 `op:send` 行；没有即此因。
 - **修复**：确认 peers 读的是新版 CONTRACT（`grep "coherd feedback\|coherd notify" ~/.config/coherd/CONTRACT.md` 应命中；旧版是 `coherd push`）；新集群 brief 已含记账边界提示。
 
 ### 3.3 watch 连不上 socket / 订阅失败
@@ -107,7 +107,7 @@ agent A ── coherd feedback/notify <B> "[role]: ..." ──► ① append pus
 
 - **症状**：watch 反复提醒某 peer「对 X 连续 idle 未回执」，但实际 X 契约本不回执。
 - **根因（本轮已修）**：单向上报/回流（exec→coord 交审上报、reviewer→coord approve 回流）**误走默认 `coherd push`**（期待回执）→ 收方永久欠账 → 误报。
-- **定位**：`push-events.log` 找「应为单向上报却无 expect_reply=false」的 send 行（`expect_reply` 缺省 true）。
+- **定位**：`events.log` 找「应为单向上报却无 expect_reply=false」的 send 行（`expect_reply` 缺省 true）。
 - **修复**：单向上报/回流/ack/通知用 `coherd notify`（expect_reply=false 不挂账）；期待回执的交接用 `coherd feedback`，两条命令名即语义。**契约源 `roles/CONTRACT.md` 与装到 `~/.config` 的副本必须同步此规则**（曾踩：executor 只改了副本，新集群装 repo 版旧契约）。
 
 ### 3.6 watch 多实例 / 重复提醒
@@ -172,7 +172,7 @@ agent A ── coherd feedback/notify <B> "[role]: ..." ──► ① append pus
 - **重启验证（用户即将做）**：`./install.sh` 后 `coherd init`，必验——① §3.1 全局 `coherd watch`（无 --ws）存活；
   ② 多集群并存只起**一个**全局 watch、覆盖双 ws 兜底；③ §3.8 契约 `grep feedback roles/CONTRACT.md`>0 且 install 后副本一致；
   ④ feedback 挂账 / notify 不挂账，无 §3.5 误报；⑤ EOF：kill server → watch 自动退且 `watch.pid` 释放（无 zombie）。
-- **账本噪声**：`push-events.log` 有 6 条 `w2x/w2z-nonexistent-peer` 测试遗留（无害、不触提醒）；后续验证一律用临时
+- **账本噪声**：`events.log` 有 6 条 `w2x/w2z-nonexistent-peer` 测试遗留（无害、不触提醒）；后续验证一律用临时
   `log_path`（`push.run` 已支持注入）勿污染真实账本。
 
 ---

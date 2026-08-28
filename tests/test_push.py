@@ -1,7 +1,8 @@
 """coherd.push 单元测试：role/ws/peer 派生、日志 append 格式、并发、送达失败仍记账。
 
-零依赖（stdlib unittest），用临时 log_path 隔离，不触碰真实 ~/.config/coherd/push-events.log。
+零依赖（stdlib unittest），用临时 log_path 隔离，不触碰真实 ~/.config/coherd/events.log。
 """
+
 import json
 import os
 import threading
@@ -19,14 +20,19 @@ def _delivered(peer: str, msg: str) -> bool:
 
 def _tmp_log() -> tuple[Path, object]:
     d = TemporaryDirectory()
-    return Path(d.name) / "push-events.log", d.cleanup
+    return Path(d.name) / "events.log", d.cleanup
 
 
 class EnvMixin:
     """保存/恢复涉及的 env 变量。"""
 
-    KEYS = ("HERDR_WORKSPACE_ID", "COHERD_ROLE", "HERDR_AGENT_NAME",
-            "HERDR_PANE_ID", "HERDR_SOCKET_PATH")
+    KEYS = (
+        "HERDR_WORKSPACE_ID",
+        "COHERD_ROLE",
+        "HERDR_AGENT_NAME",
+        "HERDR_PANE_ID",
+        "HERDR_SOCKET_PATH",
+    )
 
     def setUp(self):
         self._saved = {k: os.environ.get(k) for k in self.KEYS}
@@ -43,8 +49,14 @@ class DerivationTest(EnvMixin, unittest.TestCase):
     def test_role_ws_peer_explicit(self):
         path, cleanup = _tmp_log()
         self.addCleanup(cleanup)
-        r = P.run("w2p-reviewer", "[reviewer]: hi", ws="w2p", role="coordinator",
-                  log_path=path, sender=_delivered)
+        r = P.run(
+            "w2p-reviewer",
+            "[reviewer]: hi",
+            ws="w2p",
+            role="coordinator",
+            log_path=path,
+            sender=_delivered,
+        )
         self.assertEqual(r["ws"], "w2p")
         self.assertEqual(r["from"], "coordinator")
         self.assertEqual(r["to"], "reviewer")  # peer agent 去 ws- 前缀
@@ -55,8 +67,9 @@ class DerivationTest(EnvMixin, unittest.TestCase):
         os.environ["HERDR_WORKSPACE_ID"] = "w2P"  # 大写 → 小写短号
         os.environ.pop("COHERD_ROLE", None)
         os.environ["HERDR_AGENT_NAME"] = "w2p-executor"
-        r = P.run("w2p-reviewer", "m", ws=None, role=None, log_path=path,
-                  sender=_delivered)
+        r = P.run(
+            "w2p-reviewer", "m", ws=None, role=None, log_path=path, sender=_delivered
+        )
         self.assertEqual(r["ws"], "w2p")
         self.assertEqual(r["from"], "executor")  # 自身 agent 名派生
 
@@ -65,8 +78,14 @@ class DerivationTest(EnvMixin, unittest.TestCase):
         self.addCleanup(cleanup)
         os.environ.pop("HERDR_AGENT_NAME", None)
         os.environ["COHERD_ROLE"] = "libero"
-        r = P.run("w2a-coordinator", "m", ws="w2a", role=None, log_path=path,
-                  sender=_delivered)
+        r = P.run(
+            "w2a-coordinator",
+            "m",
+            ws="w2a",
+            role=None,
+            log_path=path,
+            sender=_delivered,
+        )
         self.assertEqual(r["from"], "libero")
         self.assertEqual(r["to"], "coordinator")
 
@@ -96,10 +115,17 @@ class DerivationTest(EnvMixin, unittest.TestCase):
         self.addCleanup(cleanup)
         for k in self.KEYS:
             os.environ.pop(k, None)
-        r = P.run("w2t-reviewer", "m", ws="w2t", role=None, log_path=path,
-                  sender=_delivered, self_role_fn=lambda: "w2t-executor")
+        r = P.run(
+            "w2t-reviewer",
+            "m",
+            ws="w2t",
+            role=None,
+            log_path=path,
+            sender=_delivered,
+            self_role_fn=lambda: "w2t-executor",
+        )
         self.assertEqual(r["ws"], "w2t")
-        self.assertEqual(r["from"], "executor")   # fallback 返回 name → derive_role
+        self.assertEqual(r["from"], "executor")  # fallback 返回 name → derive_role
         self.assertEqual(r["to"], "reviewer")
 
     def test_agent_list_fallback_hits(self):
@@ -110,23 +136,35 @@ class DerivationTest(EnvMixin, unittest.TestCase):
             os.environ.pop(k, None)
         os.environ["HERDR_PANE_ID"] = "w2T:p9"
         os.environ["HERDR_SOCKET_PATH"] = "/tmp/fake.sock"
-        with mock.patch.object(P, "agent_list", return_value=[
+        with mock.patch.object(
+            P,
+            "agent_list",
+            return_value=[
                 {"name": "w2t-executor", "pane_id": "w2T:p9", "workspace_id": "w2t"},
-        ]):
-            r = P.run("w2t-reviewer", "m", ws="w2t", role=None, log_path=path,
-                      sender=_delivered)
+            ],
+        ):
+            r = P.run(
+                "w2t-reviewer",
+                "m",
+                ws="w2t",
+                role=None,
+                log_path=path,
+                sender=_delivered,
+            )
         self.assertEqual(r["from"], "executor")
 
 
 class AppendFormatTest(unittest.TestCase):
     def test_event_line_fields(self):
-        ev = P.make_event("send", "w2p", "coordinator", "reviewer", "m1",
-                          ts="2026-08-27T00:00:00Z")
+        ev = P.make_event(
+            "send", "w2p", "coordinator", "reviewer", "m1", ts="2026-08-27T00:00:00Z"
+        )
         line = P.event_line(ev)
         self.assertEqual(json.loads(line), ev)
         # 字段序与 spec §4/§6 一致
-        self.assertEqual(list(ev.keys()),
-                         ["op", "ws", "from", "to", "msg_id", "ts", "expect_reply"])
+        self.assertEqual(
+            list(ev.keys()), ["op", "ws", "from", "to", "msg_id", "ts", "expect_reply"]
+        )
         # 缺省期待回执
         self.assertTrue(ev["expect_reply"])
 
@@ -145,8 +183,14 @@ class DeliveryTest(unittest.TestCase):
     def test_delivery_failure_still_logs(self):
         path, cleanup = _tmp_log()
         self.addCleanup(cleanup)
-        r = P.run("w2p-reviewer", "m", ws="w2p", role="executor",
-                  log_path=path, sender=lambda p, m: False)
+        r = P.run(
+            "w2p-reviewer",
+            "m",
+            ws="w2p",
+            role="executor",
+            log_path=path,
+            sender=lambda p, m: False,
+        )
         self.assertFalse(r["delivered"])
         lines = [l for l in path.read_text(encoding="utf-8").splitlines() if l]
         self.assertEqual(len(lines), 1)  # 送达失败日志行不丢
@@ -161,8 +205,14 @@ class DeliveryTest(unittest.TestCase):
             seen["peer"], seen["msg"] = peer, msg
             return True
 
-        r = P.run("w2p-reviewer", "[reviewer]: ok", ws="w2p", role="coordinator",
-                  log_path=path, sender=sender)
+        r = P.run(
+            "w2p-reviewer",
+            "[reviewer]: ok",
+            ws="w2p",
+            role="coordinator",
+            log_path=path,
+            sender=sender,
+        )
         self.assertTrue(r["delivered"])
         self.assertEqual(seen["peer"], "w2p-reviewer")
         self.assertEqual(seen["msg"], "[reviewer]: ok")
@@ -178,8 +228,14 @@ class ConcurrencyTest(unittest.TestCase):
 
         def worker(i):
             try:
-                P.run(f"w2p-peer{i % 3}", "m", ws="w2p", role="executor",
-                      log_path=path, sender=_delivered)
+                P.run(
+                    f"w2p-peer{i % 3}",
+                    "m",
+                    ws="w2p",
+                    role="executor",
+                    log_path=path,
+                    sender=_delivered,
+                )
             except Exception as e:  # noqa: BLE001
                 errs.append(e)
 

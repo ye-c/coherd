@@ -23,7 +23,7 @@
 set -euo pipefail
 
 bash -n "$0" # 启动自检: 本脚本语法错误即由 set -e 早退, 避免半路挂起
-# ── 0. coherd task|push|watch → re-exec 到 venv typer CLI（同一 typer app, 三子命令; spec §7 D8）──
+# ── 0. coherd task/feedback/notify/watch → re-exec 到 venv typer CLI（同一 typer app）──
 # 置于最顶部 (herdr/jq 检查前): 纯数据 CRUD/记账/兜底不被 launcher runtime 依赖卡死; 且须在 REPO="${1:-$PWD}" 前
 # 截获, 防 "task"/"push"/"watch" 被误当 REPO 路径 cd。re-exec 用 repo 根 .venv (install.sh 建), 缺则指引装 install.sh。
 HERE_BIN="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")" && pwd)"
@@ -277,7 +277,7 @@ start_roles
 # 契约文件放全局 (~/.config/coherd/), 不污染项目 git; 所有 herdr agent 共享
 # brief 走 fire-and-forget (CONTRACT §2 禁 --wait): 三份并行发出, 无内部轮询, 无送达等待;
 # 统一模板: 只给角色身份 + 自身 agent 名 + 双 @ 指路 (公共契约 CONTRACT.md + 角色执行细节 <role>.md) + standby 握手后转 idle 待机, 按消息行动
-# 送达确认 (DoD5): fire-and-forget 后用 state_change_seq 有界重投递 —
+# 送达确认: fire-and-forget 后用 state_change_seq 有界重投递 —
 # seq 涨=文本已消费跳过; 未涨且非 blocked → send-keys enter 补提交(只提交不重发, 防双处理);
 # 最多 2 轮宽限(BRIEF_GRACE), 仍无 seq 变化 → WARN 不 die(静默/健谈 cluster 可能不涨 seq=软信号)
 herdr workspace focus "$WS" >/dev/null 2>&1 || echo "coherd: WARN: workspace focus 失败, 某些 pane 可能不可见致 brief 文本残留 — 手动在各 pane 回车确认接收" >&2
@@ -354,7 +354,7 @@ for _i in 0 1 2; do
 done
 unset _n _i _round _all_done _st_blocked _seq_names _seq_base _seq_now _seq_done _seq_blocked _brief _role_doc
 
-# ── 7.5. 拉起单例 watcher（断链兜底, spec §7/§8 不变量 1）──
+# ── 7.5. 拉起单例 watcher（断链兜底）──
 # nohup + disown 起 coherd watch（全局单, 无 --ws）：逃逸父 shell 退出(SIGHUP), 兜底常驻存活;
 # watcher 挂=只失兜底, 不拖垮起集群主流程。
 # 幂等: 先探测全局 pid 锁文件 (~/.config/coherd/watch.pid) 有存活进程则跳过; watch 自身 pid 锁(已实现)是第二道防。

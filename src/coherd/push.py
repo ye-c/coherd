@@ -1,11 +1,11 @@
 """coherd.push — feedback/notify 共用核心逻辑（runtime 记账 wrapper + 送达）。
 
-把 peer 间发消息的"回执义务"从 agent 心智变成可观测账本（push-events.log），
-是 T-B（coherd watch 兜底）判定"谁欠谁回执"的前提。
+把 peer 间发消息的"回执义务"从 agent 心智变成可观测账本（events.log），
+是（coherd watch 兜底）判定"谁欠谁回执"的前提。
 
-职责（spec §4）：
+职责：
   1. 派生自身 role / ws / peer role
-  2. O_APPEND 向 push-events.log 追一行 JSON {op,ws,from,to,msg_id,ts}
+  2. O_APPEND 向 events.log 追一行 JSON {op,ws,from,to,msg_id,ts}
   3. 调 `herdr agent prompt <peer-agent> "<msg>"` 送达
 落地顺序：日志先行，再送达 —— 送达失败不丢日志行（watcher 靠它兜底）。
 
@@ -26,8 +26,8 @@ from pathlib import Path
 from .client import agent_list
 from .tracker import CONFIG_HOME
 
-# 全局账本（spec §6）：每行 JSON 带 ws 字段，单例 watcher 跨 ws 分桶
-DEFAULT_LOG = CONFIG_HOME / "push-events.log"
+# 全局账本：每行 JSON 带 ws 字段，单例 watcher 跨 ws 分桶
+DEFAULT_LOG = CONFIG_HOME / "events.log"
 
 # 送达执行器签名（可注入以便测试替换真实 herdr 调用）
 Sender = Callable[[str, str], bool]
@@ -68,9 +68,16 @@ def make_msg_id() -> str:
     return f"{time.time_ns()}-{uuid.uuid4().hex[:8]}"
 
 
-def make_event(op: str, ws: str, from_: str, to: str, msg_id: str,
-               ts: str | None = None, expect_reply: bool = True) -> dict:
-    """账本事件 dict（字段序 op,ws,from,to,msg_id,ts,expect_reply，与 spec §4/§6 一致）。"""
+def make_event(
+    op: str,
+    ws: str,
+    from_: str,
+    to: str,
+    msg_id: str,
+    ts: str | None = None,
+    expect_reply: bool = True,
+) -> dict:
+    """账本事件 dict（字段序 op,ws,from,to,msg_id,ts,expect_reply）。"""
     return {
         "op": op,
         "ws": ws,
@@ -108,12 +115,17 @@ def send_prompt(peer_agent: str, msg: str) -> bool:
         return False
 
 
-def run(peer_agent: str, msg: str, *,
-        ws: str | None = None, role: str | None = None,
-        log_path: Path | None = None,
-        sender: Sender = send_prompt,
-        self_role_fn: Callable[[], str | None] | None = None,
-        expect_reply: bool = True) -> dict:
+def run(
+    peer_agent: str,
+    msg: str,
+    *,
+    ws: str | None = None,
+    role: str | None = None,
+    log_path: Path | None = None,
+    sender: Sender = send_prompt,
+    self_role_fn: Callable[[], str | None] | None = None,
+    expect_reply: bool = True,
+) -> dict:
     """push 主流程：① 派生（env → 显参 → 报错）② 记账 ③ 送达。
 
     - 日志先行：append 成功即记账完成，后续送达失败不丢行。
@@ -144,8 +156,14 @@ def run(peer_agent: str, msg: str, *,
     peer_role = derive_role(peer_agent, resolved_ws)
 
     # ② 记账（O_APPEND，日志先行）
-    event = make_event("send", resolved_ws, resolved_role, peer_role, make_msg_id(),
-                       expect_reply=expect_reply)
+    event = make_event(
+        "send",
+        resolved_ws,
+        resolved_role,
+        peer_role,
+        make_msg_id(),
+        expect_reply=expect_reply,
+    )
     line = event_line(event)
     path = log_path or DEFAULT_LOG
     append_event(path, line)
