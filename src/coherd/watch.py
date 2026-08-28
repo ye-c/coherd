@@ -24,6 +24,7 @@ import json
 import os
 import queue
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -226,10 +227,34 @@ class Watch:
             )
         if self.socket_path is None:
             self.socket_path = os.environ.get("HERDR_SOCKET_PATH")
+        if not self.socket_path:
+            self.socket_path = self._resolve_socket_from_herdr()
         if self.sender is None:
             from . import push as P
 
             self.sender = P.send_prompt
+
+    def _resolve_socket_from_herdr(self) -> str | None:
+        """env 缺 HERDR_SOCKET_PATH 时兜底：`herdr status --json` 解 .server.socket。
+
+        失败（herdr 不可用 / 解析不到）留 None，run() 仍抛原 RuntimeError（静默下沉）。
+        """
+        try:
+            proc = subprocess.run(
+                ["herdr", "status", "--json"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (subprocess.SubprocessError, FileNotFoundError, OSError):
+            return None
+        if proc.returncode != 0:
+            return None
+        try:
+            sock = json.loads(proc.stdout).get("server", {}).get("socket")
+        except (json.JSONDecodeError, AttributeError):
+            return None
+        return sock if isinstance(sock, str) and sock else None
 
     # ---- pid 锁（spec §10 多实例防护）----
     def acquire_pid_lock(self) -> bool:

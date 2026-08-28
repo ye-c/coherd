@@ -1,11 +1,13 @@
 """coherd.watch 单元测试：账本重放/反向清账/offset 续读、decide 幂等/节流/escalate、
 事件解析、pid 锁、端到端 _handle_event。零依赖（stdlib unittest），用临时目录隔离，
 socket 用假对象注入，不连真实 herdr。"""
+import contextlib
 import json
 import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest import mock
 
 from coherd import watch as W
 
@@ -270,6 +272,50 @@ class HandleEventTest(unittest.TestCase):
         # 其他 ws 事件 → 忽略（workspace_id=w2Z，watch 关注 w2p）
         self.w._handle_event(self._idle_event(pane="w2Z:p1", ws_="w2Z"))
         self.assertEqual(self.sent, [])
+
+
+class SocketFallbackTest(unittest.TestCase):
+    """__post_init__ socket 兜底：env 缺 HERDR_SOCKET_PATH 时调 herdr status --json
+    自解 .server.socket；成功赋值，失败留 None（run() 仍抛原 RuntimeError）。"""
+
+    @contextlib.contextmanager
+    def _env_missing_socket(self):
+        """真·unset HERDR_SOCKET_PATH（生产外部 shell 缺席），退出恢复。
+
+        空串≠缺席：实测空串下 herdr status 崩 RC=1，会掩盖 fallback 差异。
+        """
+        saved = os.environ.pop("HERDR_SOCKET_PATH", None)
+        try:
+            yield
+        finally:
+            if saved is not None:
+                os.environ["HERDR_SOCKET_PATH"] = saved
+
+    def test_env_missing_status_ok_resolves_socket(self):
+        proc = mock.Mock(returncode=0, stdout=json.dumps(
+            {"server": {"socket": "/fake/herdr.sock"}}))
+        with self._env_missing_socket(), \
+                mock.patch("coherd.watch.subprocess.run", return_value=proc):
+            w = W.Watch(ws="w2v")
+        self.assertEqual(w.socket_path, "/fake/herdr.sock")
+
+    def test_env_missing_status_fail_keeps_none(self):
+        proc = mock.Mock(returncode=1, stdout="")
+        with self._env_missing_socket(), \
+                mock.patch("coherd.watch.subprocess.run", return_value=proc):
+            w = W.Watch(ws="w2v")
+        self.assertIsNone(w.socket_path)
+        with self.assertRaises(RuntimeError):
+            w.run()
+
+    def test_env_missing_status_exception_keeps_none(self):
+        with self._env_missing_socket(), \
+                mock.patch("coherd.watch.subprocess.run",
+                           side_effect=FileNotFoundError):
+            w = W.Watch(ws="w2v")
+        self.assertIsNone(w.socket_path)
+        with self.assertRaises(RuntimeError):
+            w.run()
 
 
 if __name__ == "__main__":
