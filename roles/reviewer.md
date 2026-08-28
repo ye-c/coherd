@@ -26,7 +26,7 @@
 
 - `approve: <理由要点>` — 附一句通过依据（验证命令结果 / DoD 逐条过）。
 - `revise: <问题清单逐条>` — 每条: 位置 + 问题 + 修法，让 executor 能逐条落地，不重审方向。
-- **结论写文件**：审查结论落盘 `~/.config/coherd/reviews/<ws>/{verdict}-<taskid>-<HHMMSS>.md`（verdict=approve/revise/discuss；秒戳到轮，多轮不撞）；送达时附文件路径（不贴结论正文）：approve → notify 回执 executor（清除交审待回执）+ notify coordinator（回流）；revise → feedback 退回 executor（逐条清单，同时清除交审待回执并登记 executor 待回执）+ notify coordinator（回流）。
+- **结论写文件**：审查结论落盘 `~/.config/coherd/tasks/<id>/{verdict}-<HHMMSS>.md`（verdict=approve/revise/discuss；秒戳到轮，多轮不撞，与 task.md 同目录）；送达时附文件路径（不贴结论正文）：approve → notify 回执 executor（清除交审待回执）+ notify coordinator（回流）；revise → feedback 退回 executor（逐条清单，同时清除交审待回执并登记 executor 待回执）+ notify coordinator（回流）。
 
 ## 升级仲裁
 

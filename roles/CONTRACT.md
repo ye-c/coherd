@@ -69,8 +69,8 @@ coordinator→executor 每条任务**必须**包含以下 4 字段，缺失即�
 
 约定：字段缺失 → executor 先向 coordinator 补齐再动工；模糊分派导致的重复/遗漏由分派方负责。
 
-- **tracker 权威副本**：分派前 coordinator 把 4 字段落盘 `~/.config/coherd/tasks/<ws>/<id>.md`，executor 契约上不可写（运行时不强制，靠流程保障 + 事后核对，见 §5）。
-- **自举过渡（CLI 落地前）**：tracker/reviews/archive 统一路径 `~/.config/coherd/{tasks,reviews,archive}/<ws>/<id>.md`，`<id>` 取任务名；目录由首写方 `mkdir -p` 兜底；`coherd task` CLI 就绪后接管路径与 `<id>` 生成（HANDOFF §3）。
+- **tracker 权威副本**：分派前 coordinator 把 4 字段落盘 `~/.config/coherd/tasks/<id>/task.md`，executor 契约上不可写（运行时不强制，靠流程保障 + 事后核对，见 §5）。
+- **自举过渡（CLI 落地前）**：tracker 一任务一目录 `~/.config/coherd/tasks/<id>/`（`<id>` 取任务名），tracker 入口 `task.md`、reviewer 结论 `{verdict}-<HHMMSS>.md` 同目录；目录由首写方 `mkdir -p` 兜底；`coherd task` CLI 就绪后接管路径与 `<id>` 生成（HANDOFF §3）。
 - executor **先读 tracker 再动工**；产出写 tracker「输出」字段指定路径。
 
 ## 4. 审查义务与循环（B）
@@ -88,7 +88,7 @@ reviewer **最小审查集**（每次审查必做）：
 - **revise 上限 2 轮**：仍不通过 → 升级 coordinator 仲裁（改判 / 拆任务 / 终止）。
 - 角色分离是架构核心：同一推理路径既写码又自评必失败，reviewer 不得代改被审产出，问题一律退回 executor。
 - **DoD 语义变更归 coordinator**：revise 若改动 DoD 验收标准（非实现级修订），必经 coordinator 更新 tracker，不走 rev→exe→rev 直通绕过。
-- **归档**：approve 后 coordinator 把 tracker + 审查结论归档到 `~/.config/coherd/archive/<ws>/`。
+- **归档视图**：无独立归档——历史任务目录永久留在 `tasks/<id>/`，归档视图 = `coherd task list --status done`（CLI 无 archive 命令）。
 
 ## 5. 工具白名单（C）
 
@@ -109,15 +109,14 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 > 不写「角色在何时调用哪个命令」的编排语义——那是各 per-role 文档「内部 task 纪律」的职责
 > （reviewer.md 已有 agent 自带 TaskCreate/TaskUpdate 纪律一节，注意与 coherd task CLI 区分）。
 
-**tracker 权威路径**：`~/.config/coherd/tasks/<ws>/<id>.md`（frontmatter 权威 schema + 自由 body）。
+**tracker 权威路径**：`~/.config/coherd/tasks/<id>/task.md`（frontmatter 权威 schema + 自由 body）。
 
 | CLI 命令 | 文件操作 | 数据含义 |
 | ------ | ------ | ------ |
-| `coherd task new` | 建 tasks/<ws>/<id>.md（id 自动生成 <ws>-<UTC日>-<序号>，查重防注入） | 创建任务记录 |
-| `coherd task list` | 列 tasks/<ws>/ 下 tracker 摘要（可按 --ws / --status 过滤） | 只读枚举 |
-| `coherd task show <ID>` | 打印完整 tracker（frontmatter + body） | 只读查看 |
+| `coherd task new` | 建 tasks/<id>/task.md（id = <ws>-<YYYYMMDDHHMMSS>，目录自动 mkdir，查重防注入） | 创建任务记录 |
+| `coherd task list` | 列 tasks/*/task.md 摘要（--ws / --status 读 frontmatter 过滤，malformed 跳过告警） | 只读枚举 |
+| `coherd task show <ID>` | 打印 tasks/<id>/task.md 完整 tracker（frontmatter + body） | 只读查看 |
 | `coherd task status <ID> --set <s>` | 改 frontmatter 的 status 字段（非法值拒绝，ID 不存在报错） | 更新状态 |
-| `coherd task archive <ID>` | 移 tracker 到 archive/<ws>/<id>.md | 归档（移出活跃区） |
 
 **status 枚举 `pending | active | done` 的数据含义**：是 tracker 记录本身的**记录态**（这条任务记录处于
 什么生命周期），**不是角色协作阶段**（不是「分派/审查中/已交付」的协作阶段机）。reviewer 的 approve/revise

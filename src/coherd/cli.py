@@ -1,4 +1,4 @@
-"""coherd.cli — coherd task CLI 入口（new / list / show / archive / status）。
+"""coherd.cli — coherd task CLI 入口（new / list / show / status）。
 
 滑坡护栏：CLI 只做文件 CRUD + 格式校验，永不做角色决策（无 dispatch/review）。
 不绑特定 agent CLI（pi/omp/claude）——coherd typer 是数据管理工具，不是 agent 编排引擎。
@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from pathlib import Path
 
 import typer
 
@@ -51,16 +50,17 @@ def feedback(
         r = _push.run(peer_agent, msg, ws=ws, role=role, msg_type="feedback")
     except ValueError as e:
         _fatal(str(e))
-    if r["delivered"]:
-        typer.echo(
-            f"[feedback] 已送达 {r['from']} -> {r['to']} ({r['msg_id']}) 记于 {r['log_path']}"
-        )
     else:
-        typer.echo(
-            f"[feedback] 送达失败 {r['from']} -> {r['to']} ({r['msg_id']}) "
-            f"- 已写 events.log（type=feedback），请用 `coherd feedback` 重发",
-            err=True,
-        )
+        if r["delivered"]:
+            typer.echo(
+                f"[feedback] 已送达 {r['from']} -> {r['to']} ({r['msg_id']}) 记于 {r['log_path']}"
+            )
+        else:
+            typer.echo(
+                f"[feedback] 送达失败 {r['from']} -> {r['to']} ({r['msg_id']}) "
+                f"- 已写 events.log（type=feedback），请用 `coherd feedback` 重发",
+                err=True,
+            )
 
 
 @app.command(name="notify")
@@ -84,17 +84,18 @@ def notify(
         r = _push.run(peer_agent, msg, ws=ws, role=role, msg_type="notify")
     except ValueError as e:
         _fatal(str(e))
-    if r["delivered"]:
-        typer.echo(
-            f"[notify] 已送达 {r['from']} -> {r['to']} ({r['msg_id']}) 记于 {r['log_path']}"
-        )
     else:
-        typer.echo(
-            f"[notify] 送达失败 {r['from']} -> {r['to']} ({r['msg_id']}) "
-            f"- 已写 events.log（type=notify）无回执义务，改用 `coherd feedback` 重发",
-            err=True,
-        )
-        raise typer.Exit(code=1)
+        if r["delivered"]:
+            typer.echo(
+                f"[notify] 已送达 {r['from']} -> {r['to']} ({r['msg_id']}) 记于 {r['log_path']}"
+            )
+        else:
+            typer.echo(
+                f"[notify] 送达失败 {r['from']} -> {r['to']} ({r['msg_id']}) "
+                f"- 已写 events.log（type=notify）无回执义务，改用 `coherd feedback` 重发",
+                err=True,
+            )
+            raise typer.Exit(code=1)
 
 
 @task_app.command()
@@ -110,12 +111,12 @@ def new(
         ..., "--output", "--output-path", help="产出物路径/结构"
     ),
     ws: str = typer.Option(
-        ..., "--ws", help="herdr workspace 短号（作 id 前缀 + 分桶目录）"
+        ..., "--ws", help="herdr workspace 短号（作 id 前缀 + frontmatter ws 字段）"
     ),
     status: str = typer.Option("pending", "--status", help=f"初始状态（{T.STATUSES}）"),
     body: str = typer.Option("", "--body", help="可选 markdown 正文（缺省留空）"),
 ) -> None:
-    """生成新 tracker 到 ~/.config/coherd/tasks/<ws>/<id>.md，打印路径。"""
+    """生成新 tracker 到 ~/.config/coherd/tasks/<id>/task.md，打印路径。"""
     if status not in T.STATUSES:
         _fatal(f"status 非法: {status!r}（需 {T.STATUSES}）")
     now = datetime.now(timezone.utc)
@@ -135,7 +136,8 @@ def new(
         p = T.write_new(data, body)
     except (ValueError, FileExistsError) as e:
         _fatal(str(e))
-    typer.echo(f"已创建 tracker: {p}")
+    else:
+        typer.echo(f"已创建 tracker: {p}")
 
 
 @task_app.command(name="list")
@@ -150,19 +152,18 @@ def list_cmd(
         typer.echo("无 tracker（tasks 目录不存在）")
         return
     rows: list[dict] = []
-    for ws_dir in sorted(T.TASKS_DIR.iterdir()):
-        if not ws_dir.is_dir() or (ws and ws_dir.name != ws):
+    for p in sorted(T.TASKS_DIR.glob("*/task.md")):
+        try:
+            data = T.load(p)
+        except ValueError as e:
+            # 容错:枚举列表遇 malformed/旧格式 tracker 跳过并告警,不拖垮整体
+            typer.echo(f"警告: 跳过非法 tracker {p}: {e}", err=True)
             continue
-        for p in sorted(ws_dir.glob("*.md")):
-            try:
-                data = T.load(p)
-            except ValueError as e:
-                # 容错:枚举列表遇 malformed/旧格式 tracker 跳过并告警,不拖垮整体
-                typer.echo(f"警告: 跳过非法 tracker {p}: {e}", err=True)
-                continue
-            if status is not None and data.get("status") != status:
-                continue
-            rows.append(data)
+        if ws is not None and data.get("ws") != ws:
+            continue
+        if status is not None and data.get("status") != status:
+            continue
+        rows.append(data)
     if not rows:
         typer.echo("无匹配 tracker")
         return
@@ -183,24 +184,9 @@ def show(
         data = T.find_tracker(task_id)
     except FileNotFoundError as e:
         _fatal(str(e))
-    typer.echo(T.render_frontmatter(data, data.get("_body", "")))
-    typer.echo(f"# 文件: {data['_path']}")
-
-
-@task_app.command(name="archive")
-def archive(
-    task_id: str = typer.Argument(..., help="tracker id，移入 archive/<ws>/"),
-) -> None:
-    """把 tracker 移入 archive/<ws>/<id>.md。"""
-    try:
-        data = T.find_tracker(task_id)
-    except FileNotFoundError as e:
-        _fatal(str(e))
-    src = Path(data["_path"])
-    dest = T.ARCHIVE_DIR / data["_ws"] / src.name
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    src.rename(dest)
-    typer.echo(f"已归档: {dest}")
+    else:
+        typer.echo(T.render_frontmatter(data, data.get("_body", "")))
+        typer.echo(f"# 文件: {data['_path']}")
 
 
 @task_app.command(name="status")

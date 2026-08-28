@@ -7,6 +7,7 @@ markdown body 为自由上下文（agent 补充），解析器不校验 body。
 逐行 split(': ') 建 dict，支持 `key: |` 块标量（缩进续行拼接）；以行首精确 '---' 判界，
 故块内缩进的 '---' 永不误判为边界。
 """
+
 from __future__ import annotations
 
 import os
@@ -14,13 +15,23 @@ import re
 from pathlib import Path
 
 # 存储根（可用 COHERD_CONFIG_HOME 覆盖，测试隔离用）
-CONFIG_HOME = Path(os.environ.get("COHERD_CONFIG_HOME", "~/.config/coherd")).expanduser()
+CONFIG_HOME = Path(
+    os.environ.get("COHERD_CONFIG_HOME", "~/.config/coherd")
+).expanduser()
 TASKS_DIR = CONFIG_HOME / "tasks"
-ARCHIVE_DIR = CONFIG_HOME / "archive"
 
 # frontmatter 固定字段顺序（写入即此序）
-FIELDS = ("id", "ws", "created_at", "task_name", "status", "parent_id",
-          "objective", "dod", "output_path")
+FIELDS = (
+    "id",
+    "ws",
+    "created_at",
+    "task_name",
+    "status",
+    "parent_id",
+    "objective",
+    "dod",
+    "output_path",
+)
 STATUSES = ("pending", "active", "done")
 
 # id / ws 作文件名与 id 前缀：正则防注入（阻止路径穿越/特殊字符）
@@ -36,7 +47,7 @@ def _split_blocks(text: str) -> tuple[list[str], str]:
     end = next((i for i in range(1, len(lines)) if lines[i] == "---"), None)
     if end is None:
         raise ValueError("非法 tracker: frontmatter 未闭合（缺结尾 '---'）")
-    return lines[1:end], "\n".join(lines[end + 1:])
+    return lines[1:end], "\n".join(lines[end + 1 :])
 
 
 def _parse_frontmatter(block: list[str]) -> dict[str, str]:
@@ -82,8 +93,16 @@ def render_frontmatter(data: dict, body: str = "") -> str:
 
 def validate(data: dict) -> None:
     """校验必填字段 + 状态枚举 + 字符集。不合法即抛 ValueError。"""
-    for f in ("id", "ws", "created_at", "task_name", "status", "objective",
-              "dod", "output_path"):
+    for f in (
+        "id",
+        "ws",
+        "created_at",
+        "task_name",
+        "status",
+        "objective",
+        "dod",
+        "output_path",
+    ):
         if not str(data.get(f, "")).strip():
             raise ValueError(f"tracker 缺必填字段: {f}")
     if str(data.get("status", "")) not in STATUSES:
@@ -92,17 +111,17 @@ def validate(data: dict) -> None:
         raise ValueError(f"id 含非法字符: {data.get('id')!r}（需 [a-zA-Z0-9_-]）")
 
 
-def tracker_path(ws: str, task_id: str, base: Path = TASKS_DIR) -> Path:
-    """tracker 文件路径：<base>/<ws>/<id>.md。ws 走 ID_RE 防注入。"""
-    if not ID_RE.match(ws):
-        raise ValueError(f"ws 含非法字符: {ws!r}（需 [a-zA-Z0-9_-]）")
-    return base / ws / f"{task_id}.md"
+def tracker_path(task_id: str) -> Path:
+    """tracker 文件路径：tasks/<id>/task.md（一任务一目录，目录名 = id）。id 走 ID_RE 防注入。"""
+    if not ID_RE.match(task_id):
+        raise ValueError(f"task id 含非法字符: {task_id!r}（需 [a-zA-Z0-9_-]）")
+    return TASKS_DIR / task_id / "task.md"
 
 
 def write_new(data: dict, body: str = "") -> Path:
-    """写新 tracker 到 tasks/<ws>/<id>.md。已存在即抛 FileExistsError（查重兜底）。"""
+    """写新 tracker 到 tasks/<id>/task.md（自动 mkdir tasks/<id>）。已存在即抛 FileExistsError（查重兜底）。"""
     validate(data)
-    p = tracker_path(data["ws"], data["id"])
+    p = tracker_path(data["id"])
     if p.exists():
         raise FileExistsError(f"tracker 已存在: {p}")
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -111,29 +130,24 @@ def write_new(data: dict, body: str = "") -> Path:
 
 
 def load(track: Path) -> dict:
-    """读 tracker 文件 + 解析 frontmatter，附加 _path / _ws / _body。"""
+    """读 tracker 文件 + 解析 frontmatter，附加 _path / _ws（frontmatter ws 字段）/ _body。"""
     text = track.read_text(encoding="utf-8")
     block, body = _split_blocks(text)
     data = _parse_frontmatter(block)
     data["_body"] = body.strip()
     data["_path"] = str(track)
-    data["_ws"] = track.parent.name
+    data["_ws"] = data.get("ws", "")
     return data
 
 
 def find_tracker(task_id: str) -> dict:
-    """按 id 跨 ws 查 tracker（show/archive/status 用，不知 ws 时）。不存在抛 FileNotFoundError。"""
+    """按 id 定位 tracker：tasks/<id>/task.md（无 ws 目录层）。不存在抛 FileNotFoundError。"""
     if not ID_RE.match(task_id):
         raise FileNotFoundError(f"非法 task id: {task_id!r}")
-    if not TASKS_DIR.is_dir():
-        raise FileNotFoundError(f"tracker 不存在: {task_id}（tasks 目录为空）")
-    for ws_dir in sorted(TASKS_DIR.iterdir()):
-        if not ws_dir.is_dir():
-            continue
-        p = ws_dir / f"{task_id}.md"
-        if p.is_file():
-            return load(p)
-    raise FileNotFoundError(f"tracker 不存在: {task_id}")
+    p = tracker_path(task_id)
+    if not p.is_file():
+        raise FileNotFoundError(f"tracker 不存在: {task_id}")
+    return load(p)
 
 
 def set_status(task_id: str, status: str, body: str = "") -> None:
@@ -144,4 +158,5 @@ def set_status(task_id: str, status: str, body: str = "") -> None:
     data["status"] = status
     Path(data["_path"]).write_text(
         render_frontmatter(data, body if body else data.get("_body", "")),
-        encoding="utf-8")
+        encoding="utf-8",
+    )

@@ -291,7 +291,7 @@ _role_doc() { # role 名 → per-role 契约文档路径 (安装目录)
     reviewer)    printf '%s' "$HOME/.config/coherd/reviewer.md" ;;
   esac
 }
-TRACKER_DIR="$HOME/.config/coherd/tasks/$WS_SLUG"
+TRACKER_DIR="$HOME/.config/coherd/tasks"
 _brief() { # 统一模板基干: 身份 + agent 名 + 双 @ 指路 (CONTRACT + per-role) + tracker 目录 + 待机 + 回执登记映射
   # standby 措辞按角色分支 (CONTRACT §7): 仅 executor/reviewer 向 coordinator 发 standby (notify 单向);
   # coordinator 纯被动接收 exec/rev 的 standby, 自身转 idle, 不向任何 peer 发 standby
