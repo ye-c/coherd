@@ -1,53 +1,44 @@
 # HANDOFF.md — coherd 现状 + 断链兜底排查手册
 
-> **定位**：当前及后续集群的**清晰起点** + **出问题好查**的排查入口。本文件是 issue #8（断链修复）+ w2t 三项
-> 巩固 + **w2y 本轮四任务（watch 跨集群锁 / push→feedback+notify 拆分 / watch 生命周期绑 server / 全局一致性收口）**
-> 落地后的最新状态快照。
-> **分支**：`feat/push-watch-brokenlink`。issue #8 5 commits + w2t 4 commits + **w2y 未 commit（见 §5）**。
-> **命令面已变**：`coherd push` 已拆为 `coherd feedback`（期待回执·挂账）/ `coherd notify`（单向·不挂账），
-> `push` 子命令**已移除不留别名**；`coherd watch` 由 per-ws 多实例改为**全局单例绑 herdr server**。
+> **定位**：当前及后续集群的**清晰起点** + **出问题好查**的排查入口。本文件反映最近 3 提交（`c3a7316`→`982c546`→`679fd5e`）
+> 落地后的最新状态：watch 全局化 + push 拆 feedback/notify + 契约记账边界收口 + 账本改名 events.log + 注释清理。
+> **分支**：`feat/push-watch-brokenlink`（均**已 commit**，未 push 远程，见 §5）。
+> **命令面**：`coherd push` 已删不留别名，拆为 `coherd feedback`（期待回执·挂账）/ `coherd notify`（单向·不挂账）；
+> `coherd watch` 为**全局单例绑 herdr server**；账本文件统一 `events.log`。
+
+> 历史归档（issue #8 断链修复、w2t 巩固、w2y 四任务详情）均在 `archive/<ws>/` 与各 commit message，本文件不再复述。
 
 ---
 
-## §1 当前状态（2026-08-27 · issue #8 + 本轮巩固三任务落地）
+## §1 当前状态（最近 3 提交落地后）
 
 ### 已实现（全链路 approve + 吃狗粮）
 
 | 能力 | 说明 | 状态 |
 | --- | --- | --- |
 | `coherd task` CLI | `new / list / show / archive / status` | ✅ |
-| `coherd feedback` | **期待回执**：写 `events.log` `expect_reply=true` 挂账，收方必须回一条 feedback 清账（关键交接：分派/交审/revise/讨论）。命令名即语义，无缺省陷阱 | ✅ T-A→w2y 拆 |
-| `coherd notify` | **纯单向**：写账本 `expect_reply=false` 不挂账；delivered 假→非零退出提示转 feedback 重发（上报/回流/ack/握手） | ✅ w2y 拆 |
-| `coherd watch` | **全局单例**断链兜底（绑 server：无 `--ws`，订阅全部 ws/pane，靠 per-agent workspace_id 派生 role，per-event ws 判账/投递） | ✅ T-B→w2y 改 |
-| 入口 | `bin/coherd` switch `task\|feedback\|notify\|watch`（`push` 已移除）→ re-exec venv python | ✅ w2y 拆 |
-| launcher 起 watch | 起集群末尾 `nohup coherd watch & disown`（**无 --ws**，全局单例，探测全局 `watch.pid` 幂等：首个集群起、其余复用） | ✅ w2y 改 |
-| 契约记账边界 | CONTRACT §0/§2/§7 + per-role：环节→命令映射表为唯一权威（feedback 挂账 / notify 不挂 / 系统提醒裸 prompt）（D10） | ✅ w2y 改 |
-| watch EOF 防护 | 读线程 EOF/OSError→`self.stop=True`→consumer 退→finally 释放锁；启动连不上 server→不留锁。防 bug1 zombie 复发 + 回归测试覆盖 | ✅ w2y 修 |
-
-### 本轮巩固三项（本集群吃狗粮发现并修复）
-
-1. **watch-nohup-survive（§3.1）**：launcher 裸 `&` 起 watch 无 nohup → bash 退出杀 watch，兜底永久失效。
-   改 `nohup ... & disown` + `sleep 1` 短探测 pid 存活再报 WARN/INFO。
-2. **push-cli-self-derive**：launcher 刻意不注入 env → push 派生链（--role→COHERD_ROLE→HERDR_AGENT_NAME）
-   全空报「无法派生 role」→ 被迫手动 `COHERD_ROLE=x` env 前缀 + msg 双写 role。改 `agent.list` 末级 fallback
-   自派生（复用 watch 已验证链路，抽共享 `herdr_client` helper），**`coherd push <peer> "[role]: ..."` 零 env 零前缀**。
-3. **watch-expect-reply（误报修复）**：`Ledger.apply` 曾把一切 F→T send 登记「T 欠 F」，单向上报/回流（exec→coord
-   交审上报、reviewer→coord approve 回流）收方本不回执却永久欠账 → watch 误报「连续 idle 未回执」。改账本记
-   `expect_reply`（缺省 True），watch 只对期待回执消息登记 pending；上报/回流/ack/纯通知用 `coherd push --no-reply`。
+| `coherd feedback` | **期待回执**：写 `events.log` `expect_reply=true` 挂账，收方必须回一条 feedback 清账（关键交接：分派/revise/讨论）。命令名即语义，无缺省陷阱 | ✅ |
+| `coherd notify` | **纯单向**：写账本 `expect_reply=false` 不挂账；delivered 假→非零退出提示转 feedback 重发（上报/回流/ack/交审/握手） | ✅ |
+| `coherd watch` | **全局单例**断链兜底（绑 server：无 `--ws`，订阅全部 ws/pane，靠 per-agent workspace_id 派生 role，per-event ws 判账/投递） | ✅ |
+| `coherd task` CLI | `new / list / show / archive / status`（tracker CRUD，不做角色决策） | ✅ |
+| 入口 | `bin/coherd` switch `task\|feedback\|notify\|watch`（`push` 已移除）→ re-exec venv python | ✅ |
+| launcher 起 watch | 起集群末尾 `nohup coherd watch & disown`（**无 --ws**，全局单例，探测全局 `watch.pid` 幂等：首个集群起、其余复用） | ✅ |
+| 契约记账边界 | CONTRACT §0/§2/§7 + per-role：环节→命令映射表为唯一权威（feedback 挂账 / notify 不挂 / 系统提醒裸 prompt） | ✅ |
+| watch EOF 防护 | 读线程 EOF/OSError→`self.stop=True`→consumer 退→finally 释放锁；启动连不上 server→不留锁。防 zombie 复发 + 回归测试覆盖 | ✅ |
 
 ### 技术栈 / 布局
 
-- **两入口**：`bin/coherd`（bash，拉集群 + 入口路由）；`coherd {task,push,watch}`（python/typer，功能 CLI，**不做角色决策**）。
+- **两入口**：`bin/coherd`（bash，拉集群 + 入口路由）；`coherd {task,feedback,notify,watch}`（python/typer，功能 CLI，**不做角色决策**）。
 - **依赖**：python + typer + uv，editable install（改 `src/` 即时生效）。
 - **目录**：`~/.config/coherd/{tasks,reviews,archive}/<ws>/`；账本 `~/.config/coherd/events.log`（`COHERD_CONFIG_HOME` 可覆盖隔离）。
-- **共享 helper**：`src/coherd/client.py`（domstring 注 herdr_client）提供 `agent_list(socket_path)` + `_recv_full_json`，
-  push 自派生与 watch.enum_panes 同源复用，避免复制 socket 代码。
+- **共享 helper**：`src/coherd/client.py` 提供 `agent_list(socket_path)` + `_recv_full_json`，
+  feedback/notify 自派生与 watch.enum_panes 同源复用，避免复制 socket 代码。
 
 ---
 
 ## §2 断链兜底架构（一页讲清）
 
-```
+```text
 agent A ── coherd feedback/notify <B> "[role]: ..." ──► ① append events.log (feedback: expect_reply=true 挂账; notify: false 不挂)
                                                         ② herdr agent prompt <B>    (送达+唤醒)
                                                         ③ B 回一条 feedback/notify → 反向清 pending
@@ -60,12 +51,13 @@ agent A ── coherd feedback/notify <B> "[role]: ..." ──► ① append eve
   `HERDR_AGENT_NAME`→`agent.list` 末级 fallback），无需 env 前缀；`[role]:` 前缀手写（契约 §2 模板）。
 - **回执语义（feedback vs notify 显式，无缺省陷阱）**：`feedback`=期待回执（watch 登记 pending，收方必须回一条清账）；
   `notify`=纯单向（不登记 pending）。拆分消灭了「`coherd push` 缺省期待回执、忘标 `--no-reply` → 永久欠账 → watch 误报」这一
-  病根（本轮首个 bug 即此）。notify 送达失败→CLI 非零退出提示转 feedback 重发。
-- **记账边界（D10，环节→命令映射表为唯一权威）**：
-  - **feedback 挂账** = 关键交接（coord→exec 分派、coord→rev 讨论/仲裁、exec→rev 交审、rev→exec revise 退回）。
-  - **notify 不挂账** = 单向上报（exec→coord 交审上报、rev→coord approve/revise 回流、开工 ack、standby 握手、纯通知）。
-  - **裸 `herdr agent prompt`** = 仅 watcher 系统唤醒提醒（不记账，防提醒成环）。standby 已统一走 notify（E3）。
-- **全局 watch role 派生（w2y 关键）**：watch 不再有单一 `self.ws`；`build_pane_map` 用每个 agent 的 `workspace_id` strip
+  病根（`push` 缺省期待回执时代的首个 bug）。notify 送达失败→CLI 非零退出提示转 feedback 重发。
+- **记账边界（环节→命令映射表为唯一权威）**：
+  - **feedback 挂账** = 关键交接（coord→exec 分派、coord→rev 讨论/仲裁、rev→exec revise 退回）。
+  - **notify 不挂账** = 单向（exec→rev 交审、改完重交(反向清 exec 欠 rev)、exec→coord 交审上报、rev→coord approve/revise 回流、开工 ack、standby 握手、纯通知）。**approve 只回流 coord，不通知 exec**。
+  - **裸 `herdr agent prompt`** = 仅 watcher 系统唤醒提醒（不记账，防提醒成环）。standby 已统一走 notify。
+  - 代价（已认可）：交审=notify 后若 reviewer 收交审长期不审，无 watch 兜底（见 §7）。
+- **全局 watch role 派生（关键）**：watch 不再有单一 `self.ws`；`build_pane_map` 用每个 agent 的 `workspace_id` strip
   `${ws}-` 前缀派生 role，`_remind`/`_escalate` 用**事件自带的 ws**。若沿用 watch 级 `self.ws` 派生，全局 watch 会产全名 role →
   查账 miss → 全 ws 兜底失效。`--ws` 仅作测试隔离过滤，env（`COHERD_WS`/`HERDR_WORKSPACE_ID`）不再静默填 self.ws。
 
@@ -106,7 +98,7 @@ agent A ── coherd feedback/notify <B> "[role]: ..." ──► ① append eve
 ### 3.5 pending 误报 → 反提醒（已修复，重点验证）
 
 - **症状**：watch 反复提醒某 peer「对 X 连续 idle 未回执」，但实际 X 契约本不回执。
-- **根因（本轮已修）**：单向上报/回流（exec→coord 交审上报、reviewer→coord approve 回流）**误走默认 `coherd push`**（期待回执）→ 收方永久欠账 → 误报。
+- **根因（已修）**：单向上报/回流（exec→coord 交审上报、reviewer→coord approve 回流）**误走缺省期待回执的记账**→ 收方永久欠账 → 误报。
 - **定位**：`events.log` 找「应为单向上报却无 expect_reply=false」的 send 行（`expect_reply` 缺省 true）。
 - **修复**：单向上报/回流/ack/通知用 `coherd notify`（expect_reply=false 不挂账）；期待回执的交接用 `coherd feedback`，两条命令名即语义。**契约源 `roles/CONTRACT.md` 与装到 `~/.config` 的副本必须同步此规则**（曾踩：executor 只改了副本，新集群装 repo 版旧契约）。
 
@@ -130,7 +122,7 @@ agent A ── coherd feedback/notify <B> "[role]: ..." ──► ① append eve
   新集群 agent 读到旧契约、用已删的命令（如 `coherd push`）→ 全线报错。
 - **根因**：契约**事实源是 repo `roles/*.md`**，`install.sh` 单向 `repo → ~/.config`（覆盖前把旧副本存 `.bak.<ts>`）。
   executor 若只改 `~/.config` 副本、**没回写 `roles/`**，则副本改动是「一次性」的——下次 install/re-init 即被旧 repo 冲掉。
-  这是 §3.5「副本与源必须同步」的**加强复发**：本轮 `feedback/notify` 契约改写就栽在这，靠 `.bak` 捞回。
+  这是 §3.5「副本与源必须同步」的**加强复发**：`feedback/notify` 契约改写就栽在这，靠 `.bak` 捞回。
 - **定位**：`grep -c feedback roles/CONTRACT.md` vs `grep -c feedback ~/.config/coherd/CONTRACT.md`——repo=0 而副本>0 即中招；
   改写丢失时 `grep -l feedback ~/.config/coherd/CONTRACT.md.bak.* | head -1` 可捞最近含改写的备份。
 - **铁律**：**任何契约/角色文档改写，一律直接写 repo `roles/<doc>.md`**（事实源），写完再 `./install.sh` 同步到 `~/.config`。
@@ -163,12 +155,9 @@ agent A ── coherd feedback/notify <B> "[role]: ..." ──► ① append eve
 - **#9** spec/ticket 概念制度化（设计定案 + 任务票），non-urgent。
 - **#4** locale/CLI 语言不匹配、**#3** 零配置能力强制、**#2** workspace 隔离（见 GitHub issues）。
 
-### 收尾待办（w2y 本轮遗留）
+### 收尾待办（w2y 遗留）
 
-- **未 commit**：w2y 4 任务改动全在工作区未提交（`bin/coherd` + `src/coherd/watch.py` + `src/coherd/cli.py` +
-  `src/coherd/push.py` + `tests/test_watch.py` + **`roles/CONTRACT.md` + `roles/executor.md`（契约回写，见 §3.8）**）。
-  建议 commit 前再跑一遍 `PYTHONPATH=src python3 -m unittest tests.test_watch tests.test_push`（35 全过）。
-- **push 远程 + PR**：`feat/push-watch-brokenlink` 全量 push origin + 开 PR 合 main（含 w2y 未 commit 部分）。
+- **push 远程 + PR**：`feat/push-watch-brokenlink` 最近 3 提交（`c3a7316`/`982c546`/`679fd5e`）已本地 commit、**未 push 远程**，待 push origin + 开 PR 合 main。
 - **重启验证（用户即将做）**：`./install.sh` 后 `coherd init`，必验——① §3.1 全局 `coherd watch`（无 --ws）存活；
   ② 多集群并存只起**一个**全局 watch、覆盖双 ws 兜底；③ §3.8 契约 `grep feedback roles/CONTRACT.md`>0 且 install 后副本一致；
   ④ feedback 挂账 / notify 不挂账，无 §3.5 误报；⑤ EOF：kill server → watch 自动退且 `watch.pid` 释放（无 zombie）。
@@ -177,14 +166,46 @@ agent A ── coherd feedback/notify <B> "[role]: ..." ──► ① append eve
 
 ---
 
-## §6 历史
+## §6 历史（只留最近 3 提交；更早归档在 `archive/<ws>/` + 各 commit message）
 
-- v5 重构（事件驱动契约 + `coherd task` CLI + 持久锚点 + 两入口）→ 0.1.1。
-- **issue #8 断链修复**：调研提案 → spec（D1–D10）→ T-A(push)/T-B(watch)/T-C(接线)/T-D(契约同步) 四任务全链路落地。设计决策、审查结论、踩坑（P1 role 映射断裂）全归档在 `archive/w2p/`（含 `spec-push-watch.md`）。
-- **本轮巩固（本集群 w2t 吃狗粮）**：watch-nohup-survive（launcher nohup 逃逸）→ push-cli-self-derive（role 自派生，零 env 前缀）→ watch-expect-reply（--no-reply 单向上报，消除误报）。tracker/审查全归档在 `archive/w2t/`：`watch-nohup-survive.md` / `push-cli-self-derive.md` / `watch-expect-reply.md` + 对应 approve/discuss 结论。
-- **w2y 本轮四任务（集群 w2y 吃狗粮，全链路 approve）**：
-  1. **watch-pid-perws**：watch pid 锁全局单例 → 老集群僵尸 watch 占锁、新集群起不来 watch（跨集群互斥）。改锁名挂 `watch-<ws>.pid`。→ 后被任务3 取代（回全局锁）。
-  2. **push-feedback-notify**：`coherd push` 缺省期待回执 → 忘标 `--no-reply` 即挂账误报（任务1 收尾即遭此）。拆 `feedback`（挂账）/`notify`（不挂账）两命令，命令名即语义、无缺省陷阱；`push` 移除不留别名；`__post_init__` typing 瑕疵顺带修。tracker `archive/w2y/push-feedback-notify.md`。
-  3. **watch-lifecycle-server**：watch 生命周期决策——A(绑 ws+自杀钩子=轮询，违契约禁轮询) vs **B(全局单 watch 绑 server，socket 断即死，隐式生命周期)**。采纳 B：role 派生改 per-agent workspace_id、`_remind`/`_escalate` 改 per-event ws、`run()` 删 ws raise、pid 锁回全局、读线程 EOF→`self.stop`→finally 释放锁（防 zombie）。讨论稿 `tasks/w2y/discuss-watch-lifecycle.md`。
-  4. **watch-global-consistency**：B 落地与 bin/coherd §7.5 同批收口——§7.5 起全局 watch（去 --ws）+ 探测回 `watch.pid`；`__post_init__` 去 env 派生（无 --ws=全局）；补 EOF 回归测试 `test_read_loop_eof_stops_and_releases_lock`。第1轮 revise：恢复 stale 测试时误删 `test_acquire_then_reject_second`，补回后 PidLockTest 三例齐、全量 35。附「启动连不上 server 不留锁」加固。
-  5. **契约回写 repo 修复（本轮新发现）**：install.sh 暴露任务2 契约改写只落 `~/.config` 副本、repo `roles/` 从未更新 → install 一冲就没。从 `.bak.1787890857` 捞回、回写 `roles/CONTRACT.md`+`roles/executor.md`。**新增 §3.8 防再犯**。
+- **`c3a7316`** feat(cli)：push 拆为 feedback/notify，watch 锁按 ws 派生。
+- **`982c546`** feat：watch 全局化（生命周期绑 server、per-agent ws 派生 role、EOF→stop→释放锁）+ push 拆分 + 契约记账边界收口（交审降 notify、approve 只回流 coord）。
+- **`679fd5e`** refactor：账本改名 `push-events.log`→`events.log`（读写端点对齐）+ 清理开发遗留注释 + ruff 格式化。
+
+> 更早的 issue #8 断链修复、w2t 三项巩固、w2y 四任务详述均已归档（`archive/w2p`、`archive/w2t`、`archive/w2y` 含各自 tracker + approve/discuss 结论），不在此复述。
+
+---
+
+## §7 反面教材：一次真实 loop 的账本轨迹（w2y · comment-sweep）
+
+> 新集群开工先读这节——下面每一步都是**真实账本行**（`events.log`/`push-events.log` 的 `op:send`），
+> 标 `REPLY`=feedback（挂账）、`notify`=不挂账。看得到正确链路，也看得到两个真实偏差。
+
+### 轨迹（coord=w2y-coordinator，下同）
+
+```text
+06:02:46  coord  --REPLY-->  exec      分派 comment-sweep（feedback 挂账：exec 欠 coord）
+06:03:03  exec   --REPLY-->  coord     开工确认 ✗偏差1：开工 ack 应是 notify，用了 feedback → 反挂 coord 欠 exec
+06:03:20  coord  --notify--> exec     批准+清账：一条 notify 既反向清掉分派账、又不新欠
+06:02:46  coord  --notify--> rev      （预告交审，notify）
+06:04:59  exec   --notify--> rev      交审 ✓（新映射：交审=notify 单向，不挂 rev 欠 exec）
+06:04:59  exec   --notify--> coord    已交审上报 ✓
+06:06:44  rev    --REPLY-->  exec     revise 退回 ✓（feedback 挂账：exec 欠 rev，逼 exec 必改重交）
+06:06:44  rev    --notify--> coord    revise 回流 coord ✓
+06:07:38  exec   --notify--> rev      重交审 ✓（notify 反向清掉「exec 欠 rev」+ 不新挂，闭环）
+06:07:38  exec   --notify--> coord    重交上报 ✓
+06:08:17  rev    --notify--> coord    approve 只回流 coord ✓✓（新语义验证点：不再双发 exec）
+```
+
+### 两个偏差 = 新集群最易犯的错
+
+1. **开工 ack 用成 feedback**（06:03:03）：`feedback`=期待回执=挂账。开工确认是单向状态上报，该 `notify`。
+   用 feedback 就多挂一笔「coord 欠 exec」→ 逼 coord 再补一条 notify 去清（06:03:20 就是补这个）。
+   **记**：开工 ack / 交审上报 / 回流 / 握手 = notify，别手滑 feedback。
+2. **交审降 notify 的代价**（06:04:59）：exec→rev 交审是 notify=不挂账 → **若 reviewer 收了交审长期不审，watch 无 pending 可提醒**（断链无人兜）。
+   本 loop 侥幸 rev 及时审；但这是**已知软肋不是 bug**——契约取舍「沉默即故障、用户自然察觉」。新集群别指望交审有兜底。
+
+### 正确点（照做）
+
+- approve **只** `notify coord`，**不再双发 exec**（06:08:17）——交审既然不挂 rev 欠 exec 的账，approve 就无需回 exec 清账。
+- revise 用 feedback（06:06:44）逼出重交，重交用 notify（06:07:38）恰好反向清账——**每轮 revise 恰好一条挂账、一条 notify 清**，循环无残留。
