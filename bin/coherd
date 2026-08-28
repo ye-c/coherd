@@ -23,18 +23,18 @@
 set -euo pipefail
 
 bash -n "$0" # 启动自检: 本脚本语法错误即由 set -e 早退, 避免半路挂起
-# ── 0. coherd task/feedback/notify/watch → re-exec 到 venv typer CLI（同一 typer app）──
-# 置于最顶部 (herdr/jq 检查前): 纯数据 CRUD/回执登记/兜底不被 launcher runtime 依赖卡死; 且须在 REPO="${1:-$PWD}" 前
+# ── 0. coherd task/feedback/notify → re-exec 到 venv typer CLI（同一 typer app）──
+# 置于最顶部 (herdr/jq 检查前): 纯数据 CRUD/回执登记不被 launcher runtime 依赖卡死; 且须在 REPO="${1:-$PWD}" 前
 # 截获, 防 "task"/"push"/"watch" 被误当 REPO 路径 cd。re-exec 用 repo 根 .venv (install.sh 建), 缺则指引装 install.sh。
 HERE_BIN="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")" && pwd)"
-# case 保留 push token：push 命令已移除，但经此路由到 venv CLI 报干净的 "No such command 'push'"
-# （否则 fallthrough 被 launcher 当 REPO 目录 cd，报错误导）。feedback/notify 为现行命令。
+# case 保留 push/watch token：两者已废弃（push→feedback/notify；watch→消息自描述软方案），
+# 但经此路由到 venv CLI 报干净的 "No such command 'push'/'watch'"（否则 fallthrough 当 REPO 目录 cd 误导）。
+# feedback/notify 为现行命令。
 case "${1:-}" in
   task|push|watch|feedback|notify)
     VENV_COHERD="$HERE_BIN/../.venv/bin/coherd"
     if [ ! -x "$VENV_COHERD" ]; then
-      echo "coherd: 未找到 .venv/bin/coherd — 先跑 install.sh (装 coherd task/feedback/notify/watch CLI)" >&2
-      exit 1
+      echo "coherd: 未找到 .venv/bin/coherd — 先跑 install.sh (装 coherd task/feedback/notify CLI)" >&2
     fi
     exec "$VENV_COHERD" "$@"
     ;;
@@ -292,7 +292,15 @@ _role_doc() { # role 名 → per-role 契约文档路径 (安装目录)
   esac
 }
 TRACKER_DIR="$HOME/.config/coherd/tasks/$WS_SLUG"
-_brief() { printf '你是%s。你的 herdr agent 名: %s。集群公共契约见 @%s (先读), 角色执行细节见 @%s (先读), 任务 tracker 目录见 %s (分派/审查结论落文件)。确认身份后发 standby 握手 (notify 单向) 并转 idle 待机, 按收到的消息行动。回执登记: 环节→feedback/notify 映射以 CONTRACT §7 D10 为唯一权威 (命令名即语义: feedback 期待回执、notify 单向), 不在此重述。' "$1" "$2" "$CONTRACT" "$(_role_doc "$1")" "$TRACKER_DIR"; }
+_brief() { # 统一模板基干: 身份 + agent 名 + 双 @ 指路 (CONTRACT + per-role) + tracker 目录 + 待机 + 回执登记映射
+  # standby 措辞按角色分支 (CONTRACT §7): 仅 executor/reviewer 向 coordinator 发 standby (notify 单向);
+  # coordinator 纯被动接收 exec/rev 的 standby, 自身转 idle, 不向任何 peer 发 standby
+  local _standby; case "$1" in
+    executor)   _standby='确认身份后经 coherd notify 向 coordinator 发一次 [executor]: standby 上报, 随即转 idle 待机 (standby 单向 notify, 不回执、不等回复)' ;;
+    reviewer)   _standby='确认身份后经 coherd notify 向 coordinator 发一次 [reviewer]: standby 上报, 随即转 idle 待机 (standby 单向 notify, 不回执、不等回复)' ;;
+    coordinator) _standby='确认身份后转 idle 待机; exec/reviewer 的 standby 上报纯被动接收, 不回执, 不向任何 peer 发 standby' ;;
+  esac
+  printf '你是%s。你的 herdr agent 名: %s。集群公共契约见 @%s (先读), 角色执行细节见 @%s (先读), 任务 tracker 目录见 %s (分派/审查结论落文件)。%s, 按收到的消息行动。回执登记: 环节→feedback/notify 映射以 CONTRACT §7 D10 为唯一权威 (命令名即语义: feedback 期待回执、notify 单向), 不在此重述。' "$1" "$2" "$CONTRACT" "$(_role_doc "$1")" "$TRACKER_DIR" "$_standby"; }
 # 送达确认: 用 state_change_seq 有界重投递。先取三角色基线 seq (agent get 失败→空串),
 # 每轮 sleep BRIEF_GRACE 后重读 seq; 涨=已消费跳过, 未涨且非 blocked → send-keys enter 补提交
 # (只提交不重发 brief 文本, 防双处理); 最多 2 轮宽限, 到期仍无变化 → WARN 不 die
@@ -353,40 +361,5 @@ for _i in 0 1 2; do
   fi
 done
 unset _n _i _round _all_done _st_blocked _seq_names _seq_base _seq_now _seq_done _seq_blocked _brief _role_doc
-
-# ── 7.5. 拉起单例 watcher（断链兜底）──
-# nohup + disown 起 coherd watch（全局单, 无 --ws）：逃逸父 shell 退出(SIGHUP), 兜底常驻存活;
-# watcher 挂=只失兜底, 不拖垮起集群主流程。
-# 幂等: 先探测全局 pid 锁文件 (~/.config/coherd/watch.pid) 有存活进程则跳过; watch 自身 pid 锁(已实现)是第二道防。
-# 全局单 watch 覆盖所有 ws: 首个集群拉起, 其余集群 init 探测到存活即跳过（复用同一 watch）。
-# 起失败 / 探测出错 → WARN 不 die（收敛于不变量 1: push 不依赖 watcher 存活, 集群照常就绪）。
-VCOHERD="$HERE_BIN/../.venv/bin/coherd"
-_watch_alive=0
-# 探测路径与 watch 写锁路径对齐: watch.py 用全局 PID_FILE（watch.pid, 锁与 herdr server 一对一）
-# (缺省 ~/.config/coherd)。不一致会导致幂等探测失准(多起一次,仍被 watch 自身锁拒)。
-_WATCH_CONFIG_HOME="${COHERD_CONFIG_HOME:-$HOME/.config/coherd}"
-if [ -f "$_WATCH_CONFIG_HOME/watch.pid" ]; then
-  _wpid="$(cat "$_WATCH_CONFIG_HOME/watch.pid" 2>/dev/null || true)"
-  if [ -n "$_wpid" ] && kill -0 "$_wpid" 2>/dev/null; then
-    _watch_alive=1
-  fi
-fi
-if [ "$_watch_alive" = 1 ]; then
-  info "watch 已在运行(pid $_wpid), 跳过拉起 (幂等)"
-elif [ -x "$VCOHERD" ]; then
-  # 裸 & 后台派发恒返 0, $? 分支判不了成败 → 静默起 + sleep 短探测 pid 存活再报准 WARN/INFO
-  nohup "$VCOHERD" watch >/dev/null 2>&1 &
-  _wpid=$!
-  disown
-  sleep 1
-  if kill -0 "$_wpid" 2>/dev/null; then
-    info "已后台拉起全局 watch (pid $_wpid)"
-  else
-    echo "coherd: WARN: watch 拉起后即退出(pid $_wpid 已死, 非阻塞, 不阻断集群) — 断链兜底暂缺, 可手动 nohup coherd watch & disown" >&2
-  fi
-else
-  echo "coherd: WARN: 缺 .venv/bin/coherd, 未拉起 watch (先跑 install.sh)" >&2
-fi
-unset _wpid _watch_alive VCOHERD _WATCH_CONFIG_HOME
 
 info "集群就绪: workspace=$WS  coordinator=$COORD_PANE  reviewer=$REV_PANE  executor=$EXEC_PANE  (契约见 $CONTRACT + per-role; 依赖 herdr ≥ 需支持上述 pane/agent 操作)"

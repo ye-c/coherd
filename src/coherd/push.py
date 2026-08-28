@@ -1,15 +1,14 @@
-"""coherd.push — feedback/notify 共用核心逻辑（runtime 回执登记 wrapper + 送达）。
+"""coherd.push — feedback/notify 共用核心逻辑（消息自描述标记注入 + 送达 + 精简审计）。
 
-把 peer 间发消息的"回执义务"从 agent 心智变成可观测事件日志（events.log），
-是（coherd watch 兜底）判定"谁待回执"的前提。
+把 peer 间发消息的"回执义务"变成消息自描述标记：CLI 派生 role/type 注入 `[<role>|<type>]: ` 前缀
+（type=feedback/notify，命令名即标记名），接收端一读即知是否需回执，不依赖后台守护进程（watch 已废弃）。
 
 职责：
   1. 派生自身 role / ws / peer role
-  2. O_APPEND 向 events.log 追一行 JSON {op,ws,from,to,msg_id,ts}
-  3. 调 `herdr agent prompt <peer-agent> "<msg>"` 送达
-落地顺序：日志先行，再送达 —— 送达失败不丢日志行（watcher 靠它兜底）。
-
-不依赖 watcher 存活（不变量 1）：只 append 日志，watcher 挂时 feedback/notify 仍可用。
+  2. 注入 `[<role>|<type>]: ` 标记前缀（agent 只写 body 正文，不手写前缀）
+  3. O_APPEND 向 events.log 追一行精简审计 JSON {ws,from,to,type,msg_id,ts}
+  4. 调 `herdr agent prompt <peer-agent> "<msg>"` 送达
+落地顺序：日志先行，再送达 —— 送达失败不丢审计行。
 """
 
 from __future__ import annotations
@@ -26,7 +25,7 @@ from pathlib import Path
 from .client import agent_list
 from .tracker import CONFIG_HOME
 
-# 全局事件日志：每行 JSON 带 ws 字段，单例 watcher 跨 ws 分桶
+# 全局事件日志：精简审计（type=feedback/notify 标识消息类型，无后台待回执判定）
 DEFAULT_LOG = CONFIG_HOME / "events.log"
 
 # 送达执行器签名（可注入以便测试替换真实 herdr 调用）
@@ -69,23 +68,21 @@ def make_msg_id() -> str:
 
 
 def make_event(
-    op: str,
     ws: str,
     from_: str,
     to: str,
     msg_id: str,
     ts: str | None = None,
-    expect_reply: bool = True,
+    msg_type: str = "feedback",
 ) -> dict:
-    """事件日志条目 dict（字段序 op,ws,from,to,msg_id,ts,expect_reply）。"""
+    """事件日志条目 dict（字段序 ws,from,to,type,msg_id,ts，type=feedback/notify）。"""
     return {
-        "op": op,
         "ws": ws,
         "from": from_,
         "to": to,
+        "type": msg_type,  # feedback(待回执) / notify(单向)，命令名即标记名
         "msg_id": msg_id,
         "ts": ts or datetime.now(timezone.utc).isoformat(),
-        "expect_reply": expect_reply,  # feedback(期待回执) / notify(单向) 决定是否登记待回执
     }
 
 
@@ -124,12 +121,13 @@ def run(
     log_path: Path | None = None,
     sender: Sender = send_prompt,
     self_role_fn: Callable[[], str | None] | None = None,
-    expect_reply: bool = True,
+    msg_type: str = "feedback",
 ) -> dict:
-    """push 主流程：① 派生（env → 显参 → 报错）② 登记待回执 ③ 送达。
+    """push 主流程：① 派生（env → 显参 → 报错）② 注入标记 ③ 精简审计 ④ 送达。
 
-    - 日志先行：append 成功即登记完成，后续送达失败不丢行。
-    - 返回含 from/to/msg_id/ts/delivered，供调用方回显与测试断言。
+    - 标记：`[<role>|<type>]: <body>`（type=feedback/notify，CLI 注入，agent 只写 body）。
+    - 日志先行：append 成功即审计完成，后续送达失败不丢行。
+    - 返回含 from/to/type/msg_id/ts/delivered/line，供调用方回显与测试断言。
     """
     if not peer_agent or not msg:
         raise ValueError("peer 与消息均不可为空")
@@ -155,26 +153,29 @@ def run(
 
     peer_role = derive_role(peer_agent, resolved_ws)
 
-    # ② 登记待回执（O_APPEND，日志先行）
+    # ② 注入 `[<role>|<type>]: ` 标记前缀（类型=feedback/notify，命令名即标记名）
+    signed_msg = f"[{resolved_role}|{msg_type}]: {msg}"
+
+    # ③ 精简审计（O_APPEND，日志先行：type 标识消息类型，无后台待回执登记）
     event = make_event(
-        "send",
         resolved_ws,
         resolved_role,
         peer_role,
         make_msg_id(),
-        expect_reply=expect_reply,
+        msg_type=msg_type,
     )
     line = event_line(event)
     path = log_path or DEFAULT_LOG
     append_event(path, line)
 
-    # ③ 送达（失败不丢行，返回 delivered=False）
-    delivered = sender(peer_agent, msg)
+    # ④ 送达注入标记后的消息（失败不丢审计行，返回 delivered=False）
+    delivered = sender(peer_agent, signed_msg)
 
     return {
         "ws": resolved_ws,
         "from": resolved_role,
         "to": peer_role,
+        "type": msg_type,
         "peer_agent": peer_agent,
         "msg_id": event["msg_id"],
         "ts": event["ts"],

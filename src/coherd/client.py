@@ -1,6 +1,6 @@
 """coherd.client — herdr socket 短连接请求-响应客户端（共享 helper）。
 
-把 watch.enum_panes 的 socket connect + 流读完整 JSON 响应抽成模块级 helper，
+把 socket connect + 流读完整 JSON 响应抽成模块级 helper，
 push 的 role 自派生末级 fallback 同源复用，避免在两个消费者里复制 socket 代码。
 """
 

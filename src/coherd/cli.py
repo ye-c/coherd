@@ -13,7 +13,6 @@ import typer
 
 from . import push as _push
 from . import tracker as T
-from . import watch as _watch
 from .id_gen import next_id
 
 app = typer.Typer(
@@ -44,12 +43,12 @@ def feedback(
         None, "--role", help="自身 role（缺省从 COHERD_ROLE / agent 名派生）"
     ),
 ) -> None:
-    """期待回执：写 events.log 登记待回执，收方必须回一条 feedback 清除待回执。
+    """feedback 类型标记：CLI 注入 `[<role>|feedback]: <body>`，收方据标记需回执。
 
-    命令名即语义，无缺省值陷阱；送达失败不丢行（watch 兜底）。
+    命令名即语义（=标记名），无缺省值陷阱；送达失败不丢审计行。
     """
     try:
-        r = _push.run(peer_agent, msg, ws=ws, role=role, expect_reply=True)
+        r = _push.run(peer_agent, msg, ws=ws, role=role, msg_type="feedback")
     except ValueError as e:
         _fatal(str(e))
     if r["delivered"]:
@@ -58,8 +57,8 @@ def feedback(
         )
     else:
         typer.echo(
-            f"[feedback] 送达失败但已登记待回执 {r['from']} -> {r['to']} ({r['msg_id']}) "
-            f"- watch 将兜底提醒；日志 {r['log_path']}",
+            f"[feedback] 送达失败 {r['from']} -> {r['to']} ({r['msg_id']}) "
+            f"- 已写 events.log（type=feedback），请用 `coherd feedback` 重发",
             err=True,
         )
 
@@ -77,12 +76,12 @@ def notify(
         None, "--role", help="自身 role（缺省从 COHERD_ROLE / agent 名派生）"
     ),
 ) -> None:
-    """纯单向：写 events.log expect_reply=false，不登记待回执、无需回执。
+    """notify 类型标记：CLI 注入 `[<role>|notify]: <body>`，单向无需回执。
 
     命令名即语义；丢包自兜：delivered 假 → 非零退出提示转 feedback 重发。
     """
     try:
-        r = _push.run(peer_agent, msg, ws=ws, role=role, expect_reply=False)
+        r = _push.run(peer_agent, msg, ws=ws, role=role, msg_type="notify")
     except ValueError as e:
         _fatal(str(e))
     if r["delivered"]:
@@ -92,29 +91,10 @@ def notify(
     else:
         typer.echo(
             f"[notify] 送达失败 {r['from']} -> {r['to']} ({r['msg_id']}) "
-            f"- 已写 events.log（expect_reply=false）无兜底，改用 `coherd feedback` 重发",
+            f"- 已写 events.log（type=notify）无回执义务，改用 `coherd feedback` 重发",
             err=True,
         )
         raise typer.Exit(code=1)
-
-
-@app.command(name="watch")
-def watch(
-    ws: str = typer.Option(
-        None, "--ws", help="仅测试隔离过滤（缺省 = 全局单 watch，覆盖所有 ws）"
-    ),
-    escalate_agent: str = typer.Option(
-        None,
-        "--escalate-agent",
-        help="escalate 投递目标（缺省 = 事件所属 ws 的 coordinator）",
-    ),
-) -> None:
-    """单例断链兜底 watcher：订阅 idle 事件，pending 未清则提醒/升级（前台长驻）。"""
-    w = _watch.Watch(ws=ws, escalate_agent=escalate_agent)
-    try:
-        w.run()
-    except RuntimeError as e:
-        _fatal(str(e))
 
 
 @task_app.command()

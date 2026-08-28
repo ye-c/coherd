@@ -157,16 +157,16 @@ class DerivationTest(EnvMixin, unittest.TestCase):
 class AppendFormatTest(unittest.TestCase):
     def test_event_line_fields(self):
         ev = P.make_event(
-            "send", "w2p", "coordinator", "reviewer", "m1", ts="2026-08-27T00:00:00Z"
+            "w2p", "coordinator", "reviewer", "m1", ts="2026-08-27T00:00:00Z"
         )
         line = P.event_line(ev)
         self.assertEqual(json.loads(line), ev)
         # 字段序与 spec §4/§6 一致
         self.assertEqual(
-            list(ev.keys()), ["op", "ws", "from", "to", "msg_id", "ts", "expect_reply"]
+            list(ev.keys()), ["ws", "from", "to", "type", "msg_id", "ts"]
         )
         # 缺省期待回执
-        self.assertTrue(ev["expect_reply"])
+        self.assertEqual(ev["type"], "feedback")
 
     def test_append_writes_single_json_line(self):
         path, cleanup = _tmp_log()
@@ -194,7 +194,7 @@ class DeliveryTest(unittest.TestCase):
         self.assertFalse(r["delivered"])
         lines = [l for l in path.read_text(encoding="utf-8").splitlines() if l]
         self.assertEqual(len(lines), 1)  # 送达失败日志行不丢
-        self.assertEqual(json.loads(lines[0])["op"], "send")
+        self.assertEqual(json.loads(lines[0])["type"], "feedback")
 
     def test_delivery_success_passes_peer_msg(self):
         path, cleanup = _tmp_log()
@@ -215,7 +215,7 @@ class DeliveryTest(unittest.TestCase):
         )
         self.assertTrue(r["delivered"])
         self.assertEqual(seen["peer"], "w2p-reviewer")
-        self.assertEqual(seen["msg"], "[reviewer]: ok")
+        self.assertEqual(seen["msg"], "[coordinator|feedback]: [reviewer]: ok")
         self.assertEqual(r["log_path"], str(path))
 
 
@@ -250,7 +250,7 @@ class ConcurrencyTest(unittest.TestCase):
         ids = set()
         for l in lines:
             ev = json.loads(l)
-            self.assertEqual(ev["op"], "send")
+            self.assertEqual(ev["type"], "feedback")
             self.assertTrue(ev["msg_id"])
             ids.add(ev["msg_id"])
         self.assertEqual(len(ids), n)  # msg_id 全唯一
