@@ -3,6 +3,7 @@
 零依赖（stdlib unittest），用临时 log_path 隔离，不触碰真实 ~/.config/coherd/events.log。
 """
 
+import importlib
 import json
 import os
 import threading
@@ -12,6 +13,7 @@ from tempfile import TemporaryDirectory
 from unittest import mock
 
 from coherd import push as P
+from coherd import tracker as T
 
 
 def _delivered(peer: str, msg: str) -> bool:
@@ -157,14 +159,22 @@ class DerivationTest(EnvMixin, unittest.TestCase):
 class AppendFormatTest(unittest.TestCase):
     def test_event_line_fields(self):
         ev = P.make_event(
-            "w2p", "coordinator", "reviewer", "m1", ts="2026-08-27T00:00:00Z"
+            "w2p",
+            "coordinator",
+            "reviewer",
+            "m1",
+            ts="2026-08-27T00:00:00Z",
+            body="原始正文",
         )
         line = P.event_line(ev)
         self.assertEqual(json.loads(line), ev)
-        # 字段序与 spec §4/§6 一致
+        # 字段序追加 body 于末尾：ws,from,to,type,msg_id,ts,body
         self.assertEqual(
-            list(ev.keys()), ["ws", "from", "to", "type", "msg_id", "ts"]
+            list(ev.keys()),
+            ["ws", "from", "to", "type", "msg_id", "ts", "body"],
         )
+        # body = 未经标记前缀的原始正文
+        self.assertEqual(ev["body"], "原始正文")
         # 缺省期待回执
         self.assertEqual(ev["type"], "feedback")
 
@@ -254,6 +264,60 @@ class ConcurrencyTest(unittest.TestCase):
             self.assertTrue(ev["msg_id"])
             ids.add(ev["msg_id"])
         self.assertEqual(len(ids), n)  # msg_id 全唯一
+
+
+class LogPathTest(unittest.TestCase):
+    """无 log_path 的日志路径决策：有合格 session 目录 → per-session；冷启动无 → 全局兜底。
+    仿 test_tracker：COHERD_CONFIG_HOME 指临时目录 + reload(T)/reload(P) 隔离，
+    使 push.DEFAULT_LOG 与 tracker.TASKS_DIR 均指向临时根，不触真实 ~/.config。"""
+
+    def setUp(self):
+        self._tmp = TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        os.environ["COHERD_CONFIG_HOME"] = self._tmp.name
+        importlib.reload(T)
+        importlib.reload(P)
+        self.addCleanup(self._restore_env)
+
+    def _restore_env(self):
+        os.environ.pop("COHERD_CONFIG_HOME", None)
+        importlib.reload(T)
+        importlib.reload(P)
+
+    def _log_lines(self, path: Path) -> list[dict]:
+        return [
+            json.loads(l)
+            for l in path.read_text(encoding="utf-8").splitlines()
+            if l
+        ]
+
+    def test_no_log_path_writes_session_events_log(self):
+        """有含 task.md 的 session 目录 → 写 session/events.log，body 记原始正文，不写全局。"""
+        session = T.session_dir_for("w9p", create=True)
+        (session / "w9p-20260828000000.task.md").write_text(
+            "---\nid: w9p-20260828000000\nws: w9p\n---\n", encoding="utf-8"
+        )
+        r = P.run(
+            "w9p-reviewer", "原始正文", ws="w9p", role="executor", sender=_delivered
+        )
+        self.assertEqual(r["log_path"], str(session / "events.log"))
+        ev = self._log_lines(session / "events.log")
+        self.assertEqual(len(ev), 1)
+        self.assertEqual(ev[0]["body"], "原始正文")  # 未带标记前缀
+        self.assertNotIn("executor|feedback", ev[0]["body"])
+        self.assertFalse(P.DEFAULT_LOG.exists())  # 有 session 目录时不写全局
+
+    def test_no_log_path_cold_start_falls_back_global(self):
+        """冷启动无合格 session 目录 → 回退全局 DEFAULT_LOG，且不自建空 session 目录。"""
+        before = set(T.TASKS_DIR.glob("w9q-*/")) if T.TASKS_DIR.is_dir() else set()
+        r = P.run("w9q-reviewer", "hi", ws="w9q", role="executor", sender=_delivered)
+        self.assertEqual(r["log_path"], str(P.DEFAULT_LOG))
+        ev = self._log_lines(P.DEFAULT_LOG)
+        self.assertEqual(len(ev), 1)
+        self.assertEqual(ev[0]["body"], "hi")
+        # 防目录爆炸：未自建空 session 目录
+        after = set(T.TASKS_DIR.glob("w9q-*/")) if T.TASKS_DIR.is_dir() else set()
+        self.assertEqual(before, after)
 
 
 if __name__ == "__main__":

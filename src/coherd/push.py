@@ -6,7 +6,8 @@
 职责：
   1. 派生自身 role / ws / peer role
   2. 注入 `[<role>|<type>]: ` 标记前缀（agent 只写 body 正文，不手写前缀）
-  3. O_APPEND 向 events.log 追一行精简审计 JSON {ws,from,to,type,msg_id,ts}
+  3. O_APPEND 向 session events.log 追一行精简审计 JSON {ws,from,to,type,msg_id,ts,body}
+     （无含 task.md 的 session 目录时回退全局 DEFAULT_LOG 兜底；body = 未经标记前缀的原始正文）
   4. 调 `herdr agent prompt <peer-agent> "<msg>"` 送达
 落地顺序：日志先行，再送达 —— 送达失败不丢审计行。
 """
@@ -23,9 +24,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .client import agent_list
-from .tracker import CONFIG_HOME
+from .tracker import CONFIG_HOME, glob_session_dir
 
-# 全局事件日志：精简审计（type=feedback/notify 标识消息类型，无后台待回执判定）
+# 全局事件日志（冷启动兜底）：有含 task.md 的 session 目录时事件落 session/events.log，
+# 无则回退此处（防每次 push 自建空目录）。DEFAULT_LOG 不能删。
 DEFAULT_LOG = CONFIG_HOME / "events.log"
 
 # 送达执行器签名（可注入以便测试替换真实 herdr 调用）
@@ -74,8 +76,9 @@ def make_event(
     msg_id: str,
     ts: str | None = None,
     msg_type: str = "feedback",
+    body: str = "",
 ) -> dict:
-    """事件日志条目 dict（字段序 ws,from,to,type,msg_id,ts，type=feedback/notify）。"""
+    """事件日志条目 dict（字段序 ws,from,to,type,msg_id,ts,body，type=feedback/notify）。"""
     return {
         "ws": ws,
         "from": from_,
@@ -83,6 +86,7 @@ def make_event(
         "type": msg_type,  # feedback(待回执) / notify(单向)，命令名即标记名
         "msg_id": msg_id,
         "ts": ts or datetime.now(timezone.utc).isoformat(),
+        "body": body,  # 未经标记前缀的原始消息正文（原文追溯）
     }
 
 
@@ -163,9 +167,13 @@ def run(
         peer_role,
         make_msg_id(),
         msg_type=msg_type,
+        body=msg,
     )
     line = event_line(event)
-    path = log_path or DEFAULT_LOG
+    # 日志路径：显式 log_path 优先；无则 per-session（有含 task.md 的 session 目录 → 落
+    # session/events.log），冷启动无 session 目录 → 回退全局 DEFAULT_LOG 兜底（防每次自建空目录）。
+    session = glob_session_dir(resolved_ws)
+    path = log_path or ((session / "events.log") if session else DEFAULT_LOG)
     append_event(path, line)
 
     # ④ 送达注入标记后的消息（失败不丢审计行，返回 delivered=False）

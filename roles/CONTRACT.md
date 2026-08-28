@@ -9,8 +9,8 @@
 
 | 术语 | 含义（本契约内固定） | 出处 |
 | ------ | ------ | ------ |
-| feedback / 期待回执 | `coherd feedback <name> "<消息>"`：期待回执的消息——CLI 注入 `[<role> | feedback]: ` 标记前缀并投递（内部调 `herdr agent prompt <name>` 送达，**自动唤醒 idle 待机者**）+ 写 `events.log`精简审计（`type=feedback`）。收方据标记知需回执，应回一条 feedback/notify。关键交接（分派/交审/revise/讨论）用它；命令名即语义（=标记名），无缺省值陷阱 | §2/§7 |
-| notify / 单向 | `coherd notify <name> "<消息>"`：纯单向知会——CLI 注入 `[<role> | notify]: ` 标记前缀并投递（同经 `herdr agent prompt <name>` 送达），写 `events.log`精简审计（`type=notify`），**单向无需回执**。单向上报/回流/ack/握手用它；delivered 假 → 非零退出提示转 feedback 重发 | §2/§7 |
+| feedback / 期待回执 | `coherd feedback <name> "<消息>"`：期待回执的消息——CLI 注入 `[<role> | feedback]: ` 标记前缀并投递（内部调 `herdr agent prompt <name>` 送达，**自动唤醒 idle 待机者**）+ 写 session `events.log`精简审计（`type=feedback`，`body`=原始正文）。收方据标记知需回执，应回一条 feedback/notify。关键交接（分派/交审/revise/讨论）用它；命令名即语义（=标记名），无缺省值陷阱 | §2/§7 |
+| notify / 单向 | `coherd notify <name> "<消息>"`：纯单向知会——CLI 注入 `[<role> | notify]: ` 标记前缀并投递（同经 `herdr agent prompt <name>` 送达），写 session `events.log`精简审计（`type=notify`，`body`=原始正文），**单向无需回执**。单向上报/回流/ack/握手用它；delivered 假 → 非零退出提示转 feedback 重发 | §2/§7 |
 | pull / 拉取 | `herdr agent read <name>`：被动读 peer 最新内容；**仅用于核对状态/查证据，不是等待手段** | §2 |
 | fire-and-forget / 即发即走 | 发 prompt 不带 `--wait/--timeout`，发出即止、不等回复 | §2 |
 | event / 事件 | herdr 生命周期事件（如 idle/done），契约交接的触发信号 | §7 |
@@ -132,10 +132,10 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 - executor/reviewer 启动后读 CONTRACT.md 确认身份, 以 `coherd notify` 向 coordinator 发一次 `[<role>|notify]:`  standby 上报（§0 standby/握手, notify 单向不回; 见 §2 回执登记边界）, 随即**转 idle 待机**（herdr 层 pane 挂起; 非 agent CLI 层 hub-wait 等机制, 见 §0 idle）; coordinator 收到两份上报后判集群起步就绪, 自身转 idle 待机后开始按用户意图分派, 之后全程事件驱动(§7 下条)。**此握手单向、一次性、不触发 §2 回复义务**——coordinator 不回"收到", exec/rev 不等回复。coordinator 不轮询(§0)、不检测 exec/rev 状态; 未收到上报也不追究、不重发——沉默即故障信号, 用户自然察觉。
 - executor 完成 → 直接提交 reviewer 审查（reviewer 读产物 / `herdr agent read` 验证），结论 approve/revise 回流 coordinator；阻塞 → 上报 coordinator（原因 + 已尝试手段）；revise 循环 rev→exe→rev 不经 coordinator，超 §4 上限（2 轮）才介入仲裁。
 - feedback/notify 遵循 §2 三铁律（见 §2）；pane 输出退化为辅助。
-- **环节→命令映射（D10，唯一权威）**：命令名即语义（=标记名）——`coherd feedback` 注入 `[<role>|feedback]:` 标记（收方据标记需回执）、`coherd notify` 注入 `[<role>|notify]:` 标记（单向不回）；两者均写 `events.log` 精简审计（`type` 字段标识类型，**无后台待回执登记/判定**）。环节映射表是唯一权威（coordinator 分派 / 讨论 / exec→rev 交审 / rev revise 退回 = `feedback`；approve 回执 / 改完重交 / 开工 ack / 交审上报 / standby 握手 / 纯通知 = `notify`）。一句话：任务交互看映射表定 feedback/notify，命令名即标记名，接收方据标记判断是否回执——无人值守兜底靠"沉默即故障"人工察觉。
+- **环节→命令映射（D10，唯一权威）**：命令名即语义（=标记名）——`coherd feedback` 注入 `[<role>|feedback]:` 标记（收方据标记需回执）、`coherd notify` 注入 `[<role>|notify]:` 标记（单向不回）；两者均写 session `events.log` 精简审计（`type` 字段标识类型，`body` 字段记原始正文，**无后台待回执登记/判定**；无 session 目录的冷启动回退全局 `events.log` 兜底）。环节映射表是唯一权威（coordinator 分派 / 讨论 / exec→rev 交审 / rev revise 退回 = `feedback`；approve 回执 / 改完重交 / 开工 ack / 交审上报 / standby 握手 / 纯通知 = `notify`）。一句话：任务交互看映射表定 feedback/notify，命令名即标记名，接收方据标记判断是否回执——无人值守兜底靠"沉默即故障"人工察觉。
 - **回执语义**：`coherd feedback` = `[feedback]` 标记期待回执，收方据标记应回一条；`coherd notify` = `[notify]` 标记纯单向，不回。命令名即语义（=标记名），无缺省值陷阱。notify 送达失败 → CLI 非零退出提示转 feedback 重发，关键交接用 feedback 期望回执。
 - **无后台待回执**：废弃 watch/Ledger 后无程序化待回执登记与清除；回执义务由接收方据消息标记自觉履行，靠"沉默即故障、人自察觉"兜底（trade-off 已确认接受）。
-- **环节时效（软条款，无硬时限）**：分派后 executor 宜尽速开工 ack（notify）或阻塞上报；交审后 reviewer 宜在合理时限内（参考 ≤2h，按任务规模自定）出结论或上报进度。超时无任何信号 = 断链候选，可据 `events.log` 时间线介入；无后台提醒，停滞靠"沉默即故障"人工察觉。
+- **环节时效（软条款，无硬时限）**：分派后 executor 宜尽速开工 ack（notify）或阻塞上报；交审后 reviewer 宜在合理时限内（参考 ≤2h，按任务规模自定）出结论或上报进度。超时无任何信号 = 断链候选，可据 session `events.log` 时间线介入；无后台提醒，停滞靠"沉默即故障"人工察觉。
 
 ## 9. token 控制
 
