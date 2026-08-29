@@ -1,69 +1,55 @@
 # HANDOFF.md — coherd 现状 + 待办
 
-> **定位**：软方案（消息自描述标记）落地后的清晰起点 + 待办清单。
-> **分支**：`feat/push-watch-brokenlink`，领先 origin **8 commit 未 push**。
-> **⚠️ 关键**：软方案实现（8 文件改动）**尚在工作树、未 commit**。见 §3-A。
+> **定位**：session 布局重构 + 软方案落地后的最新清晰起点 + 待办清单。给新集群续接。
+> **分支**：`feat/push-watch-brokenlink`，领先 origin **1 commit 未 push**（`23806d4`）。
 
-## §1 当前状态（软方案已落地，全链路 approve）
+## §1 当前状态（软方案 + session 布局已落地，全链路 approve）
 
 | 项 | 状态 |
 | --- | --- |
-| 架构转型 | 废弃 watch 运行时兜底 + events.log 待回执登记，转**消息自描述软方案** |
-| 审查 | `spec-soft-mark` 已 reviewer approve（正确性/安全/可维护性三查通过，DoD 6 条全验） |
-| 工作树 | **8 文件改动未 commit**（+66/−1198） |
-| commit | 软方案实现尚未 commit；最近 commit `9f6da7d`（旧 watch 方案时代） |
+| 架构 | 消息自描述软方案（feedback/notify 两分）+ 数据根目录 **tasks/ → sessions/** 已重构 |
+| 审查 | `w3m-session-reorg` 已 reviewer approve（DoD 8 条全过，32 tests OK，五文档 diff SAME） |
+| 数据布局 | `~/.config/coherd/sessions/<ws>-<ts>-$$/` 每集群一次启动一目录，平铺 `.task.md` + 评审结论 + `events.log` |
+| session 判定 | **放宽**：目录名匹配 `<ws>-*` 且为目录即记 session（无 task.md 的纯讨论/评审也计入）；events.log 归位 per-session |
+| commit | 最近 `23806d4`（session 目录重构，8 文件 +58/−64），**未 push**（ahead 1） |
 
-## §2 软方案核心（当前生效架构）
+## §2 核心架构（当前生效）
 
-- **消息两分**：`coherd feedback`（期待回执）/ `coherd notify`（单向知会）。
-- **标记程序化注入**：CLI 注入 `[<role>|<type>]:` 前缀（`type=feedback/notify`），agent 只写 body，不手写前缀。
-- **命令名 = 标记名 = 单一事实源**：`feedback` 命令 → `[<role>|feedback]:` 标记 → `events.log` `type=feedback`，一条线到底，无双源。
-- **events.log 精简审计**：字段 `ws,from,to,type,msg_id,ts`（删 `op`、`expect_reply`→`type`）。仅审计，**无后台待回执登记/判定**。
-- **无 watch**：`watch.py`/`test_watch.py` 已删，`cli.py` watch 子命令、`bin/coherd` watch 拉起已移除。
-- **回执义务**：接收方据消息标记自觉履行；靠"沉默即故障、人自察觉"兜底（trade-off 已确认接受）。
+- **消息两分**：`coherd feedback`（期待回执）/ `coherd notify`（单向知会），CLI 注入 `[<role>|<type>]:` 标记，agent 只写 body 不手写前缀。
+- **命令名 = 标记名 = 单一事实源**：`feedback`→`[<role>|feedback]:`→`events.log type=feedback`，无双源。
+- **无 watch**：watch.py 已删、cli 子命令移除、契约去 watch 登记。
+- **回执义务**：接收方据标记自觉履行，靠"沉默即故障、人自察觉"兜底。
+- **events.log**：per-session（`sessions/<ws>-<ts>-$$/events.log`），仅审计无后台待回执登记；无 session 目录冷启动回退全局 `~/.config/coherd/events.log` 兜底。
+- **多任务同 session**：一个 task 一个 `<id>.task.md`，同目录平铺互不覆盖；评审结论 `<id>.<verdict>-<HHMMSS>.md` 与同名 task.md 同目录（id 前缀防撞、秒戳到轮多轮不撞）。
 
 ## §3 待办清单
 
-### A. 紧急（软方案未 commit，丢失即全功尽弃）
+### A. 紧急（1 commit 未 push）
 
-1. **commit 软方案 8 文件改动**（工作树 M/D，见下）。
-2. **push 远程**：分支领先 origin 8 commit。
+1. **push 远程**：分支 `feat/push-watch-brokenlink` 领先 origin 1 commit（`23806d4`，session 目录重构）。
 
-```text
- M bin/coherd            # 去 watch 拉起 + _brief standby 按角色分支
- M roles/CONTRACT.md     # 契约改写（消息两分 + 去 watch 登记）
- M src/coherd/cli.py     # 删 watch 子命令
- M src/coherd/client.py
- M src/coherd/push.py    # 标记注入 + event 精简
- D src/coherd/watch.py   # 删除（470 行）
- M tests/test_push.py
- D tests/test_watch.py   # 删除（616 行）
-```
+### B. 清理（reviewer 检出，真遗留未做）
 
-### B. 清理（reviewer approve 时 2 条非阻塞备注，已 TaskCreate #3/#4）
-
-1. **per-role 文档措辞漂移**：`roles/executor.md`(19/31/54/55)、`roles/reviewer.md`(29/35/83) 仍含
-   「登记待回执/清除待回执/watch 兜底提醒/watcher 系统唤醒」等已废弃机制措辞，与软方案矛盾。
-   改 repo 源后 `./install.sh` 同步镜像五文档一致。
-2. **test_push 用例 body 前缀**：`test_delivery_success_passes_peer_msg`(L210) 以 `"[reviewer]: ok"` 为 body，
-   断言双重前缀，与 DoD2「body 不手写前缀」相悖。改为纯正文 body，断言 `[coordinator|feedback]: ok`。
+1. **per-role 文档措辞漂移（软化案冲突，最需做）**：
+   - `roles/executor.md`：L19「登记 coordinator 待回执、连累 watch 误报」、L20/L31「登记 reviewer 待回执：reviewer 不审时 watch 兜底提醒」、L54「涉及待回执清除」、L55「watcher 系统唤醒提醒走裸 herdr agent prompt」、L64「登记 reviewer 待回执 / 反向清除待回执」
+   - `roles/reviewer.md`：L29「清除交审待回执」、L35「清除交审待回执并登记 executor 待回执」、L83「清除交审待回执」
+   - 以上均为 **soft-plan 已废弃的「待回执登记/watch 兜底」机制措辞**，与 CONTRACT §0「无后台待回执登记」矛盾。改 repo 源后 `./install.sh` 同步镜像五文档一致。
+2. **test_push 双重前缀**：`tests/test_push.py` L56/L220 以 `"[reviewer]: ok"` 为 body，L228 断言 `[coordinator|feedback]: [reviewer]: ok` 双重前缀，与 DoD2「body 不手写前缀」相悖。改为纯正文 body，断言 `[coordinator|feedback]: ok`。
 
 ### C. 验证（下次新集群启动必做）
 
-1. 标记注入端到端：`coherd feedback` 投递消息以 `[<role>|feedback]:` 开头，notify 以 `[<role>|notify]:` 开头。
+1. 标记注入端到端：`coherd feedback` 投递以 `[<role>|feedback]:` 开头，notify 以 `[<role>|notify]:` 开头。
 2. agent 只写 body、不手写 `[role]:` 前缀（无双重前缀）。
-3. `./install.sh` 后五文档（CONTRACT/coordinator/executor/reviewer/libero）`diff roles/ vs ~/.config` 空。
+3. `./install.sh` 后五文档 `diff roles/ vs ~/.config` 空。
+4. events.log 落 session 目录（而非全局）。
 
-### D. 后续需求（per-session 布局收尾）
+### D. 后续需求
 
-1. **events.log 移入 per-session 目录**：events.log 现为全局单文件 `~/.config/coherd/events.log`。
-   移入 session 目录 `tasks/<ws>-<ts>-$$/events.log`，随 session 走（多 session 各一份）。
-   涉及 `bin/coherd`（启动确定 events.log 路径 = `$TRACKER_DIR/events.log`）、`src/coherd/push.py`（feedback/notify 审计写路径）、
-   契约 §2/§7 的 events.log 引用描述。待与 reviewer 讨论定方案后分派。
+1. （无阻塞项。session 布局重构已含原先 events.log per-session 需求，已落地。）
 
 ## §4 已知未决 / 观察项
 
-1. **events.log 新旧格式混存**：历史行旧 schema（`op`/`expect_reply`），新行 `type` 字段。审计读日志需容两种格式，未做迁移。
-2. **agent 手写前缀 lag**：reviewer 的 approve 消息曾出现 `[reviewer|notify]: [reviewer]: ...` 双重前缀——
-   契约与代码已对（CLI 注入），但 agent "只写 body" 的旧习惯切换有时间差，新集群启动验证才能确认干净。
-3. **弃 watch 的固有成本**：agent 收到 `[feedback]` 却 idle/崩溃不回，无自动报警，唯一兜底是"沉默即故障"人工察觉。
+1. **events.log 新旧格式混存**：历史全局 events.log 行旧 schema（`op`/`expect_reply`），per-session 新行 `type` 字段。审计读日志需容两种格式，未做迁移。
+2. **agent 手写前缀 lag**：曾现 `[reviewer|notify]: [reviewer]: ...` 双重前缀——契约与代码已对（CLI 注入），agent 旧习惯切换有时间差，新集群启动验证确认（§3C 第2点）。
+3. **弃 watch 固有成本**：agent 收到 `[feedback]` 却 idle/崩溃不回，无自动报警，唯一兜底"沉默即故障"人工察觉。
+4. **镜像 diff 检不出对称陈旧**：本次 reviewer.md:29 旧路径 drift 因 repo 源与副本同旧、diff 显示 SAME 而漏过 approve，靠 reviewer 手动 grep 检出。教训：**措辞审查不能只依赖 diff**，需针对性 grep 废弃术语。
