@@ -53,7 +53,7 @@ class DerivationTest(EnvMixin, unittest.TestCase):
         self.addCleanup(cleanup)
         r = P.run(
             "w2p-reviewer",
-            "[reviewer]: hi",
+            "hi",
             ws="w2p",
             role="coordinator",
             log_path=path,
@@ -217,7 +217,7 @@ class DeliveryTest(unittest.TestCase):
 
         r = P.run(
             "w2p-reviewer",
-            "[reviewer]: ok",
+            "ok",
             ws="w2p",
             role="coordinator",
             log_path=path,
@@ -225,7 +225,7 @@ class DeliveryTest(unittest.TestCase):
         )
         self.assertTrue(r["delivered"])
         self.assertEqual(seen["peer"], "w2p-reviewer")
-        self.assertEqual(seen["msg"], "[coordinator|feedback]: [reviewer]: ok")
+        self.assertEqual(seen["msg"], "[coordinator|feedback]: ok")
         self.assertEqual(r["log_path"], str(path))
 
 

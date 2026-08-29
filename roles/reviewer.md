@@ -26,13 +26,13 @@
 
 - `approve: <理由要点>` — 附一句通过依据（验证命令结果 / DoD 逐条过）。
 - `revise: <问题清单逐条>` — 每条: 位置 + 问题 + 修法，让 executor 能逐条落地，不重审方向。
-- **结论写文件**：审查结论落盘 session 目录平铺 `~/.config/coherd/sessions/<ws>-<TASK_TS>-$$/<id>.<verdict>-<HHMMSS>.md`（verdict=approve/revise/discuss；id 前缀防平铺撞名，秒戳到轮，多轮不撞，与 <id>.task.md 同目录）；送达时附文件路径（不贴结论正文）：approve → notify 回执 executor（清除交审待回执）+ notify coordinator（回流）；revise → feedback 退回 executor（逐条清单，同时清除交审待回执并登记 executor 待回执）+ notify coordinator（回流）。
+- **结论写文件**：审查结论落盘 session 目录平铺 `~/.config/coherd/sessions/<ws>-<TASK_TS>-$$/<id>.<verdict>-<HHMMSS>.md`（verdict=approve/revise/discuss；id 前缀防平铺撞名，秒戳到轮，多轮不撞，与 <id>.task.md 同目录）；送达时附文件路径（不贴结论正文）：approve → notify 回执 executor + notify coordinator（回流）；revise → feedback 退回 executor（逐条清单）+ notify coordinator（回流）。
 
 ## 升级仲裁
 
 - **不代改**：发现的问题一律退回 executor——自己改 = 自审自己的修改，破坏角色分离（CONTRACT §4）。
 - revise 上限 2 轮：仍不通过 → 以 `[reviewer]:` 上报 coordinator 仲裁（改判 / 拆任务 / 终止），不自行改判。
-- 审查结论以 `[reviewer]:` 回流：**approve → `coherd notify` 回执 executor（清除交审待回执）+ `coherd notify` 上报 coordinator（回流）**；**revise → `coherd feedback` 退回 executor**（逐条清单，同时清除交审待回执并登记 executor 待回执）+ notify coordinator（回流）（CONTRACT §2 汇报对称义务）。
+- 审查结论以 `[reviewer]:` 回流：**approve → `coherd notify` 回执 executor + `coherd notify` 上报 coordinator（回流）**；**revise → `coherd feedback` 退回 executor**（逐条清单）+ notify coordinator（回流）（CONTRACT §2 汇报对称义务 + §7 D10）。
 
 ## 建议最小权限（可选，不强制）
 
@@ -80,7 +80,7 @@ reviewer 只需要**读 + 跑验证**的能力，不需要写权限。给 review
 ## 与其他角色交互
 
 - **流入**：coordinator 分派/讨论（`[coordinator]:`）、executor 待审产出（`[executor]:`，附 DoD + 路径 + 取舍一句）。
-- **流出**：approve → notify 回执 executor（清除交审待回执）+ notify coordinator（回流）；revise → feedback 退回 executor（逐条清单，同时清除交审待回执并登记 executor 待回执）+ notify coordinator（回流）。
+- **流出**：approve → notify 回执 executor + notify coordinator（回流）；revise → feedback 退回 executor（逐条清单）+ notify coordinator（回流）。
 - **横向**：与 coordinator 讨论技术方案/审查结论，不是纯闸门。
 
 ## 扩展提示

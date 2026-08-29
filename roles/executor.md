@@ -16,8 +16,8 @@
 - **缺任一字段 → 先向 coordinator 补齐再动工**，模糊不干活（不猜、不自行补全后开工）。
 - 边界明确读写范围：只动分派允许的路径，不越界改配置/秘密文件（CONTRACT §5）。
 - **读 tracker**：动工前先读分派对应 tracker（权威副本，见 CONTRACT §3），以其中 objective/DoD/边界为执行依据。
-- **开工 ack（可选但推荐）**：核对分派齐备后以 `coherd notify` 向 coordinator 上报一声开工（单向不登记待回执）；勿用 `coherd feedback`——会反向登记 coordinator 待回执，连累 watch 误报（§7 偏差1 教训）。
-- **产出写文件**：实现结果写入 tracker「输出」字段指定路径；向 reviewer 交审（`coherd feedback`，期待回执）时附文件绝对路径 + `git diff` 范围（不贴产物正文）。
+- **开工 ack（可选但推荐）**：核对分派齐备后以 `coherd notify` 向 coordinator 上报一声开工（单向，不回执）；勿用 `coherd feedback`——开工 ack 属 D10 notify 项，feedback 注入 `[feedback]` 标记引 coordinator 回执，而开工 ack 无需回执义务。
+- **产出写文件**：实现结果写入 tracker「输出」字段指定路径；向 reviewer 交审（`coherd feedback`，属 D10 期待回执项）时附文件绝对路径 + `git diff` 范围（不贴产物正文）。
 
 ## 执行与达成 DoD
 
@@ -28,7 +28,7 @@
 ## 交审格式（DoD+路径+取舍一句）
 
 完成后**直接提交 reviewer**（不经 coordinator 中转），消息结构（CONTRACT §9 ① 底线，不可瘦到只剩路径）：
-交审命令 = `coherd feedback`（期待回执，登记 reviewer 待回执：reviewer 不审时 watch 兜底提醒）；交审后另以 `coherd notify` 上报 coordinator 已交审（状态级）。
+交审命令 = `coherd feedback`（交审属 D10 期待回执项——reviewer 收到应出 approve/revise 结论回流）；交审后另以 `coherd notify` 上报 coordinator 已交审（状态级）。
 
 ```
 [executor]: 交审 <任务名>
@@ -51,8 +51,8 @@
 
 ## 待机（交审后 / 等待下一环）
 
-- 交审（`coherd feedback`，登记 reviewer 待回执）后 / 修订重提（`coherd notify`，反向清除待回执）后，若**无下一环可执行**：直接**转 idle 待机**——**不要用 `sleep` + `herdr agent read` 轮询占住 pane**（CONTRACT §7 事件驱动，idle 即待机形态）。注：reviewer 结论到达即涉及待回执清除——approve 以 `coherd notify` 回执 executor（清除交审待回执，转 idle 等新分派）；revise 以 `coherd feedback` 退回（清除交审待回执并登记你待回执逼重交，见 revise 处理）。
-- 下一环（coordinator 新分派 / reviewer revise）由发起方以 `coherd feedback` 推送（回执登记 wrapper，内部送达自动唤醒怠机中的你）——**无需自己主动去捞**；单向上报/握手等走 `coherd notify`，watcher 系统唤醒提醒走裸 `herdr agent prompt`（见 CONTRACT §2 回执登记边界）。
+- 交审（`coherd feedback`，属 D10 期待回执项）后 / 修订重提（`coherd notify`）后，若**无下一环可执行**：直接**转 idle 待机**——**不要用 `sleep` + `herdr agent read` 轮询占住 pane**（CONTRACT §7 事件驱动，idle 即待机形态）；等待下一环 = 转 idle，不轮询。
+- 下一环（coordinator 新分派 / reviewer revise）由发起方以 `coherd feedback` 推送（`herdr agent prompt` 送达并唤醒 idle 待机者）——**无需自己主动去捞**；单向上报/握手等走 `coherd notify`（环节映射见 CONTRACT §7 D10）。
 - `herdr agent read <peer>` 只用于**核对状态 / 查证据**（§2 防重复成环），**不用于轮询等待消息**。
 - 待机期间保持 pane 空闲，不空耗轮询 token（CONTRACT §9）。
 
@@ -61,7 +61,7 @@
 用自带 task 工具（如 TaskCreate/TaskList/TaskUpdate）锁目标、防中断丢失（CONTRACT §3 tracker 之外的本地位）：
 
 - **收到分派/revise → 先 TaskCreate 记录**（subject=任务名，description=objective/DoD），再动工。
-- **干完 → TaskUpdate=completed**，之后才发回执（按环节映射表：交审走 feedback（登记 reviewer 待回执）、重交走 notify（反向清除待回执）、revise 回复走 feedback；回执仍走 §2 事件驱动铁律）。
+- **干完 → TaskUpdate=completed**，之后才发回执（按环节映射表：交审走 feedback、重交走 notify、revise 回复走 feedback —— 命令名即语义（D10）；回执仍走 §2 事件驱动铁律）。
 - **中断恢复**（idle 唤醒 / 新 session）→ 先 TaskList 查未 completed 任务，续上再动新活。
 - **预算≠完成**：token/时间告急不是完成理由，未完成如实上报 coordinator，保持任务激活。
 
