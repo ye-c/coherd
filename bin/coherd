@@ -293,15 +293,15 @@ _role_doc() { # role 名 → per-role 契约文档路径 (安装目录)
 }
 # session 目录: 每启动一目录, 平铺任务文档; $$ 防同 ws 秒级二次启动撞目录 (不 export, agent pane 不继承 env)
 TASK_TS="$(date +%Y%m%d%H%M%S)"
-TRACKER_DIR="$HOME/.config/coherd/tasks/${WS_SLUG}-${TASK_TS}-$$"
-mkdir -p "$TRACKER_DIR"
-_brief() { # 身份+名字 + 双@指路 + tracker + 待机 + 回执唯一权威 (精简版, 只引不重述)
+SESSION_DIR="$HOME/.config/coherd/sessions/${WS_SLUG}-${TASK_TS}-$$"
+mkdir -p "$SESSION_DIR"
+_brief() { # 身份+名字 + 双@指路 + session + 待机 + 回执唯一权威 (精简版, 只引不重述)
   local _standby; case "$1" in
     executor|reviewer) _standby="读 CONTRACT 确认身份后发 \`coherd notify $COORD_NAME \"standby\"\` 再转 idle" ;;
     coordinator)       _standby="确认身份转 idle; exec/rev 的 standby 被动接收不回执" ;;
   esac
-  printf '你是 %s · agent 名 %s\n公共契约 @%s\n角色细节 @%s\ntracker %s\n\n待机: %s\n回执: CONTRACT §7 D10 (唯一权威)' \
-    "$1" "$2" "$CONTRACT" "$(_role_doc "$1")" "$TRACKER_DIR" "$_standby"
+  printf '你是 %s · agent 名 %s\n公共契约 @%s\n角色细节 @%s\nsession %s\n\n待机: %s\n回执: CONTRACT §7 D10 (唯一权威)' \
+    "$1" "$2" "$CONTRACT" "$(_role_doc "$1")" "$SESSION_DIR" "$_standby"
 }
 # 送达确认: 用 state_change_seq 有界重投递。先取三角色基线 seq (agent get 失败→空串),
 # 每轮 sleep BRIEF_GRACE 后重读 seq; 涨=已消费跳过, 未涨且非 blocked → send-keys enter 补提交

@@ -1,7 +1,7 @@
-"""coherd.tracker 单元测试：session 目录平铺布局（tasks/<ws>-<ts>-<pid>/<id>.task.md 等）。
+"""coherd.tracker 单元测试：session 目录平铺布局（sessions/<ws>-<ts>-<pid>/<id>.task.md 等）。
 
 零依赖（stdlib unittest），用 COHERD_CONFIG_HOME 指向临时目录 + importlib.reload(T)
-隔离，不触碰真实 ~/.config/coherd/tasks/。
+隔离，不触碰真实 ~/.config/coherd/sessions/。
 """
 
 import importlib
@@ -29,15 +29,15 @@ def make_data(task_id: str, status: str = "pending", ws: str = WS) -> dict:
     }
 
 
-class TasksDirMixin:
-    """把 TASKS_DIR 经 COHERD_CONFIG_HOME 指向临时目录（reload 生效），测试隔离。"""
+class SessionsDirMixin:
+    """把 SESSIONS_DIR 经 COHERD_CONFIG_HOME 指向临时目录（reload 生效），测试隔离。"""
 
     def setUp(self):
         self._tmp = TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         os.environ["COHERD_CONFIG_HOME"] = self._tmp.name
         importlib.reload(T)
-        self.tasks = T.TASKS_DIR
+        self.sessions = T.SESSIONS_DIR
         self.addCleanup(self._restore_env)
 
     def _restore_env(self):
@@ -45,7 +45,7 @@ class TasksDirMixin:
         importlib.reload(T)
 
 
-class LayoutTest(TasksDirMixin, unittest.TestCase):
+class LayoutTest(SessionsDirMixin, unittest.TestCase):
     def test_write_new_flat_session_dir(self):
         p = T.write_new(make_data("w37-20260828084854"))
         # 平铺: session 目录下 <id>.task.md；无固定 task.md / 无 <ws>/<id>.md 分桶
@@ -53,7 +53,7 @@ class LayoutTest(TasksDirMixin, unittest.TestCase):
         self.assertTrue(p.parent.name.startswith("w37-"))
         self.assertTrue(p.is_file())
         self.assertFalse((p.parent / "task.md").exists())
-        self.assertFalse((self.tasks / WS / "w37-20260828084854.md").exists())
+        self.assertFalse((self.sessions / WS / "w37-20260828084854.md").exists())
 
     def test_write_new_reuses_latest_session(self):
         p1 = T.write_new(make_data("w37-20260828084854"))
@@ -101,14 +101,14 @@ class LayoutTest(TasksDirMixin, unittest.TestCase):
         self.assertFalse(hasattr(T, "ARCHIVE_DIR"))
 
 
-class SessionDirTest(TasksDirMixin, unittest.TestCase):
-    """glob_session_dir: 最新合格 session / 排除旧存量。"""
+class SessionDirTest(SessionsDirMixin, unittest.TestCase):
+    """glob_session_dir: 目录名匹配 <ws>-* 即 session（放宽判定）/ 排除旧裸名目录。"""
 
     def test_glob_latest_qualified_session(self):
         T.write_new(make_data("w37-20260828084854"))
         first = T.glob_session_dir("w37")
-        # 后续第二个启动的 session（内含任务）→ 取最新
-        later = self.tasks / "w37-20270101000000-99999"
+        # 后续第二个启动的 session → 取最新
+        later = self.sessions / "w37-20270101000000-99999"
         later.mkdir(parents=True)
         (later / "w37-20270101000000.task.md").write_text(
             (first / "w37-20260828084854.task.md").read_text(), encoding="utf-8"
@@ -116,22 +116,23 @@ class SessionDirTest(TasksDirMixin, unittest.TestCase):
         self.assertEqual(T.glob_session_dir("w37"), later)
         self.assertNotEqual(first, later)
 
-    def test_glob_excludes_empty_and_legacy_dirs(self):
-        T.write_new(make_data("w37-20260828084854"))
-        session = T.glob_session_dir("w37")
-        # 空目录（旧存量 w2y-* 式）不计入
-        (self.tasks / "w2y-20260101000000-111").mkdir(parents=True)
-        self.assertIsNone(T.glob_session_dir("w2y"))
-        # 旧子目录式（dir/task.md 固定名，非 *.task.md）不计入
-        legacy = self.tasks / "w37-20260828132220"
-        legacy.mkdir()
+    def test_glob_counts_legacy_format_dir(self):
+        """放宽判定：仅 task.md 固定名、无 *.task.md 平铺文件的旧格式目录（匹配 <ws>-*）同样计入。"""
+        legacy = self.sessions / "w37-20260828132220"
+        legacy.mkdir(parents=True)
         (legacy / "task.md").write_text("x", encoding="utf-8")
-        self.assertEqual(T.glob_session_dir("w37"), session)
+        self.assertEqual(T.glob_session_dir("w37"), legacy)
+
+    def test_glob_excludes_bare_name_dirs(self):
+        """目录名不含 <ws>- 前缀（旧裸名目录式 w2y/w32 等）不计入。"""
+        T.write_new(make_data("w37-20260828084854"))
+        (self.sessions / "w2y").mkdir(parents=True)
+        self.assertIsNone(T.glob_session_dir("w2y"))
 
     def test_find_tracker_across_sessions(self):
         """老 session 任务在最新 session 存在时仍可达（跨 session 搜索）。"""
         p1 = T.write_new(make_data("w37-20260828084854"))
-        later = self.tasks / "w37-20270101000000-99999"
+        later = self.sessions / "w37-20270101000000-99999"
         later.mkdir(parents=True)
         (later / "w37-20270101000000.task.md").write_text(
             (p1.parent / p1.name).read_text(), encoding="utf-8"

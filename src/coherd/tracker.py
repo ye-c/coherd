@@ -19,7 +19,7 @@ from pathlib import Path
 CONFIG_HOME = Path(
     os.environ.get("COHERD_CONFIG_HOME", "~/.config/coherd")
 ).expanduser()
-TASKS_DIR = CONFIG_HOME / "tasks"
+SESSIONS_DIR = CONFIG_HOME / "sessions"
 
 # frontmatter 固定字段顺序（写入即此序）
 FIELDS = (
@@ -117,36 +117,32 @@ def tracker_path(task_id: str) -> Path:
     id 走 ID_RE 防注入；找不到抛 FileNotFoundError。"""
     if not ID_RE.match(task_id):
         raise ValueError(f"task id 含非法字符: {task_id!r}（需 [a-zA-Z0-9_-]）")
-    matches = sorted(TASKS_DIR.glob(f"*/{task_id}.task.md"))
+    matches = sorted(SESSIONS_DIR.glob(f"*/{task_id}.task.md"))
     if not matches:
         raise FileNotFoundError(f"tracker 不存在: {task_id}")
     return matches[-1]
 
 
 def glob_session_dir(ws: str) -> Path | None:
-    """按 ws 定位最新 session 目录：glob tasks/<ws>-*/，判定 = 目录 && 内含 <id>.task.md
-    （防误匹配旧存量子目录式/空目录），按名排序取最新。ws 走 ID_RE 防注入。无 → None。"""
+    """按 ws 定位最新 session 目录：glob sessions/<ws>-*/，判定 = 目录名匹配 <ws>-* 且为目录，
+    即记 session（无 task.md 的纯讨论/评审 session 同样计入），按名排序取最新。ws 走 ID_RE 防注入。无 → None。"""
     if not ID_RE.match(ws):
         raise ValueError(f"ws 含非法字符: {ws!r}（需 [a-zA-Z0-9_-]）")
-    if not TASKS_DIR.is_dir():
+    if not SESSIONS_DIR.is_dir():
         return None
-    cands = [
-        p
-        for p in TASKS_DIR.glob(f"{ws}-*/")
-        if p.is_dir() and any(p.glob("*.task.md"))
-    ]
+    cands = [p for p in SESSIONS_DIR.glob(f"{ws}-*/") if p.is_dir()]
     return sorted(cands)[-1] if cands else None
 
 
 def session_dir_for(ws: str, create: bool = False) -> Path:
-    """解析 ws 的 session 目录：有合格者 → 最新；无且 create → 自建 tasks/<ws>-<本地ts>-<pid>（平铺写入口）。"""
+    """解析 ws 的 session 目录：有合格者 → 最新；无且 create → 自建 sessions/<ws>-<本地ts>-<pid>（平铺写入口）。"""
     session = glob_session_dir(ws)
     if session is not None:
         return session
     if not create:
-        raise FileNotFoundError(f"无 session 目录（ws={ws}）: {TASKS_DIR}")
+        raise FileNotFoundError(f"无 session 目录（ws={ws}）: {SESSIONS_DIR}")
     ts = datetime.now().strftime("%Y%m%d%H%M%S")
-    session = TASKS_DIR / f"{ws}-{ts}-{os.getpid()}"
+    session = SESSIONS_DIR / f"{ws}-{ts}-{os.getpid()}"
     session.mkdir(parents=True, exist_ok=True)
     return session
 

@@ -267,9 +267,9 @@ class ConcurrencyTest(unittest.TestCase):
 
 
 class LogPathTest(unittest.TestCase):
-    """无 log_path 的日志路径决策：有合格 session 目录 → per-session；冷启动无 → 全局兜底。
+    """无 log_path 的日志路径决策：有 session 目录 → per-session；冷启动无 → 全局兜底。
     仿 test_tracker：COHERD_CONFIG_HOME 指临时目录 + reload(T)/reload(P) 隔离，
-    使 push.DEFAULT_LOG 与 tracker.TASKS_DIR 均指向临时根，不触真实 ~/.config。"""
+    使 push.DEFAULT_LOG 与 tracker.SESSIONS_DIR 均指向临时根，不触真实 ~/.config。"""
 
     def setUp(self):
         self._tmp = TemporaryDirectory()
@@ -292,11 +292,8 @@ class LogPathTest(unittest.TestCase):
         ]
 
     def test_no_log_path_writes_session_events_log(self):
-        """有含 task.md 的 session 目录 → 写 session/events.log，body 记原始正文，不写全局。"""
+        """有 session 目录（任意内容，无需 task.md 的纯讨论/评审 session 亦可）→ 写 session/events.log。"""
         session = T.session_dir_for("w9p", create=True)
-        (session / "w9p-20260828000000.task.md").write_text(
-            "---\nid: w9p-20260828000000\nws: w9p\n---\n", encoding="utf-8"
-        )
         r = P.run(
             "w9p-reviewer", "原始正文", ws="w9p", role="executor", sender=_delivered
         )
@@ -308,15 +305,15 @@ class LogPathTest(unittest.TestCase):
         self.assertFalse(P.DEFAULT_LOG.exists())  # 有 session 目录时不写全局
 
     def test_no_log_path_cold_start_falls_back_global(self):
-        """冷启动无合格 session 目录 → 回退全局 DEFAULT_LOG，且不自建空 session 目录。"""
-        before = set(T.TASKS_DIR.glob("w9q-*/")) if T.TASKS_DIR.is_dir() else set()
+        """冷启动无 session 目录 → 回退全局 DEFAULT_LOG，且不自建空 session 目录。"""
+        before = set(T.SESSIONS_DIR.glob("w9q-*/")) if T.SESSIONS_DIR.is_dir() else set()
         r = P.run("w9q-reviewer", "hi", ws="w9q", role="executor", sender=_delivered)
         self.assertEqual(r["log_path"], str(P.DEFAULT_LOG))
         ev = self._log_lines(P.DEFAULT_LOG)
         self.assertEqual(len(ev), 1)
         self.assertEqual(ev[0]["body"], "hi")
         # 防目录爆炸：未自建空 session 目录
-        after = set(T.TASKS_DIR.glob("w9q-*/")) if T.TASKS_DIR.is_dir() else set()
+        after = set(T.SESSIONS_DIR.glob("w9q-*/")) if T.SESSIONS_DIR.is_dir() else set()
         self.assertEqual(before, after)
 
 

@@ -7,7 +7,7 @@
   1. 派生自身 role / ws / peer role
   2. 注入 `[<role>|<type>]: ` 标记前缀（agent 只写 body 正文，不手写前缀）
   3. O_APPEND 向 session events.log 追一行精简审计 JSON {ws,from,to,type,msg_id,ts,body}
-     （无含 task.md 的 session 目录时回退全局 DEFAULT_LOG 兜底；body = 未经标记前缀的原始正文）
+     （无 session 目录时回退全局 DEFAULT_LOG 兜底；body = 未经标记前缀的原始正文）
   4. 调 `herdr agent prompt <peer-agent> "<msg>"` 送达
 落地顺序：日志先行，再送达 —— 送达失败不丢审计行。
 """
@@ -26,8 +26,8 @@ from pathlib import Path
 from .client import agent_list
 from .tracker import CONFIG_HOME, glob_session_dir
 
-# 全局事件日志（冷启动兜底）：有含 task.md 的 session 目录时事件落 session/events.log，
-# 无则回退此处（防每次 push 自建空目录）。DEFAULT_LOG 不能删。
+# 全局事件日志（冷启动兜底）：有 session 目录（任意内容）时事件落 session/events.log，
+# 仅真无 session 目录回退此处（防每次 push 自建空目录）。DEFAULT_LOG 不能删。
 DEFAULT_LOG = CONFIG_HOME / "events.log"
 
 # 送达执行器签名（可注入以便测试替换真实 herdr 调用）
@@ -170,7 +170,7 @@ def run(
         body=msg,
     )
     line = event_line(event)
-    # 日志路径：显式 log_path 优先；无则 per-session（有含 task.md 的 session 目录 → 落
+    # 日志路径：显式 log_path 优先；无则 per-session（有 session 目录 → 落
     # session/events.log），冷启动无 session 目录 → 回退全局 DEFAULT_LOG 兜底（防每次自建空目录）。
     session = glob_session_dir(resolved_ws)
     path = log_path or ((session / "events.log") if session else DEFAULT_LOG)

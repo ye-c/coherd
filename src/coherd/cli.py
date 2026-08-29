@@ -116,7 +116,7 @@ def new(
     status: str = typer.Option("pending", "--status", help=f"初始状态（{T.STATUSES}）"),
     body: str = typer.Option("", "--body", help="可选 markdown 正文（缺省留空）"),
 ) -> None:
-    """生成新 tracker 到 session 目录平铺 ~/.config/coherd/tasks/<session>/<id>.task.md（无 session 目录自动自建），打印路径。"""
+    """生成新 tracker 到 session 目录平铺 ~/.config/coherd/sessions/<session>/<id>.task.md（无 session 目录自动自建），打印路径。"""
     if status not in T.STATUSES:
         _fatal(f"status 非法: {status!r}（需 {T.STATUSES}）")
     now = datetime.now(timezone.utc)
@@ -148,11 +148,11 @@ def list_cmd(
     """列 tracker 摘要（id / status / 建日 / task_name）。"""
     if status is not None and status not in T.STATUSES:
         _fatal(f"status 非法: {status!r}（需 {T.STATUSES}）")
-    if not T.TASKS_DIR.is_dir():
-        typer.echo("无 tracker（tasks 目录不存在）")
+    if not T.SESSIONS_DIR.is_dir():
+        typer.echo("无 tracker（sessions 目录不存在）")
         return
     rows: list[dict] = []
-    for p in sorted(T.TASKS_DIR.glob("*/*.task.md")):
+    for p in sorted(T.SESSIONS_DIR.glob("*/*.task.md")):
         try:
             data = T.load(p)
         except ValueError as e:
