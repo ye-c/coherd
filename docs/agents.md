@@ -20,9 +20,9 @@ mastracode  opencode  copilot  kimi  kiro  droid  amp  grok  hermes  kilo  qoder
 | `claude` | Claude Code | 通用 agent |
 | `codex` / `gemini` / `cursor` / `opencode` … | 各家 CLI | 列表内皆可用 |
 
-诚实边界：**冷门 CLI 不在上述 21 种内 = herdr 识别不了 = coherd 用不了**（识别阶段会超时）。这不是 coherd 的 bug；herdr 未内置该探测能力。对策：换用列表内 CLI，或等 herdr 扩展。
+**边界**：冷门 CLI 不在上述 21 种内 = herdr 识别不了 = coherd 用不了（识别阶段会超时）。对策：换用列表内 CLI，或等 herdr 扩展。
 
-coherd 启动时**不使用 `--kind` 指定**（历史上 `agent start --kind pi/omp` 是硬编码；现在三角色统一 `pane run <CMD>` 再由 herdr 自动识别进程）。
+coherd 启动时**不使用 `--kind` 指定**：三角色统一 `pane run <CMD>`，由 herdr 自动识别进程。
 
 ## 三角色 = 三独立实例（硬边界）
 

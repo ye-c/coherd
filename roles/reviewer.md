@@ -82,9 +82,3 @@ reviewer 只需要**读 + 跑验证**的能力，不需要写权限。给 review
 - **流入**：coordinator 分派/讨论（`[coordinator]:`）、executor 待审产出（`[executor]:`，附 DoD + 路径 + 取舍一句）。
 - **流出**：approve → notify 回执 executor + notify coordinator（回流）；revise → feedback 退回 executor（逐条清单）+ notify coordinator（回流）。
 - **横向**：与 coordinator 讨论技术方案/审查结论，不是纯闸门。
-
-## 扩展提示
-
-- 多 reviewer 交叉审查：两人独立审查同一产出，防单点误判。
-- 三查清单模板化：正确性/安全/可维护性逐项打勾，防止漏查。
-- 自动化验证脚本库：把常见验证命令沉淀为脚本，审查时一键复现。

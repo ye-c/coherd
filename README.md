@@ -4,10 +4,6 @@ coherd 把多个 AI agent 组织成一个小团队：一个规划、一个干活
 
 > ⚠️ 安全须知：本 repo 不提供任何 agent wrapper、不绕过任何权限确认。agent 的权限与密钥由你自己的 CLI 配置负责，详见下文"安全"与 roles/reviewer.md。
 
-## 它解决什么问题
-
-单个 agent 自己写代码、自己说“没问题”，等于同一套推理路径既出题又判卷——写得再仔细也会盲区。**coherd 把这两件事拆给不同 agent 做**：干活的人不用自证，审查的人不用先入为主。角色分离是核心设计，不是仪式。
-
 ## 工作原理
 
 ```
@@ -26,7 +22,7 @@ coherd 把多个 AI agent 组织成一个小团队：一个规划、一个干活
 
 | 依赖 | 作用 | 安装 |
 | ------ | ------ | ------ |
-| herdr | 终端多路复用器；管理 workspace/pane/agent | <https://github.com/…（占位）> |
+| herdr | 终端多路复用器；管理 workspace/pane/agent | <https://github.com/…> |
 | jq | 解析 herdr JSON 输出 | `brew install jq` |
 | 任意 agent CLI ×3 | 三个槽位各一个；必须是 herdr 内置识别的 21 种之一（见 docs/agents.md） | 各自官方安装方式 |
 
@@ -53,7 +49,7 @@ export COHERD_EXECUTOR_CMD=~/bin/my-executor-cli
 export COHERD_REVIEWER_CMD=~/bin/my-reviewer-cli
 ```
 
-都不设置时，回退找 PATH 中的 `pi` / `omp` / `cc`（旧集群的 CLI 名；其中 `cc` 有双重含义——既是旧集群 CLI 名，通常也是指你的 Claude Code）；再找不到就报错并指向 docs/configuration.md。
+都不设置时，回退查找 PATH 中的 `pi` / `omp` / `cc`（其中 `cc` 有双重含义——既是回退命令名，通常也指你的 Claude Code）；再找不到就报错并指向 docs/configuration.md。
 
 ## 用法
 
@@ -92,8 +88,7 @@ coherd init ~/code/myapp            # 强制重建同 label 集群（已存在�
 - reviewer 槽位建议最小权限（只读 + 跑验证），具体做法参考 roles/reviewer.md——是建议，不强制。
 - 若你的 reviewer CLI 配置了跳过权限确认，那是在你自己的沙箱环境里做的决定，与 coherd 无关。
 
-## 局限与扩展
+## 局限
 
-- 冷门 agent CLI 不在 herdr 内置识别的 21 种之内就无法用（见 docs/agents.md）——诚实说，不是所有 CLI 都被识别。
-- **有界不一致（bounded incoherence）**：reviewer 审查的可能是 executor 编辑**进行中**的树，不是原子快照——"fresh-eyes"（独立干净树审查）本轮不可达，完整树隔离列入 v2 待办（独立于跨集群隔离议题）。缓解：reviewer 验证前以 `git status`/`diff` 感知进行中改动，DoD 尽量定义在可复现状态。
-- 当前固定 coordinator/executor/reviewer 三角色。未来可扩展更多角色/agent：多个执行者并行、专职测试 agent——架构上只是加 pane + spawn 的事。
+- 冷门 agent CLI 不在 herdr 内置识别的 21 种之内就无法用（见 docs/agents.md）。
+- **有界不一致（bounded incoherence）**：reviewer 审查的可能是 executor 编辑**进行中**的树，不是原子快照。缓解：reviewer 验证前以 `git status`/`diff` 感知进行中改动，DoD 尽量定义在可复现状态。

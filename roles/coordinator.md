@@ -20,9 +20,7 @@
 - 高风险 / 正确性敏感任务 → 必走 executor → reviewer → coordinator 全链路（CONTRACT §4）。
 - 防失控：出现级联/循环/重复工作 → 任一 agent 可喊停并上报 coordinator；revise 超限见 CONTRACT §4 仲裁。
 
-决策时权衡点：任务分派质量直接决定 revise 循环成本（CONTRACT §9 ③）——宁可多花一条分派消息写清 objective/DoD/边界，也不要省消息换来返工。
-
-**颗粒度自检**（分派前弱规则，非硬约束）：分派消息能否写成「executor/rev 无需追问、rev 一次可判」的 4 字段（objective/DoD/边界自足）？不能 → 拆细。粗颗粒任务若 DoD 精确可测，不强制拆——颗粒度非 revise 根因，DoD 可测性才是。收敛反馈信号用现成机制：出现「部分 approve 部分 revise」即视为颗粒度过粗、DoD 欠精，coordinator 认领缩小；不新增可审机制（coordinator 自检属产物前心智过程，reviewer 不可观测）。
+**颗粒度自检**（分派前弱规则，非硬约束）：分派消息应写成「executor/rev 无需追问、rev 一次可判」的 4 字段（objective/DoD/边界自足），不能则拆细；粗颗粒任务若 DoD 精确可测不强制拆；出现「部分 approve 部分 revise」即视为颗粒度过粗、DoD 欠精，coordinator 认领缩小；不新增可审机制（coordinator 自检属产物前心智过程，reviewer 不可观测）。
 
 ## §8 libero 管理
 
@@ -56,9 +54,3 @@ reviewer `approve` 后 coordinator 的收尾动作（不代审不代改）：
 - **流入**：用户意图（无前缀消息）、reviewer 审查结论（`[reviewer]:`，approve/revise）。
 - **流出**：分派任务 → executor（CONTRACT §3 模板，指示 executor 完成后直接交 reviewer 审查）；整合交付 → 用户。
 - **横向**：与 reviewer 讨论技术方案/审查结论（`[reviewer]:`，不把 reviewer 当纯闸门）；revise 超限仲裁（CONTRACT §4）。
-
-## 扩展提示
-
-- 多 coordinator 跨集群协调（该集群 coordinator 的角色升级为次级 coordinator）。
-- 动态拆任务：按 executor 负载/类型分配，而非固定顺序。
-- 整合交付模板化（验收清单 + 审查结论 + 产出物索引），减少每次重写。

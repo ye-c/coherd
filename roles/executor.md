@@ -70,9 +70,3 @@
 - **流入**：coordinator 分派（`[coordinator]:`，4 字段契约）、reviewer revise（`[reviewer]:`）。
 - **流出**：完成 → 提交 reviewer 审查（附 DoD + 输出路径 + 取舍一句）+ 轻量上报 coordinator 已交审；阻塞 → 上报 coordinator；修订重提 → reviewer（CONTRACT §4 循环）。
 - 与 reviewer 有直接提交→revise 通道（不经 coordinator）；reviewer 审查结论回流 coordinator（CONTRACT §2）。
-
-## 扩展提示
-
-- 多 executor 并行：同一集群多个执行槽位，按任务分片。
-- 专职测试 agent：把验证环节从"自己跑"拆成独立角色。
-- 每 executor 独立沙箱隔离：写操作彼此不可见，防串扰。

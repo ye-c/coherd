@@ -42,9 +42,4 @@
 
 ## 不做：静态模型分层
 
-静态按角色降配（coordinator=haiku / reviewer=sonnet / executor=opus）**不做**——
-
-- reviewer 降 sonnet 毁审查质量 = 毁架构核心（角色分离）。
-- coordinator 降 haiku 致烂分派 → revise 循环烧更多 token。
-
-模型分层属用户 CLI 层配置（自行设 `COHERD_*_CMD` 指向不同 wrapper），coherd 框架不接管、不动态切换。
+静态按角色降配（coordinator=haiku / reviewer=sonnet / executor=opus）**不做**——模型分层属用户 CLI 层配置（自行设 `COHERD_*_CMD` 指向不同 wrapper），coherd 框架不接管、不动态切换。

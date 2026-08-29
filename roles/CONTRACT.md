@@ -70,7 +70,7 @@ coordinator→executor 每条任务**必须**包含以下 4 字段，缺失即�
 约定：字段缺失 → executor 先向 coordinator 补齐再动工；模糊分派导致的重复/遗漏由分派方负责。
 
 - **tracker 权威副本**：分派前 coordinator 把 4 字段落盘 session 目录平铺 `~/.config/coherd/sessions/<ws>-<TASK_TS>-$$/<id>.task.md`（session 目录由 bin/coherd 每启动创建并写死进 brief），executor 契约上不可写（运行时不强制，靠流程保障 + 事后核对，见 §5）。
-- **CLI 数据路径（已落地）**：tracker 以 session 目录平铺 `~/.config/coherd/sessions/<ws>-<TASK_TS>-$$/`，tracker 入口 `<id>.task.md`、reviewer 结论 `<id>.<verdict>-<HHMMSS>.md` 同目录（id 前缀防平铺撞名）；session 目录由 bin/coherd 启动 `mkdir -p` 创建（standalone CLI 由 `session_dir_for(create=True)` 自建）；tracker 入口与 id 生成已由 `coherd task new` 接管（`next_id` 生成 `<id>`）。
+- **CLI 数据路径**：tracker 以 session 目录平铺 `~/.config/coherd/sessions/<ws>-<TASK_TS>-$$/`，tracker 入口 `<id>.task.md`、reviewer 结论 `<id>.<verdict>-<HHMMSS>.md` 同目录（id 前缀防平铺撞名）；session 目录由 bin/coherd 启动 `mkdir -p` 创建（standalone CLI 由 `session_dir_for(create=True)` 自建）；tracker 入口与 id 由 `coherd task new` 生成（`next_id` 生成 `<id>`）。
 - executor **先读 tracker 再动工**；产出写 tracker「输出」字段指定路径。
 
 ## 4. 审查义务与循环（B）
@@ -104,10 +104,7 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 
 ## CLI 集成（数据契约 + 滑坡护栏）
 
-> **CLI 只做文件 CRUD + 格式校验，永不做角色决策**（分派/审查/判断）。coherd typer 是数据管理工具，
-> 不绑特定 agent CLI，不是 agent 编排引擎。本节只写「CLI 命令 ↔ tracker 文件操作」的**数据映射**，
-> 不写「角色在何时调用哪个命令」的编排语义——那是各 per-role 文档「内部 task 纪律」的职责
-> （reviewer.md 已有 agent 自带 TaskCreate/TaskUpdate 纪律一节，注意与 coherd task CLI 区分）。
+> **CLI 只做文件 CRUD + 格式校验，永不做角色决策**（分派/审查/判断）。
 
 **tracker 权威路径**：session 目录平铺 `~/.config/coherd/sessions/<ws>-<TASK_TS>-$$/<id>.task.md`（frontmatter 权威 schema + 自由 body）。
 
@@ -134,12 +131,12 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 - feedback/notify 遵循 §2 三铁律（见 §2）；pane 输出退化为辅助。
 - **环节→命令映射（D10，唯一权威）**：命令名即语义（=标记名）——`coherd feedback` 注入 `[<role>|feedback]:` 标记（收方据标记需回执）、`coherd notify` 注入 `[<role>|notify]:` 标记（单向不回）；两者均写 session `events.log` 精简审计（`type` 字段标识类型，`body` 字段记原始正文，**无后台待回执登记/判定**；无 session 目录的冷启动回退全局 `events.log` 兜底）。环节映射表是唯一权威（coordinator 分派 / 讨论 / exec→rev 交审 / rev revise 退回 = `feedback`；approve 回执 / 改完重交 / 开工 ack / 交审上报 / standby 握手 / 纯通知 = `notify`）。一句话：任务交互看映射表定 feedback/notify，命令名即标记名，接收方据标记判断是否回执——无人值守兜底靠"沉默即故障"人工察觉。
 - **回执语义**：`coherd feedback` = `[feedback]` 标记期待回执，收方据标记应回一条；`coherd notify` = `[notify]` 标记纯单向，不回。命令名即语义（=标记名），无缺省值陷阱。notify 送达失败 → CLI 非零退出提示转 feedback 重发，关键交接用 feedback 期望回执。
-- **无后台待回执**：废弃 watch/Ledger 后无程序化待回执登记与清除；回执义务由接收方据消息标记自觉履行，靠"沉默即故障、人自察觉"兜底（trade-off 已确认接受）。
-- **环节时效（软条款，无硬时限）**：分派后 executor 宜尽速开工 ack（notify）或阻塞上报；交审后 reviewer 宜在合理时限内（参考 ≤2h，按任务规模自定）出结论或上报进度。超时无任何信号 = 断链候选，可据 session `events.log` 时间线介入；无后台提醒，停滞靠"沉默即故障"人工察觉。
+- **无后台待回执**：无程序化待回执登记与清除；回执义务由接收方据消息标记自觉履行，靠"沉默即故障、人自察觉"兜底。
+- **环节时效（软条款，无硬时限）**：分派后 executor 宜尽速开工 ack（notify）或阻塞上报；交审后 reviewer 宜在合理时限内（参考 ≤2h，按任务规模自定）出结论或上报进度。超时无任何信号 = 断链候选，可据 session `events.log` 时间线介入。
 
 ## 9. token 控制
 
-> 目标：不影响工作质量前提下，降低集群 token 消耗。实质条款内联于此，不依赖外部详述文件；详述/设计论证见 docs/token-control.md。
+> 目标：不影响工作质量前提下，降低集群 token 消耗（详见 docs/token-control.md）。
 
 **三块核心条款**：
 
@@ -151,7 +148,7 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 ## 10. 事实源与同步（契约文档自身的治理）
 
 - **唯一事实源**：repo `roles/*.md`（CONTRACT.md + coordinator/executor/reviewer/libero.md）为唯一事实源；`install.sh` 单向 repo → `~/.config/coherd/` 覆盖分发（旧副本存 `.bak.<ts>`）。
-- **改写路径**：契约/角色文档改动一律先改 repo 源、再 `./install.sh` 同步；禁止只改 `~/.config` 副本（曾复发：副本改动被 install 冲掉，HANDOFF §3.8）。
+- **改写路径**：契约/角色文档改动一律先改 repo 源、再 `./install.sh` 同步；禁止只改 `~/.config` 副本。
 - **审查验收**：审查清单含「镜像一致校验」——diff `roles/` vs `~/.config/coherd/` 五文档应为空。
-- **brief 不重述**：启动 brief（`bin/coherd` `_brief`）只引 CONTRACT §7 D10（唯一权威映射），不重述环节→命令归组——重述即双源漂移（L1）。
+- **brief 不重述**：启动 brief（`bin/coherd` `_brief`）只引 CONTRACT §7 D10（唯一权威映射），不重述环节→命令归组。
 - **tracker 边界**：分派 tracker「边界」字段写 `roles/<doc>.md`，不写 `~/.config/coherd/<doc>.md`。

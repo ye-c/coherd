@@ -24,7 +24,7 @@ coherd 的配置面很小：三个槽位的启动命令 + 布局。所有配置�
 | `COHERD_EXECUTOR_CMD` | `omp` | 同上 |
 | `COHERD_REVIEWER_CMD` | `cc` | 同上 |
 
-回退是兼容旧集群 CLI 命名（pi/omp/cc）的便利，不是 coherd 对特定 CLI 的依赖。注意 `cc` 有**双重含义**：它既是旧集群的 CLI 名，也是 Claude Code 的常见别名——PATH 里的 `cc` 通常就是用户的 Claude Code。fallback 表 `cc` → reviewer 指"名为 `cc` 的命令"，不指定具体实现；该命令的语言/行为由 CLI 自身决定（brief 是中文，CLI 默认语言可能不同——见 README 语言说明）。
+回退只是便利，不是 coherd 对特定 CLI 的依赖。注意 `cc` 有**双重含义**：它既是回退表的命令名，也是 Claude Code 的常见别名——PATH 里的 `cc` 通常就是用户的 Claude Code。fallback 表 `cc` → reviewer 指"名为 `cc` 的命令"，不指定具体实现；该命令的语言/行为由 CLI 自身决定；brief 与 coherd 自身输出固定为中文，CLI 实例的默认语言可能不同（不强制对齐）。
 
 ## coherd.conf
 
