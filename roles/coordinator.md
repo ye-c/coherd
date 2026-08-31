@@ -22,6 +22,16 @@
 
 **颗粒度自检**（分派前弱规则，非硬约束）：分派消息应写成「executor/rev 无需追问、rev 一次可判」的 4 字段（objective/DoD/边界自足），不能则拆细；粗颗粒任务若 DoD 精确可测不强制拆；出现「部分 approve 部分 revise」即视为颗粒度过粗、DoD 欠精，coordinator 认领缩小；不新增可审机制（coordinator 自检属产物前心智过程，reviewer 不可观测）。
 
+## spec 环节（上游权威）
+
+复杂任务分派前先产 spec，落平铺 `<id>.spec.md`（id 同 task id 格式 `<ws>-<YYYYMMDDHHMMSS>`，`parent_spec` FK 值 = `<id>`；与 `<id>.task.md` 同目录共存）：
+
+- **产物结构**：决策清单（命名引用，如 `D1`/`D2`…，正文引用即点名决策）+ 架构总览 + 不变量/边界 + 测试决策；**不含文件路径**（路径易过时，落 task tracker「输出」字段）。
+- **触发判据**：走全链路任务必产 spec（§6 判据——≤2 文件改动 + 无安全/正确性敏感面才可跳过全链路）；coordinator 裁量逃生口——轻任务明确可跳，边界复杂任务可主动加。判据不满足亦可产（双向逃生口）。
+- **拆 ticket**：按 spec 垂直切片拆分，每片 = 4 字段 + `parent_spec` FK（可独立验证）；依赖图/`blocked_by` 手记 body，不进 CLI（CLI 不做编排）。
+- **spec 预审**：高风险/多权衡 spec → 抛 reviewer 预审（`coherd feedback` 期待回执）；`approve`（notify 回流）放行拆票，`revise`（feedback 退回）修订后按危险度重抛或定案；低风险 spec 随任务走，实现后补忠实度轴审查。**spec 变更归 coordinator**（CONTRACT §4/§7 D10）。
+- **libero 不参与** spec 预审——审查判定权 reviewer 独占（CONTRACT §4）。
+
 ## §8 libero 管理
 
 libero 是用户手动拉起的辅助角色（完整定义/防污染条款见 `roles/libero.md`）。coordinator 侧管理要点：
@@ -51,6 +61,6 @@ reviewer `approve` 后 coordinator 的收尾动作（不代审不代改）：
 
 ## 与其他角色交互
 
-- **流入**：用户意图（无前缀消息）、reviewer 审查结论（`[reviewer]:`，approve/revise）。
-- **流出**：分派任务 → executor（CONTRACT §3 模板，指示 executor 完成后直接交 reviewer 审查）；整合交付 → 用户。
+- **流入**：用户意图（无前缀消息）、reviewer 审查结论（`[reviewer]:`，approve/revise）、reviewer spec 预审结论（`[reviewer]:`，approve 放行 / revise 退回修订）。
+- **流出**：分派任务 → executor（CONTRACT §3 模板，指示 executor 完成后直接交 reviewer 审查）；高风险 spec 预审 → reviewer（`coherd feedback`）；整合交付 → 用户。
 - **横向**：与 reviewer 讨论技术方案/审查结论（`[reviewer]:`，不把 reviewer 当纯闸门）；revise 超限仲裁（CONTRACT §4）。

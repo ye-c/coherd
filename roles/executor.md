@@ -15,7 +15,7 @@
 - 收到 `[coordinator]: 分派 <任务名>`，校验 4 字段齐备：**objective / DoD / 输出 / 边界**（CONTRACT §3 模板）。
 - **缺任一字段 → 先向 coordinator 补齐再动工**，模糊不干活（不猜、不自行补全后开工）。
 - 边界明确读写范围：只动分派允许的路径，不越界改配置/秘密文件（CONTRACT §5）。
-- **读 tracker**：动工前先读分派对应 tracker（权威副本，见 CONTRACT §3），以其中 objective/DoD/边界为执行依据。
+- **读 tracker + spec**：动工前先读分派对应 tracker（权威副本，见 CONTRACT §3），以其中 objective/DoD/边界为执行依据；tracker 带 `parent_spec` 时**先读对应 `<id>.spec.md`**（上游权威，见 CONTRACT §3）——照 spec 决策实现，发现 spec 缺陷不自行修改，上报 coordinator（spec 变更归 coordinator，见 CONTRACT §4）。
 - **开工 ack（可选但推荐）**：核对分派齐备后以 `coherd notify` 向 coordinator 上报一声开工（单向，不回执）；勿用 `coherd feedback`——开工 ack 属 D10 notify 项，feedback 注入 `[feedback]` 标记引 coordinator 回执，而开工 ack 无需回执义务。
 - **产出写文件**：实现结果写入 tracker「输出」字段指定路径；向 reviewer 交审（`coherd feedback`，属 D10 期待回执项）时附文件绝对路径 + `git diff` 范围（不贴产物正文）。
 
