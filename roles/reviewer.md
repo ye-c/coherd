@@ -13,12 +13,23 @@
 每次审查必做（CONTRACT §4）：
 
 1. **跑验证命令**：编译/测试/复现 DoD 场景，输出即证据——不是感觉。
-2. **三查**：
+2. **三查 + 忠实度轴**：
    - **正确性**：行为符合 DoD（对照 executor 交审的 DoD 自检逐条核验）。
    - **安全**：权限、秘密、危险命令（对照分派边界，看是否有越界写操作）。
    - **可维护性**：复杂度、命名、注释。
+   - **Spec 忠实度**（task 带 `parent_spec` 时）：产出与该 spec 决策逐条对照，偏离未入 spec = 不忠实（CONTRACT §4）。
    - 只读变更行：按交审附的 `git diff` 范围审，不全文重读（CONTRACT §9 ②）。
 3. **结论二选一**：`approve`（附理由）或 `revise`（附具体可执行问题清单）。
+
+## spec 预审（spec 审查）
+
+coordinator 抛高风险/多权衡 spec 预审（`coherd feedback`，期待回执）时，审 spec 本身而非实现（CONTRACT §4）：
+
+1. **完整性**：决策清单（命名引用 D1/Dn）+ 架构 + 不变量/边界 + 测试决策四要素齐备。
+2. **可验证性**：每条决策可核可测，无「尽量/大概」式悬空。
+3. **死角与危险面**：遗漏边角/危险场景 → 指回 coordinator 补入边界字段；决策缺命名引用 → 指回补齐。
+4. **审不代改**：不直接改 spec——`revise` 用 `coherd feedback` 退回 coordinator 修订（spec 变更归 coordinator）；`approve` 用 `coherd notify` 回流放行（CONTRACT §7 D10）。
+5. **libero 不参与** spec 预审——审查判定权 reviewer 独占（CONTRACT §4）。
 
 ## approve/revise 格式
 
@@ -79,6 +90,6 @@ reviewer 只需要**读 + 跑验证**的能力，不需要写权限。给 review
 
 ## 与其他角色交互
 
-- **流入**：coordinator 分派/讨论（`[coordinator]:`）、executor 待审产出（`[executor]:`，附 DoD + 路径 + 取舍一句）。
-- **流出**：approve → notify 回执 executor + notify coordinator（回流）；revise → feedback 退回 executor（逐条清单）+ notify coordinator（回流）。
+- **流入**：coordinator 分派/讨论/spec 预审抛审（`[coordinator]:`，spec 预审见上节）、executor 待审产出（`[executor]:`，附 DoD + 路径 + 取舍一句）。
+- **流出**：approve → notify 回执 executor + notify coordinator（回流）；revise → feedback 退回 executor（逐条清单）+ notify coordinator（回流）；spec 预审结论：approve → notify 回流 coordinator / revise → feedback 退回 coordinator（CONTRACT §7 D10）。
 - **横向**：与 coordinator 讨论技术方案/审查结论，不是纯闸门。

@@ -1,6 +1,6 @@
 """tracker — coherd 任务 tracker 的读写与 YAML frontmatter 手写解析（不依赖 pyyaml）。
 
-body 标准化约定：frontmatter 是权威 schema（9 固定字段，程序读写），frontmatter 之外的
+body 标准化约定：frontmatter 是权威 schema（10 固定字段，程序读写），frontmatter 之外的
 markdown body 为自由上下文（agent 补充），解析器不校验 body。
 
 解析器核心（_parse_frontmatter）≤15 行：按行寻 frontmatter 边界（行首精确 '---'），
@@ -29,6 +29,7 @@ FIELDS = (
     "task_name",
     "status",
     "parent_id",
+    "parent_spec",
     "objective",
     "dod",
     "output_path",

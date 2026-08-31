@@ -115,6 +115,9 @@ def new(
     ),
     status: str = typer.Option("pending", "--status", help=f"初始状态（{T.STATUSES}）"),
     body: str = typer.Option("", "--body", help="可选 markdown 正文（缺省留空）"),
+    parent_spec: str = typer.Option(
+        "", "--parent-spec", help="上游 spec id（FK 追溯，见 CONTRACT §3；缺省空串）"
+    ),
 ) -> None:
     """生成新 tracker 到 session 目录平铺 ~/.config/coherd/sessions/<session>/<id>.task.md（无 session 目录自动自建），打印路径。"""
     if status not in T.STATUSES:
@@ -129,6 +132,7 @@ def new(
             "task_name": task_name,
             "status": status,
             "parent_id": "",
+            "parent_spec": parent_spec,
             "objective": objective,
             "dod": dod,
             "output_path": output,

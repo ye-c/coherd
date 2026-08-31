@@ -19,6 +19,7 @@
 | 分派 (dispatch) | coordinator→executor 带 4 字段（objective/DoD/输出/边界）的任务消息 | §3 |
 | 回流 | 结论/状态消息上报 coordinator（approve/revise/阻塞/已交审） | §2 |
 | 审查 (review) | reviewer 对 executor 产出做三查，给 approve/revise 二选一结论 | §4 |
+| spec / 规格 | coordinator 产的上游权威定案：复杂任务分派前的决策清单（命名引用，如 D1）+ 架构 + 不变量/边界 + 测试决策，落平铺 `<id>.spec.md`；executor 实现与 reviewer 审查的共同事实源，tracker 以 `parent_spec` FK 追溯 | §3 |
 
 ## 1. 角色职责表
 
@@ -43,7 +44,7 @@
 - 每个集群的 herdr agent 名是 `${WS_SLUG}-<role>`（workspace 短号小写，如 `w1p-coordinator`），非裸单词；各角色从自身 agent 名前缀（`${WS_SLUG}-`）派生 peer 名互寻址，用完整名。
 - 消息标记 `[<role>|<type>]:` 由 CLI 注入，同级 agent 发言必带；无标记 = 用户直接输入。
 - 每个 pane 自动注入 `HERDR_WORKSPACE_ID` / `HERDR_TAB_ID` / `HERDR_PANE_ID`。
-- 汇报对称义务：executor 完成后以 `coherd feedback` 直接提交 reviewer 审查（附 DoD + 输出路径，不转发产物正文），并轻量上报 coordinator 已交审（状态级）；阻塞以 `[executor|notify]:` 上报 coordinator（原因 + 已尝试手段）；reviewer 审查结论（**approve = `coherd notify` 回执 executor 完成交审闭环 + `coherd notify` 回流 coordinator；revise = `coherd feedback` 退回 executor 修订+ `coherd notify` 回流 coordinator**）；coordinator 整合交付以 `[coordinator|notify]:` 上报用户。
+- 汇报对称义务：executor 完成后以 `coherd feedback` 直接提交 reviewer 审查（附 DoD + 输出路径，不转发产物正文），并轻量上报 coordinator 已交审（状态级）；阻塞以 `[executor|notify]:` 上报 coordinator（原因 + 已尝试手段）；reviewer 审查结论（**approve = `coherd notify` 回执 executor 完成交审闭环 + `coherd notify` 回流 coordinator；revise = `coherd feedback` 退回 executor 修订+ `coherd notify` 回流 coordinator**）；spec 预审回流同实现审查（**approve = `coherd notify` 回流 coordinator 放行；revise = `coherd feedback` 退回 coordinator 修订**，spec 变更归 coordinator，见 §4）；coordinator 整合交付以 `[coordinator|notify]:` 上报用户。
 - **token 控制**：① 通信精简——结论结构化 `approve: <要点>` / `revise: <问题清单逐条>`，要点式不叙述；executor 交审消息保 DoD + 路径 + 关键取舍一句，不可瘦到只剩路径。② 输入端控制——消息引用路径不贴大文件正文，交审附 git diff 范围 reviewer 只读变更行，长任务串轮换 session。③ revise 循环最贵：一次返工 > 一切通信压缩，投资分派质量优先。
 
 ## 3. 分派契约模板（A）
@@ -68,9 +69,12 @@ coordinator→executor 每条任务**必须**包含以下 4 字段，缺失即�
 ```
 
 约定：字段缺失 → executor 先向 coordinator 补齐再动工；模糊分派导致的重复/遗漏由分派方负责。
+- **spec 上游权威**：复杂任务分派前 coordinator 产 spec 落平铺 `<id>.spec.md`（id 同 task id 格式）——决策清单（命名引用，如 D1）+ 架构 + 不变量/边界 + 测试决策，为 executor 实现与 reviewer 审查的共同事实源；ticket = 4 字段垂直切片（可独立验证），tracker 4 字段仍是任务级最小自足定义（缺失需补齐），与 spec 冲突或超出处**以 spec 为准**（spec 变更归 coordinator，见 §4）。触发判据与产物结构见 coordinator.md「spec 环节」。
+
 
 - **tracker 权威副本**：分派前 coordinator 把 4 字段落盘 session 目录平铺 `~/.config/coherd/sessions/<ws>-<TASK_TS>-$$/<id>.task.md`（session 目录由 bin/coherd 每启动创建并写死进 brief），executor 契约上不可写（运行时不强制，靠流程保障 + 事后核对，见 §5）。
 - **CLI 数据路径**：tracker 以 session 目录平铺 `~/.config/coherd/sessions/<ws>-<TASK_TS>-$$/`，tracker 入口 `<id>.task.md`、reviewer 结论 `<id>.<verdict>-<HHMMSS>.md` 同目录（id 前缀防平铺撞名）；session 目录由 bin/coherd 启动 `mkdir -p` 创建（standalone CLI 由 `session_dir_for(create=True)` 自建）；tracker 入口与 id 由 `coherd task new` 生成（`next_id` 生成 `<id>`）。
+- **spec 文件与 FK**：spec 落平铺 `<id>.spec.md`（与 `<id>.task.md` 同目录共存，`task list` glob `*.task.md` 不误抓）；`coherd task new --parent-spec <id>` 写 frontmatter `parent_spec`（FK 追溯，值 = spec id，缺省空串）；依赖图/`blocked_by` 手记 body 不进 CLI（CLI 不做编排，守滑坡护栏）。
 - executor **先读 tracker 再动工**；产出写 tracker「输出」字段指定路径。
 
 ## 4. 审查义务与循环（B）
@@ -80,6 +84,9 @@ reviewer **最小审查集**（每次审查必做）：
 1. 跑验证命令（编译/测试/复现 DoD 场景）。
 2. 三查：**正确性**（行为符合 DoD）/ **安全**（权限、秘密、危险命令）/ **可维护性**（复杂度、命名、注释）。
 3. 结论二选一：`approve`（附理由）或 `revise`（附具体可执行问题清单）。
+**spec 预审（spec 审查）**：高风险/多权衡 spec 由 coordinator 抛 reviewer 预审（`coherd feedback`，期待回执）——查**完整性 / 可验证性 / 死角与危险面入边界字段 / 决策命名引用**；审不代改，`revise` 以 `coherd feedback` 退回 coordinator 修订（spec 变更归 coordinator），`approve` 以 `coherd notify` 回流放行；libero 不参与 spec 预审（审查判定权 reviewer 独占）。
+
+**忠实度轴**：task 带 `parent_spec` 时，最小审查集第 2 条扩充为四查——加「Spec 忠实度」：产出与该 spec 决策逐条对照，偏离未入 spec = 不忠实。
 
 循环与终止：
 
@@ -129,7 +136,7 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 - executor/reviewer 启动后读 CONTRACT.md 确认身份, 以 `coherd notify` 向 coordinator 发一次 `[<role>|notify]:`  standby 上报（§0 standby/握手, notify 单向不回; 环节映射见 §7 D10）, 随即**转 idle 待机**（herdr 层 pane 挂起; 非 agent CLI 层 hub-wait 等机制, 见 §0 idle）; coordinator 收到两份上报后判集群起步就绪, 自身转 idle 待机后开始按用户意图分派, 之后全程事件驱动(§7 下条)。**此握手单向、一次性、不触发 §2 回复义务**——coordinator 不回"收到", exec/rev 不等回复。coordinator 不轮询(§0)、不检测 exec/rev 状态; 未收到上报也不追究、不重发——沉默即故障信号, 用户自然察觉。
 - executor 完成 → 直接提交 reviewer 审查（reviewer 读产物 / `herdr agent read` 验证），结论 approve/revise 回流 coordinator；阻塞 → 上报 coordinator（原因 + 已尝试手段）；revise 循环 rev→exe→rev 不经 coordinator，超 §4 上限（2 轮）才介入仲裁。
 - feedback/notify 遵循 §2 三铁律（见 §2）；pane 输出退化为辅助。
-- **环节→命令映射（D10，唯一权威）**：命令名即语义（=标记名）——`coherd feedback` 注入 `[<role>|feedback]:` 标记（收方据标记需回执）、`coherd notify` 注入 `[<role>|notify]:` 标记（单向不回）；两者均写 session `events.log` 精简审计（`type` 字段标识类型，`body` 字段记原始正文，**无后台待回执登记/判定**；无 session 目录的冷启动回退全局 `events.log` 兜底）。环节映射表是唯一权威（coordinator 分派 / 讨论 / exec→rev 交审 / rev revise 退回 = `feedback`；approve 回执 / 改完重交 / 开工 ack / 交审上报 / standby 握手 / 纯通知 = `notify`）。一句话：任务交互看映射表定 feedback/notify，命令名即标记名，接收方据标记判断是否回执——无人值守兜底靠"沉默即故障"人工察觉。
+- **环节→命令映射（D10，唯一权威）**：命令名即语义（=标记名）——`coherd feedback` 注入 `[<role>|feedback]:` 标记（收方据标记需回执）、`coherd notify` 注入 `[<role>|notify]:` 标记（单向不回）；两者均写 session `events.log` 精简审计（`type` 字段标识类型，`body` 字段记原始正文，**无后台待回执登记/判定**；无 session 目录的冷启动回退全局 `events.log` 兜底）。环节映射表是唯一权威（coordinator 分派 / 讨论 / exec→rev 交审 / rev revise 退回 / coordinator→reviewer spec 预审抛审 / 预审 revise 退回 coordinator 修订 = `feedback`；approve 回执 / spec 预审 approve 回流放行 / 改完重交 / 开工 ack / 交审上报 / standby 握手 / 纯通知 = `notify`）。一句话：任务交互看映射表定 feedback/notify，命令名即标记名，接收方据标记判断是否回执——无人值守兜底靠"沉默即故障"人工察觉。
 - **回执语义**：`coherd feedback` = `[feedback]` 标记期待回执，收方据标记应回一条；`coherd notify` = `[notify]` 标记纯单向，不回。命令名即语义（=标记名），无缺省值陷阱。notify 送达失败 → CLI 非零退出提示转 feedback 重发，关键交接用 feedback 期望回执。
 - **无后台待回执**：无程序化待回执登记与清除；回执义务由接收方据消息标记自觉履行，靠"沉默即故障、人自察觉"兜底。
 - **环节时效（软条款，无硬时限）**：分派后 executor 宜尽速开工 ack（notify）或阻塞上报；交审后 reviewer 宜在合理时限内（参考 ≤2h，按任务规模自定）出结论或上报进度。超时无任何信号 = 断链候选，可据 session `events.log` 时间线介入。
