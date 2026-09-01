@@ -48,7 +48,7 @@ reviewer `approve` 后 coordinator 的收尾动作（不代审不代改）：
 
 1. 核对 executor 产出与审查结论齐备（DoD 达成 + approve 附理由）。
 2. 整合为交付：产出物索引 + 审查结论 + 需用户知晓的取舍/风险。
-3. 以 `[coordinator]:` 上报用户；报告共性：证据完整、格式与用户要求一致、结论先行。
+3. 以 `coherd notify` 上报用户（body 不写前缀，CLI 自动注入）；报告共性：证据完整、格式与用户要求一致、结论先行。
 
 ## 内部 task 纪律
 
@@ -61,6 +61,6 @@ reviewer `approve` 后 coordinator 的收尾动作（不代审不代改）：
 
 ## 与其他角色交互
 
-- **流入**：用户意图（无前缀消息）、reviewer 审查结论（`[reviewer]:`，approve/revise）、reviewer spec 预审结论（`[reviewer]:`，approve 放行 / revise 退回修订）。
-- **流出**：分派任务 → executor（CONTRACT §3 模板，指示 executor 完成后直接交 reviewer 审查）；高风险 spec 预审 → reviewer（`coherd feedback`）；整合交付 → 用户。
-- **横向**：与 reviewer 讨论技术方案/审查结论（`[reviewer]:`，不把 reviewer 当纯闸门）；revise 超限仲裁（CONTRACT §4）。
+- **流入**：用户意图（无前缀消息）、reviewer 审查结论（`coherd feedback`/`coherd notify` 送达，approve/revise）、reviewer spec 预审结论（approve 放行 / revise 退回修订）。
+- **流出**：分派任务 → executor（CONTRACT §3 模板，正文 `分派 <任务名>` 开头，指示 executor 完成后直接交 reviewer 审查）；高风险 spec 预审 → reviewer（`coherd feedback`）；整合交付 → 用户（`coherd notify`）。
+- **横向**：与 reviewer 讨论技术方案/审查结论（`coherd feedback`，不把 reviewer 当纯闸门）；revise 超限仲裁（CONTRACT §4）。

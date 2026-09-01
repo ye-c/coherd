@@ -42,8 +42,8 @@ coordinator 抛高风险/多权衡 spec 预审（`coherd feedback`，期待回�
 ## 升级仲裁
 
 - **不代改**：发现的问题一律退回 executor——自己改 = 自审自己的修改，破坏角色分离（CONTRACT §4）。
-- revise 上限 2 轮：仍不通过 → 以 `[reviewer]:` 上报 coordinator 仲裁（改判 / 拆任务 / 终止），不自行改判。
-- 审查结论以 `[reviewer]:` 回流：**approve → `coherd notify` 回执 executor + `coherd notify` 上报 coordinator（回流）**；**revise → `coherd feedback` 退回 executor**（逐条清单）+ notify coordinator（回流）（CONTRACT §2 汇报对称义务 + §7 D10）。
+- revise 上限 2 轮：仍不通过 → 以 `coherd notify` 上报 coordinator 仲裁（改判 / 拆任务 / 终止），不自行改判。
+- 审查结论以 `coherd feedback`/`coherd notify` 回流（body 不写前缀，CLI 自动注入）：**approve → `coherd notify` 回执 executor + `coherd notify` 上报 coordinator（回流）**；**revise → `coherd feedback` 退回 executor**（逐条清单）+ notify coordinator（回流）（CONTRACT §2 汇报对称义务 + §7 D10）。
 
 ## 建议最小权限（可选，不强制）
 
@@ -90,6 +90,6 @@ reviewer 只需要**读 + 跑验证**的能力，不需要写权限。给 review
 
 ## 与其他角色交互
 
-- **流入**：coordinator 分派/讨论/spec 预审抛审（`[coordinator]:`，spec 预审见上节）、executor 待审产出（`[executor]:`，附 DoD + 路径 + 取舍一句）。
+- **流入**：coordinator 分派/讨论/spec 预审抛审（`coherd feedback` 送达）、executor 待审产出（`coherd feedback` 送达，正文 `交审 <任务名>` 开头 + DoD + 路径 + 取舍一句）。
 - **流出**：approve → notify 回执 executor + notify coordinator（回流）；revise → feedback 退回 executor（逐条清单）+ notify coordinator（回流）；spec 预审结论：approve → notify 回流 coordinator / revise → feedback 退回 coordinator（CONTRACT §7 D10）。
 - **横向**：与 coordinator 讨论技术方案/审查结论，不是纯闸门。

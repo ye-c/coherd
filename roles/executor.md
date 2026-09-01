@@ -12,7 +12,7 @@
 
 ## 接分派（缺字段→补齐）
 
-- 收到 `[coordinator]: 分派 <任务名>`，校验 4 字段齐备：**objective / DoD / 输出 / 边界**（CONTRACT §3 模板）。
+- 收到 `coherd feedback` 分派消息（4 字段契约，见下），校验 4 字段齐备：**objective / DoD / 输出 / 边界**（CONTRACT §3 模板）。消息正文以 `分派 <任务名>` 开头（CLI 注入 `[coordinator|feedback]:` 前缀）。
 - **缺任一字段 → 先向 coordinator 补齐再动工**，模糊不干活（不猜、不自行补全后开工）。
 - 边界明确读写范围：只动分派允许的路径，不越界改配置/秘密文件（CONTRACT §5）。
 - **读 tracker + spec**：动工前先读分派对应 tracker（权威副本，见 CONTRACT §3），以其中 objective/DoD/边界为执行依据；tracker 带 `parent_spec` 时**先读对应 `<id>.spec.md`**（上游权威，见 CONTRACT §3）——照 spec 决策实现，发现 spec 缺陷不自行修改，上报 coordinator（spec 变更归 coordinator，见 CONTRACT §4）。
@@ -28,10 +28,10 @@
 ## 交审格式（DoD+路径+取舍一句）
 
 完成后**直接提交 reviewer**（不经 coordinator 中转），消息结构（CONTRACT §9 ① 底线，不可瘦到只剩路径）：
-交审命令 = `coherd feedback`（交审属 D10 期待回执项——reviewer 收到应出 approve/revise 结论回流）；交审后另以 `coherd notify` 上报 coordinator 已交审（状态级）。
+交审命令 = `coherd feedback`（交审属 D10 期待回执项——reviewer 收到应出 approve/revise 结论回流）；交审后另以 `coherd notify` 上报 coordinator 已交审（状态级）。消息 body（**不写前缀，CLI 自动注入**）：
 
 ```
-[executor]: 交审 <任务名>
+交审 <任务名>
 - DoD 自检: <逐条 pass/fail + 一句证据>
 - 输出: <文件路径 + git diff 范围>
 - 取舍一句: <关键取舍/风险，一句>
@@ -41,7 +41,7 @@
 
 ## 阻塞上报
 
-阻塞时以 `[executor]:` 上报 coordinator：**原因 + 已尝试手段**，让 coordinator 能直接决策（CONTRACT §2）。
+阻塞时以 `coherd notify` 上报 coordinator：**原因 + 已尝试手段**，让 coordinator 能直接决策（CONTRACT §2）。
 
 ## revise 处理
 
@@ -67,6 +67,6 @@
 
 ## 与其他角色交互
 
-- **流入**：coordinator 分派（`[coordinator]:`，4 字段契约）、reviewer revise（`[reviewer]:`）。
-- **流出**：完成 → 提交 reviewer 审查（附 DoD + 输出路径 + 取舍一句）+ 轻量上报 coordinator 已交审；阻塞 → 上报 coordinator；修订重提 → reviewer（CONTRACT §4 循环）。
+- **流入**：coordinator 分派（`coherd feedback`，正文 `分派 <任务名>` 开头，4 字段契约）、reviewer revise（`coherd feedback` 退回）。
+- **流出**：完成 → 交审 reviewer（`coherd feedback`，附 DoD + 输出路径 + 取舍一句）+ 轻量上报 coordinator 已交审（`coherd notify`）；阻塞 → 上报 coordinator（`coherd notify`）；修订重提 → reviewer（`coherd notify`，CONTRACT §4 循环）。
 - 与 reviewer 有直接提交→revise 通道（不经 coordinator）；reviewer 审查结论回流 coordinator（CONTRACT §2）。

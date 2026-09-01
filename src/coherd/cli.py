@@ -34,7 +34,7 @@ def feedback(
     peer_agent: str = typer.Argument(
         ..., help="对端 herdr agent 全名，如 w2p-reviewer"
     ),
-    msg: str = typer.Argument(..., help="消息，须带 [role]: 前缀（契约 §2）"),
+    msg: str = typer.Argument(..., help="消息正文，只写 body，禁含 [<role>|...] 前缀——CLI 自动注入"),
     ws: str = typer.Option(
         None, "--ws", help="自身 ws 短号（缺省取 HERDR_WORKSPACE_ID 小写）"
     ),
@@ -42,7 +42,7 @@ def feedback(
         None, "--role", help="自身 role（缺省从 COHERD_ROLE / agent 名派生）"
     ),
 ) -> None:
-    """feedback 类型标记：CLI 注入 `[<role>|feedback]: <body>`，收方据标记需回执。
+    """feedback 类型标记：CLI 只注入一次前缀（`[<role>|feedback]: `）；正文带前缀将被拒绝。
 
     命令名即语义（=标记名），无缺省值陷阱；送达失败不丢审计行。
     """
@@ -68,7 +68,7 @@ def notify(
     peer_agent: str = typer.Argument(
         ..., help="对端 herdr agent 全名，如 w2p-reviewer"
     ),
-    msg: str = typer.Argument(..., help="消息，须带 [role]: 前缀（契约 §2）"),
+    msg: str = typer.Argument(..., help="消息正文，只写 body，禁含 [<role>|...] 前缀——CLI 自动注入"),
     ws: str = typer.Option(
         None, "--ws", help="自身 ws 短号（缺省取 HERDR_WORKSPACE_ID 小写）"
     ),
@@ -76,7 +76,7 @@ def notify(
         None, "--role", help="自身 role（缺省从 COHERD_ROLE / agent 名派生）"
     ),
 ) -> None:
-    """notify 类型标记：CLI 注入 `[<role>|notify]: <body>`，单向无需回执。
+    """notify 类型标记：CLI 只注入一次前缀（`[<role>|notify]: `）；正文带前缀将被拒绝。
 
     命令名即语义；丢包自兜：delivered 假 → 非零退出提示转 feedback 重发。
     """

@@ -317,5 +317,57 @@ class LogPathTest(unittest.TestCase):
         self.assertEqual(before, after)
 
 
+class PrefixGuardTest(EnvMixin, unittest.TestCase):
+    """契约防线：正文自造前缀必须被拒，agent 只写 body。
+
+    CLI 注入 `[<role>|<type>]: ` 是私有实现，agent 手写导致重复
+    （如 `[x|feedback]: [x|feedback]: ...`）。检测 `[role]` / `[role|type]`
+    开头的正文一律拒绝，交还调用方不再注入。
+    """
+
+    def _run(self, body: str) -> list[str]:
+        path, cleanup = _tmp_log()
+        self.addCleanup(cleanup)
+        errs = []
+        try:
+            P.run(
+                "w2p-reviewer",
+                body,
+                ws="w2p",
+                role="coordinator",
+                log_path=path,
+                sender=_delivered,
+            )
+        except ValueError as e:
+            errs.append(str(e))
+        return errs
+
+    def test_rejects_coordinator_role_prefix(self):
+        errs = self._run("[coordinator]: 分派 x")
+        self.assertEqual(len(errs), 1)
+        self.assertIn("勿手写", errs[0])
+
+    def test_rejects_role_type_prefix(self):
+        errs = self._run("[coordinator|feedback]: 交审 x")
+        self.assertEqual(len(errs), 1)
+
+    def test_rejects_leading_whitespace_prefix(self):
+        errs = self._run("   [reviewer|notify]: hi")
+        self.assertEqual(len(errs), 1)
+
+    def test_allows_plain_body(self):
+        path, cleanup = _tmp_log()
+        self.addCleanup(cleanup)
+        r = P.run(
+            "w2p-reviewer",
+            "交审 x\n- DoD 自检: pass",
+            ws="w2p",
+            role="executor",
+            log_path=path,
+            sender=_delivered,
+        )
+        self.assertTrue(r["delivered"])
+
+
 if __name__ == "__main__":
     unittest.main()

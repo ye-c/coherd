@@ -136,6 +136,18 @@ def run(
     if not peer_agent or not msg:
         raise ValueError("peer 与消息均不可为空")
 
+    # 前缀拒绝（机制防线）：marker 是 CLI 私有注入物，agent 只写 body。正文以
+    # `[<role>|feedback]: ` / `[<role>|notify]: ` / `[<role>]: ` 开头 → 视为 agent
+    # 自造前缀，拒绝并交还调用方（防重复如 `[x|feedback]: [x|feedback]: ...`）。
+    import re as _re
+
+    if _re.match(r"^\s*\[\w+(?:\|\w+)?\]:", msg):
+        stripped = _re.sub(r"^\s*\[\w+(?:\|\w+)?\]:\s*", "", msg, count=1)
+        raise ValueError(
+            "消息正文应以 body 开头，勿手写 `[<role>|<type>]: ` 前缀（CLI 自动注入）。"
+            f" 已剥离前缀后的正文：{stripped!r}"
+        )
+
     # ① 派生 ws / role / peer role
     resolved_ws = ws or ws_from_env()
     if not resolved_ws:
