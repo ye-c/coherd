@@ -54,19 +54,22 @@ export COHERD_REVIEWER_CMD=~/bin/my-reviewer-cli
 ## 用法
 
 ```bash
-coherd [init] [-p|--portrait] [REPO] [LABEL]
+coherd [init] [-p|--portrait] [-t|--tabs] [REPO] [LABEL]
 # REPO 仓库目录（默认当前目录）；LABEL workspace 标签（默认仓库名）
 # init 强制(重)建：同 label 已存在时先关闭再重建（CONTRACT.md/brief/agent 配置改动后重启用）；不存在则等同普通创建
 # -p / --portrait 竖屏布局（默认横屏，无需赋值，存在即启用）
+# -t / --tabs     每角色独立 tab：1 coord / 2 rev / 3 exec / 4 libero(手动, 不 spawn)；与 -p 互斥，tabs 优先
 ```
 
 - 横屏（默认）：reviewer 左上 / executor 右上 / coordinator 下全宽
 - 竖屏：`-p` / `--portrait` 触发 — coordinator 上 / reviewer 中 / executor 下
+- tabs：`-t` / `--tabs` 触发 — 每角色独立 tab（1 coord / 2 rev / 3 exec），另备 4-libero 自由 tab 供手动加载
 
 ```bash
 coherd                              # 在当前目录起集群（横屏）
 coherd ~/code/myapp                 # 指定仓库
 coherd -p ~/code/myapp mylabel      # 竖屏 + 自定义标签
+coherd -t ~/code/myapp              # 每角色独立 tab（含手动 libero tab）
 coherd init ~/code/myapp            # 强制重建同 label 集群（已存在先关闭）
 ```
 

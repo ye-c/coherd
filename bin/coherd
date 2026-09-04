@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # coherd — 从零拉起 herdr 多 agent 协作集群
 #
-# 用法: coherd [init] [REPO] [LABEL]
+# 用法: coherd [init] [-p|--portrait|-t|--tabs] [REPO] [LABEL]
 #   init  强制(重)建: 该 label 的 workspace 已存在则先关闭再走正常创建; 不存在则等价普通创建
 #   REPO  目标仓库目录 (默认 $PWD)
 #   LABEL workspace 标签   (默认 repo basename)
@@ -12,10 +12,11 @@
 #     未设置时回退 PATH 中的 pi / omp / cc; 均缺则 die 指向 docs/configuration.md
 #   agent 私有配置 (env/flag/wrapper 内容) 由用户自备, 本脚本不注入不修改
 #
-# 布局:  默认横屏; 需竖屏时传 -p/--portrait (无赋值 flag)。不做几何自动检测
-#   (headless 场景拿不到真实屏幕, 自动判横竖不可靠)
-#   竖屏: coordinator 上 / reviewer 中 / executor 下 (均分三行)
+# 布局:  默认横屏; 需竖屏时传 -p/--portrait, 需每角色独立 tab 时传 -t/--tabs (均为无赋值 flag)。
+#   不做几何自动检测 (headless 场景拿不到真实屏幕, 自动判横竖不可靠)
 #   横屏: reviewer 左上 / executor 右上 / coordinator 下全宽
+#   竖屏: coordinator 上 / reviewer 中 / executor 下 (均分三行)
+#   tabs:  每角色一 tab (1 coord / 2 rev / 3 exec), 4-libero 预留空 tab 交用户手动加载
 #
 # 幂等:  按 workspace label 查重, 已存在则聚焦后退出 (不重建); init 子命令除外: 先 close 再重建
 # 失败:  set -euo pipefail, ERR 时提示 workspace_id 供手动清理
@@ -45,24 +46,27 @@ show_usage() { # 精简 usage (不吐整个文件头源码)
   cat <<'EOF'
 coherd — 从零拉起 herdr 多 agent 协作集群
 
-用法: coherd [init] [-p|--portrait] [REPO] [LABEL]
+用法: coherd [init] [-p|--portrait] [-t|--tabs] [REPO] [LABEL]
   init            强制重建同 label 集群; 普通调用幂等 focus+exit
-  -p, --portrait  竖屏布局 (默认横屏; 无需赋值, 存在即竖屏)
+  -p, --portrait  竖屏布局 (默认横屏); -t 时忽略
+  -t, --tabs      每角色独立 tab (1 coord / 2 rev / 3 exec / 4 libero 手动); 与 -p 互斥, 优先 tabs
   REPO            目标仓库目录 (默认 $PWD)
   LABEL           workspace 标签 (默认 repo basename)
 
-布局: 默认横屏; 加 -p 触发竖屏
+布局: 默认横屏; 加 -p 竖屏; 加 -t 每角色独立 tab (含手动 libero tab)
 EOF
 }
 
 INIT=0
 PORTRAIT=0
+TABS=0
 # 循环吃前导开关 (与 --help 对齐: 仅首部位置), 剩余为 [REPO] [LABEL]
 while [ "$#" -gt 0 ]; do
   case "$1" in
     -h|--help) show_usage; exit 0 ;;
     init)      INIT=1; shift ;;
     -p|--portrait) PORTRAIT=1; shift ;;
+    -t|--tabs) TABS=1; shift ;;
     *) break ;;
   esac
 done
@@ -180,14 +184,10 @@ info "agent 命名: $COORD_NAME / $EXEC_NAME / $REV_NAME"
 cleanup_hint() { info "失败/中断残留清理: herdr workspace close $WS"; }
 trap cleanup_hint ERR
 
-# ── 4. 布局: 默认横屏, -p/--portrait 触发竖屏。不做几何自动检测 ──
-if [ "$PORTRAIT" = 1 ]; then
-  info "布局: 竖屏 (coordinator 上 / reviewer 中 / executor 下)"
-else
-  info "布局: 横屏 (reviewer 左上 / executor 右上 / coordinator 下)"
+# ── 4. 布局: 默认横屏; -p 竖屏; -t 每角色独立 tab (与 -p 互斥, tabs 优先)。不做几何自动检测 ──
+if [ "$PORTRAIT" = 1 ] && [ "$TABS" = 1 ]; then
+  info "-t 与 -p 同时给出, 以 tabs 为准 (忽略竖屏)"
 fi
-
-# ── 5. 布局 (先布局后 spawn) ──
 SPLIT() { # pane direction [ratio] → 输出新 pane id
   local p="$1" dir="$2" ratio="${3:-}" out
   if [ -n "$ratio" ]; then
@@ -197,15 +197,32 @@ SPLIT() { # pane direction [ratio] → 输出新 pane id
   fi
   jqr '.result.pane.pane_id' "$out"
 }
-if [ "$PORTRAIT" = 1 ]; then
+# tab create 镜像 SPLIT (返回新 pane id), 仅建 tab 不 spawn; root tab 已含 coord pane
+TAB() { # label → 新 tab 的 root pane id
+  local label="$1" out
+  out="$(herdr tab create --workspace "$WS" --cwd "$REPO" --label "$label")"
+  jqr '.result.root_pane.pane_id' "$out"
+}
+if [ "$TABS" = 1 ]; then
+  COORD_PANE="$ROOT"                # root tab(#1) 已建, pane=coordinator
+  # root tab 默认 label 为其编号 "1"; 改名 coord 使四 tab 标签统一 coord/rev/exec/libero
+  ROOT_TAB="$(jqr '.result.workspace.active_tab_id' "$(herdr workspace get "$WS")")"
+  herdr tab rename "$ROOT_TAB" coord >/dev/null 2>&1 || true
+  REV_PANE="$(TAB rev)"             # tab#2
+  EXEC_PANE="$(TAB exec)"           # tab#3
+  LIBERO_PANE="$(TAB libero)"       # tab#4 手动角色, 不 spawn
+  info "布局: tabs (coord=$COORD_PANE / rev=$REV_PANE / exec=$EXEC_PANE / libero=$LIBERO_PANE, libero 手动)"
+elif [ "$PORTRAIT" = 1 ]; then
   COORD_PANE="$ROOT"
   TMP="$(SPLIT "$ROOT" down 0.3333)"     # 下方 2/3
   REV_PANE="$TMP"
   EXEC_PANE="$(SPLIT "$TMP" down 0.5)"   # 中间 1/3 → reviewer, 底部 1/3 → executor
+  info "布局: 竖屏 (coordinator 上 / reviewer 中 / executor 下)"
 else
   REV_PANE="$ROOT"
   COORD_PANE="$(SPLIT "$ROOT" down)"     # coordinator 下全宽
   EXEC_PANE="$(SPLIT "$ROOT" right)"     # executor 右上
+  info "布局: 横屏 (reviewer 左上 / executor 右上 / coordinator 下)"
 fi
 info "布局: coordinator=$COORD_PANE reviewer=$REV_PANE executor=$EXEC_PANE"
 
@@ -395,4 +412,8 @@ for _i in 0 1 2; do
 done
 unset _n _i _round _all_done _st_blocked _seq_names _seq_base _seq_now _seq_done _seq_blocked _seq_kind _seq_needcommit _seq_committed _need_enter_case _brief _role_doc
 
-info "集群就绪: workspace=$WS  coordinator=$COORD_PANE  reviewer=$REV_PANE  executor=$EXEC_PANE  (契约见 $CONTRACT + per-role; 依赖 herdr ≥ 需支持上述 pane/agent 操作)"
+if [ "$TABS" = 1 ]; then
+  info "集群就绪: workspace=$WS  tabs=coord:$COORD_PANE rev:$REV_PANE exec:$EXEC_PANE  libero=$LIBERO_PANE(手动, 不 spawn)  (契约见 $CONTRACT + per-role)"
+else
+  info "集群就绪: workspace=$WS  coordinator=$COORD_PANE  reviewer=$REV_PANE  executor=$EXEC_PANE  (契约见 $CONTRACT + per-role; 依赖 herdr ≥ 需支持上述 pane/agent 操作)"
+fi
