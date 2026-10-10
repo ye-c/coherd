@@ -360,7 +360,8 @@ start_roles
 # brief 走 fire-and-forget (CONTRACT §2 禁 --wait): 每角色一份并行发出, 无内部轮询, 无送达等待;
 # 统一模板: 只给角色身份 + 自身 agent 名 + 双 @ 指路 (公共契约 + 角色执行细节 <role>.md) + standby 握手后转 idle 待机, 按消息行动
 # 送达确认: fire-and-forget 后用 state_change_seq 有界重投递 —
-# seq 涨=文本已消费跳过; 未涨且非 blocked → send-keys enter 补提交(只提交不重发, 防双处理);
+# herdr 升级后 prompt 对全 kind 只把 brief paste 进输入框不提交且 seq 在文本到达即涨(非消费),
+# 故一律先 send-keys enter 提交框内文本(只提交不重发, 防双处理), 再验 Enter 后 seq 涨确认真消费;
 # 最多 2 轮宽限(BRIEF_GRACE), 仍无 seq 变化 → WARN 不 die(静默/健谈 cluster 可能不涨 seq=软信号)
 herdr workspace focus "$WS" >/dev/null 2>&1 || echo "coherd: WARN: workspace focus 失败, 某些 pane 可能不可见致 brief 文本残留 — 手动在各 pane 回车确认接收" >&2
 
@@ -391,11 +392,11 @@ _brief() { # 身份+名字 + 双@指路 + session + 待机 + 回执唯一权威 
     "$1" "$2" "$CONTRACT" "$(_role_doc "$1")" "$SESSION_DIR" "$_standby" "$RECEIPT_REF"
 }
 # 送达确认: 用 state_change_seq 有界重投递。先取三角色基线 seq (agent get 失败→空串),
-# 每轮 sleep BRIEF_GRACE 后重读 seq; 涨=已消费跳过, 未涨且非 blocked → send-keys enter 补提交
+# 第1轮 sleep BRIEF_GRACE 后统一 send-keys enter 提交框内文本, 第2轮重读 seq 验消费(涨=已消费);
 # (只提交不重发 brief 文本, 防双处理); 最多 2 轮宽限, 到期仍无变化 → WARN 不 die
-# ⚠️ omp 特例: herdr agent prompt 对 omp(TUI 输入框)只把 brief 文本放进输入框, state_change_seq 在
-#    "文本到达" 即涨(非消费) → 上方"涨=已消费"对 omp 误判 → 跳过补 enter → brief 滞留框内需人工回车。
-#    故对输入框型 kind(omp)不信任 seq, 一律先显式 send-keys enter 提交, 再据 Enter 后 seq 涨确认真消费。
+# 输入框型 TUI: herdr 升级后 agent prompt 对所有 CLI 都只把 brief 文本放进输入框, state_change_seq 在
+#    "文本到达" 即涨(非消费) → "涨=已消费" 误判 → 跳过补 enter → brief 滞留框内需人工回车。
+#    故对全部 kind 不信任 seq, 一律先显式 send-keys enter 提交, 再据 Enter 后 seq 涨确认真消费。
 # bash3.2 兼容: 用索引数组, 不用关联数组/mapfile; agent get/jq 失败一律 || true
 # 基线采集必须在 brief 派发之前: 快 agent 会在 wait 返回前就消费 brief,
 # 若基线滞后会读到消费后值 → now==base 误判未消费 → 白等 2×BRIEF_GRACE + 多余 enter
@@ -408,11 +409,13 @@ else
   _seq_names=("$COORD_NAME" "$EXEC_NAME" "$REV_NAME")
 fi
 _n_roles=${#_seq_names[@]}
-_need_enter_case() { # kind → 输入框型 TUI 需显式 Enter 提交 brief? (仅 omp 有据; 其余 CLI 直接消费)
-  case "$1" in
-    omp) printf '1' ;;
-    *)   printf '0' ;;
-  esac
+_seq_base=() _seq_now=() _seq_done=() _seq_blocked=() _seq_kind=() _seq_needcommit=() _seq_committed=()
+for (( _i = 0; _i < _n_roles; _i++ )); do
+  _seq_base[$_i]="" _seq_now[$_i]="" _seq_done[$_i]=0 _seq_blocked[$_i]=0
+  _seq_kind[$_i]="" _seq_needcommit[$_i]=0 _seq_committed[$_i]=0
+done
+_need_enter_case() { # 输入框型 TUI 需显式 Enter 提交 brief? (herdr 升级后全 kind 均只在框内 paste 不提交, 恒需 Enter)
+  printf '1'
 }
 _i=0
 for _n in "${_seq_names[@]}"; do
@@ -440,7 +443,7 @@ for _round in 1 2; do
     [ "${_seq_done[$_i]:-0}" = 1 ] && continue
     _n="${_seq_names[$_i]}"
     _seq_now[$_i]="$(herdr agent get "$_n" 2>/dev/null | jq -r '.result.agent.state_change_seq // ""' 2>/dev/null || true)"
-    # 输入框型 kind (omp): seq 涨=文本到达输入框, 非消费。先显式 Enter 提交, 再以 Enter 后 seq 涨确认真消费
+    # 输入框型 TUI (herdr 升级后全 kind): seq 涨=文本到达输入框, 非消费。先显式 Enter 提交, 再以 Enter 后 seq 涨确认真消费
     if [ "${_seq_needcommit[$_i]:-0}" = 1 ]; then
       if [ "${_seq_committed[$_i]:-0}" = 0 ]; then
         # 第一轮: 文本已滞在输入框(≥1×BRIEF_GRACE), 发一次 Enter 提交(不重发 brief, 防双处理)
@@ -453,24 +456,15 @@ for _round in 1 2; do
       if [ -n "${_seq_now[$_i]:-}" ] && [ "${_seq_now[$_i]:-}" != "${_seq_base[$_i]:-}" ]; then
         _seq_done[$_i]=1
       else
+        # 未涨: 判别 blocked 二次确认 (阶段6 已拦截, 此处防误; blocked 不再补 enter)
+        _st_blocked="$(herdr agent get "$_n" 2>/dev/null | jq -r '.result.agent.agent_status == "blocked"' 2>/dev/null || true)"
+        if [ "$_st_blocked" = "true" ]; then
+          _seq_blocked[$_i]=1
+        fi
         _all_done=0
       fi
       continue
     fi
-    # 普通 CLI (pi/cc...): seq 变化 = brief 已被消费
-    if [ -n "${_seq_now[$_i]:-}" ] && [ "${_seq_now[$_i]:-}" != "${_seq_base[$_i]:-}" ]; then
-      _seq_done[$_i]=1
-      continue
-    fi
-    _all_done=0
-    # 仅在非 blocked 时补 enter (blocked 本不该到此, 阶段6 已拦截; 但仍二次判别防误)
-    _st_blocked="$(herdr agent get "$_n" 2>/dev/null | jq -r '.result.agent.agent_status == "blocked"' 2>/dev/null || true)"
-    if [ "$_st_blocked" = "true" ]; then
-      _seq_blocked[$_i]=1
-      continue
-    fi
-    # 文本已滞在 pane, 只提交不清空, 不重发 brief (防双处理)
-    herdr agent send-keys "$_n" enter >/dev/null 2>&1 || true
   done
   [ "$_all_done" = 1 ] && break
 done

@@ -55,7 +55,8 @@ case_t2() {
   eq "rename → wsm1-lead" "pane-root-1|wsm1-lead" "$(grep -F -- '|wsm1-lead' "$st/renames")"
   eq "rename → wsm1-dev" "pane-split-1|wsm1-dev" "$(grep -F -- '|wsm1-dev' "$st/renames")"
 
-  # 送达锚: prompt 点名 dev + seq 较基线变化 (不用 agent_status != blocked, 那不是送达证据)
+  # 送达锚: prompt 点名 dev + 全 kind 先 Enter 提交, 再验 seq 较基线变化 (不用 agent_status != blocked)
+  # herdr 升级后 agent prompt 对全 kind 只 paste 不提交, seq 在文本到达即涨(非消费); 需 Enter 后重读确认。
   eq "dev prompt 恰好送达 1 次" "1" "$(grep -cF -- 'agent prompt wsm1-dev' "$st/herdr.log")"
   eq "dev seq 基线=1 → 消费后=2" "1 2" \
     "$(awk -F'|' '$1=="wsm1-dev"{print $2}' "$st/seqs" | sort -u | tr '\n' ' ' | sed 's/ $//')"
