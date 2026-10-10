@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# 假 sleep — 仅 smoke 用: 把被测脚本内的宽限 sleep (bin/coherd BRIEF_GRACE/DETECT 轮询) 压到 0.05s,
+# 缩短等待、不改变控制流 (轮数/分支仍按原逻辑走)。只经 runner 的 PATH 前置生效, 不影响真实环境。
+exec /bin/sleep 0.05

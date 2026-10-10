@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # coherd 安装脚本
 #   bin/coherd        → ~/.local/bin/coherd   (已有则备份为 coherd.bak, 覆盖式只留一份)
-#   roles/CONTRACT.md + 4 per-role → ~/.config/coherd/ (已有则各自备份, 只留一份 .bak)
+#   roles/CONTRACT.md + CONTRACT-simple.md + per-role → ~/.config/coherd/ (已有则各自备份, 只留一份 .bak)
 #   不安装 agent CLI / relay backend —— 那是用户自己的事
 set -euo pipefail
 
@@ -33,8 +33,9 @@ ln -sf "$HERE/bin/coherd" "$BIN_DIR/coherd"
 chmod +x "$HERE/bin/coherd" # 幂等: 确保 target 可执行(不 chmod symlink 本身)
 info "已安装 $BIN_DIR/coherd → $HERE/bin/coherd (symlink)"
 
-# ── 拷贝契约文件 (CONTRACT.md + 4 per-role) ──
-ROLE_DOCS=("coordinator" "executor" "reviewer" "libero")
+# ── 拷贝契约文件 (CONTRACT.md + CONTRACT-simple.md + per-role) ──
+#   per-role 含三角色 (coordinator/executor/reviewer/libero) + 双角色简易模式 (lead/dev)
+ROLE_DOCS=("coordinator" "executor" "reviewer" "libero" "lead" "dev")
 [ -f "$HERE/roles/CONTRACT.md" ] || die "缺失 $HERE/roles/CONTRACT.md"
 mkdir -p "$CFG_DIR"
 _install_doc() { # 文件名 → 装到 $CFG_DIR (已有则备份后覆盖; .bak 覆盖式只留一份)
@@ -49,6 +50,7 @@ _install_doc() { # 文件名 → 装到 $CFG_DIR (已有则备份后覆盖; .bak
   info "已安装 $CFG_DIR/$f"
 }
 _install_doc "CONTRACT.md"
+_install_doc "CONTRACT-simple.md" # 双角色简易模式 (-s) 公共契约; 三角色模式不读它
 for _rd in "${ROLE_DOCS[@]}"; do
   _install_doc "$_rd.md"
 done

@@ -1,14 +1,25 @@
 # 配置
 
-coherd 的配置面很小：三个槽位的启动命令 + 布局。所有配置走 `COHERD_` 前缀环境变量，可选配置文件为 `~/.config/coherd/coherd.conf`。
+coherd 的配置面很小：各槽位的启动命令 + 布局。所有配置走 `COHERD_` 前缀环境变量，可选配置文件为 `~/.config/coherd/coherd.conf`。
 
-## 三槽位启动命令（契约）
+## 槽位启动命令（契约）
+
+三角色模式三槽位（默认）：
 
 | 变量 | 角色 | 说明 |
 | ------ | ------ | ------ |
 | `COHERD_COORDINATOR_CMD` | coordinator | 启动协调者 agent 的命令（可带参数） |
 | `COHERD_EXECUTOR_CMD` | executor | 启动执行者 agent 的命令（可带参数） |
 | `COHERD_REVIEWER_CMD` | reviewer | 启动审查者 agent 的命令（可带参数） |
+
+双角色简易模式（`coherd -s`）两槽位：
+
+| 变量 | 角色 | 说明 |
+| ------ | ------ | ------ |
+| `COHERD_LEAD_CMD` | lead | 启动检查者（协调+审查合一）agent 的命令（可带参数） |
+| `COHERD_DEV_CMD` | dev | 启动执行者 agent 的命令（可带参数） |
+
+三角色与 `-s` 互不影响：`-s` 只解析 lead/dev 两个 CMD，三角色模式的三个 CMD 在该模式下不使用（反之亦然）。
 
 契约：
 
@@ -23,6 +34,10 @@ coherd 的配置面很小：三个槽位的启动命令 + 布局。所有配置�
 | `COHERD_COORDINATOR_CMD` | `pi` | die，提示 docs/configuration.md |
 | `COHERD_EXECUTOR_CMD` | `omp` | 同上 |
 | `COHERD_REVIEWER_CMD` | `cc` | 同上 |
+| `COHERD_LEAD_CMD` | `COHERD_COORDINATOR_CMD`（若设）→ 否则 `pi` | 同上 |
+| `COHERD_DEV_CMD` | `COHERD_EXECUTOR_CMD`（若设）→ 否则 `omp` | 同上 |
+
+`lead` / `dev` 多一级回退：未设 simple 专属 CMD 时复用你已配好的 coordinator / executor 命令，避免为简易模式重复配置（reviewer 命令在 `-s` 下不使用）。
 
 回退只是便利，不是 coherd 对特定 CLI 的依赖。注意 `cc` 有**双重含义**：它既是回退表的命令名，也是 Claude Code 的常见别名——PATH 里的 `cc` 通常就是用户的 Claude Code。fallback 表 `cc` → reviewer 指"名为 `cc` 的命令"，不指定具体实现；该命令的语言/行为由 CLI 自身决定；brief 与 coherd 自身输出固定为中文，CLI 实例的默认语言可能不同（不强制对齐）。
 
@@ -35,6 +50,9 @@ coherd 的配置面很小：三个槽位的启动命令 + 布局。所有配置�
 COHERD_COORDINATOR_CMD=~/bin/my-coordinator
 COHERD_EXECUTOR_CMD=~/bin/my-executor
 COHERD_REVIEWER_CMD=~/bin/my-reviewer
+# 双角色简易模式 (coherd -s) 可选; 不设则回退上面两个
+COHERD_LEAD_CMD=~/bin/my-lead
+COHERD_DEV_CMD=~/bin/my-dev
 ```
 
 优先级：**已显式设置的 `COHERD_*` 环境变量 > conf**。conf 先加载，再被环境中已存在的同名变量覆盖——命令行 `COHERD_X=… coherd` 永远压过 conf。

@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# 假 herdr — tests/smoke/ 专用 stub (PATH 前置, 不依赖真 herdr/真 agent CLI, 可 CI)
+#
+# 状态目录由 runner 通过 $COHERD_SMOKE_STATE 注入 (mktemp -d, trap 清理), 本文件不写任何固定路径。
+# 记录文件 (均在 $COHERD_SMOKE_STATE 下):
+#   herdr.log        全部调用原文 (人读证据)
+#   wsmap            label|ws_id        (create 追加 / close 删除; list 由此生成)
+#   runs             pane|cmd          (pane run)
+#   renames          pane|name         (agent rename)
+#   splits           parent_pane|direction
+#   tabs             (空行计 tab create 增加)
+#   prompts          agent_name|注入标记后的消息
+#   seqs             agent_name|seq     (每次 agent get 记录, 供"seq 较基线变化"锚点)
+#   brief_<name>     该 agent 收到的正文
+#   createcnt/closecnt/focuscnt/splitcnt/tabcnt  调用计数
+#
+# agent get 的 seq 语义: 该 agent 收到过 prompt → 2, 否则 1 (模拟"消费后 seq 涨")。
+# agent_status 恒为 idle: 送达证据只认 prompt 记录 + seq 变化, 不用 !=blocked (见 spec T2)。
+set -uo pipefail
+
+S="${COHERD_SMOKE_STATE:?COHERD_SMOKE_STATE 未设置 (smoke runner 负责导出)}"
+mkdir -p "$S"
+printf 'herdr %s\n' "$*" >>"$S/herdr.log"
+
+incr() { # 计数文件名 → 自增并回显新值
+  local f="$S/$1" n
+  n=$(( $(cat "$f" 2>/dev/null || echo 0) + 1 ))
+  echo "$n" >"$f"
+  printf '%s' "$n"
+}
+# ws id 由 label 派生 (ws id = w<LABEL 大写>; coherd 再小写得 slug) — 确定性, 便于断言
+ws_id_for() { printf 'w%s' "$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')"; }
+
+case "${1:-} ${2:-}" in
+  "status --json")
+    echo '{"server":{"status":"running"}}' ;;
+
+  "workspace list")
+    arr="[]"
+    if [ -s "$S/wsmap" ]; then
+      while IFS='|' read -r lbl wid; do
+        [ -n "$wid" ] || continue
+        arr=$(jq -c --arg id "$wid" --arg l "$lbl" \
+          '. + [{workspace_id:$id,label:$l,pane_count:2,agent_status:"idle"}]' <<<"$arr")
+      done <"$S/wsmap"
+    fi
+    echo "{\"result\":{\"workspaces\":$arr}}" ;;
+
+  "workspace create")
+    lbl=""
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --label) lbl="$2"; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    wid="$(ws_id_for "$lbl")"
+    printf '%s|%s\n' "$lbl" "$wid" >>"$S/wsmap"
+    n="$(incr createcnt)"
+    echo "{\"result\":{\"workspace\":{\"workspace_id\":\"$wid\"},\"root_pane\":{\"pane_id\":\"pane-root-$n\"}}}" ;;
+
+  "workspace close")
+    tmp="$(mktemp)"
+    grep -v -F -- "|${3:-}" "$S/wsmap" >"$tmp" 2>/dev/null || true
+    mv "$tmp" "$S/wsmap"
+    incr closecnt >/dev/null ;;
+
+  "workspace focus")
+    incr focuscnt >/dev/null ;;
+
+  "workspace get")
+    echo '{"result":{"workspace":{"active_tab_id":"tab-1"}}}' ;;
+
+  "tab create")
+    n="$(incr tabcnt)"
+    printf '%s\n' "$n" >>"$S/tabs"
+    echo "{\"result\":{\"root_pane\":{\"pane_id\":\"pane-tab-$n\"}}}" ;;
+
+  "tab rename")
+    exit 0 ;;
+
+  "pane split")
+    parent=""; dir=""
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --pane) parent="$2"; shift 2 ;;
+        --direction) dir="$2"; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    printf '%s|%s\n' "$parent" "$dir" >>"$S/splits"
+    n="$(incr splitcnt)"
+    echo "{\"result\":{\"pane\":{\"pane_id\":\"pane-split-$n\"}}}" ;;
+
+  "pane run")
+    p="${3:-}"; shift 3
+    printf '%s|%s\n' "$p" "$*" >>"$S/runs" ;;
+
+  "agent list")
+    arr="[]"
+    if [ -s "$S/runs" ]; then
+      while IFS= read -r p; do
+        arr=$(jq -c --arg p "$p" \
+          '. + [{pane_id:$p,agent_status:"idle"}]' <<<"$arr")
+      done < <(cut -d'|' -f1 "$S/runs" | sort -u)
+    fi
+    echo "{\"result\":{\"agents\":$arr}}" ;;
+
+  "agent rename")
+    printf '%s|%s\n' "${3:-}" "${4:-}" >>"$S/renames" ;;
+
+  "agent get")
+    name="${3:-}"
+    case "$name" in
+      *-dev | *-executor) kind=omp ;;   # 输入框型 TUI: 触发 coherd 的 send-keys enter 提交路径
+      *) kind=pi ;;
+    esac
+    seq=1
+    [ -f "$S/prompted_$name" ] && seq=2
+    printf '%s|%s\n' "$name" "$seq" >>"$S/seqs"
+    echo "{\"result\":{\"agent\":{\"agent\":\"$kind\",\"state_change_seq\":$seq,\"agent_status\":\"idle\",\"name\":\"$name\"}}}" ;;
+
+  "agent prompt")
+    name="${3:-}"; shift 3
+    printf '%s|%s\n' "$name" "$*" >>"$S/prompts"
+    printf '%s\n' "$*" >>"$S/brief_$name"
+    : >"$S/prompted_$name" ;;
+
+  "agent send-keys")
+    printf '%s|%s\n' "${3:-}" "${4:-}" >>"$S/enters" ;;
+
+  *)
+    printf 'SHIM-UNHANDLED: %s\n' "$*" >>"$S/herdr.log" ;;
+
+esac
+exit 0
