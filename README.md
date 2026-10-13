@@ -59,12 +59,13 @@ export COHERD_REVIEWER_CMD=~/bin/my-reviewer-cli
 ## 用法
 
 ```bash
-coherd [init] [-s|--simple] [-p|--portrait] [-t|--tabs] [REPO] [LABEL]
+coherd [init] [-s|--simple] [-p|--portrait] [-t|--tabs] [--agent role=cmd[,...]] [REPO] [LABEL]
 # REPO 仓库目录（默认当前目录）；LABEL workspace 标签（默认仓库名）
 # init 强制(重)建：同 label 已存在时先关闭再重建（CONTRACT.md/brief/agent 配置改动后重启用）；不存在则等同普通创建
 # -s / --simple   双角色简易模式：lead（检查者）上 / dev（执行者）下两 pane；-p 在该模式下无意义（忽略并告警）
 # -p / --portrait 竖屏布局（默认横屏，无需赋值，存在即启用）
 # -t / --tabs     每角色独立 tab（三角色 1 coord / 2 rev / 3 exec / 4 libero 手动；-s 时 1 lead / 2 dev）；与 -p 互斥，tabs 优先
+# --agent         按角色覆盖本次启动命令（如 --agent lead=codex,dev=opencode）；per-run，优先于 COHERD_*_CMD 与 PATH 回退
 ```
 
 - 横屏（默认）：reviewer 左上 / executor 右上 / coordinator 下全宽

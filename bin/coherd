@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # coherd — 从零拉起 herdr 多 agent 协作集群
 #
-# 用法: coherd [init] [-s|--simple] [-p|--portrait|-t|--tabs] [REPO] [LABEL]
+# 用法: coherd [init] [-s|--simple] [-p|--portrait|-t|--tabs] [--agent role=cmd[,...]] [REPO] [LABEL]
 #   init  强制(重)建: 该 label 的 workspace 已存在则先关闭再走正常创建; 不存在则等价普通创建
 #   REPO  目标仓库目录 (默认 $PWD)
 #   LABEL workspace 标签   (默认 repo basename)
+#   --agent 按角色覆盖本次启动命令 (如 --agent lead=codex,dev=opencode): 试其他 agent CLI 用, 不碰全局 conf;
+#           优先级 --agent > COHERD_*_CMD > PATH 回退
 #
 # 角色:  coordinator 协调 (可与 reviewer 讨论) / executor 执行 / reviewer 审查
 #   三角色均为「槽位」, 具体 agent CLI 由配置决定, 本脚本不绑定任何特定 CLI:
@@ -51,11 +53,12 @@ show_usage() { # 精简 usage (不吐整个文件头源码)
   cat <<'EOF'
 coherd — 从零拉起 herdr 多 agent 协作集群
 
-用法: coherd [init] [-s|--simple] [-p|--portrait] [-t|--tabs] [REPO] [LABEL]
+用法: coherd [init] [-s|--simple] [-p|--portrait] [-t|--tabs] [--agent role=cmd[,...]] [REPO] [LABEL]
   init            强制重建同 label 集群; 普通调用幂等 focus+exit
   -s, --simple    双角色简易模式 (lead 上 / dev 下); 契约 CONTRACT-simple.md; -p 忽略并告警
   -p, --portrait  竖屏布局 (默认横屏); -t 时忽略
   -t, --tabs      每角色独立 tab (普通模式 1 coord / 2 rev / 3 exec / 4 libero 手动; simple 模式 1 lead / 2 dev); 与 -p 互斥, 优先 tabs
+  --agent         按角色覆盖本次启动的 agent 命令 (如 --agent lead=codex,dev=opencode); 优先于 COHERD_*_CMD 与 PATH 回退
   REPO            目标仓库目录 (默认 $PWD)
   LABEL           workspace 标签 (默认 repo basename)
 
@@ -68,6 +71,7 @@ INIT=0
 SIMPLE=0
 PORTRAIT=0
 TABS=0
+AGENT_ARGS=""  # --agent 值 (role=cmd 逗号分隔); 空 = 不覆盖
 # 循环吃前导开关 (与 --help 对齐: 仅首部位置), 剩余为 [REPO] [LABEL]
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -76,6 +80,10 @@ while [ "$#" -gt 0 ]; do
     -s|--simple) SIMPLE=1; shift ;;
     -p|--portrait) PORTRAIT=1; shift ;;
     -t|--tabs) TABS=1; shift ;;
+    # 此时 die 尚未定义(在下方), 故缺参直接报错退出
+    --agent)   [ -n "${2:-}" ] || { echo "coherd: --agent 需要参数 (格式: role=cmd[,role=cmd])" >&2; exit 1; }
+               AGENT_ARGS="$2"; shift 2 ;;
+    --agent=*) AGENT_ARGS="${1#*=}"; shift ;;
     *) break ;;
   esac
 done
@@ -119,11 +127,45 @@ if [ -f "$CONF" ]; then
   unset _pre _kv
 fi
 
-# ── 0.5. 解析启动命令: CMD 变量 → PATH 回退(pi/omp/cc) → die ──
+# ── 0.5. 解析启动命令: --agent 覆盖 → CMD 变量 → PATH 回退(pi/omp/cc) → die ──
 #   simple 追加 lead/dev: lead → COHERD_LEAD_CMD → COHERD_COORDINATOR_CMD → pi
 #                            dev  → COHERD_DEV_CMD  → COHERD_EXECUTOR_CMD  → omp
+# 唯一权威角色表 (校验/报错通用, 不另处硬编码)
+ROLES_ALL="coordinator executor reviewer lead dev"
+_find_role() { # $1=待查角色名 → 命中打印自身; 未命中无输出
+  local r
+  for r in $ROLES_ALL; do
+    if [ "$r" = "$1" ]; then printf '%s' "$r"; return 0; fi
+  done
+}
+# --agent 校验: 未知名/缺 '='/空命令 一律 die 且不启动 (防拼错被静默忽略)
+if [ -n "$AGENT_ARGS" ]; then
+  IFS=',' read -ra _agent_pairs <<<"$AGENT_ARGS"
+  for _pair in "${_agent_pairs[@]}"; do
+    case "$_pair" in
+      *=*) ;;
+      *) die "--agent: '$_pair' 缺 '=' (格式 role=cmd)" ;;
+    esac
+    _ar="${_pair%%=*}"
+    [ -n "$(_find_role "$_ar")" ] || die "--agent: 未知角色 '$_ar' (可选 ${ROLES_ALL// /|})"
+    [ -n "${_pair#*=}" ] || die "--agent: '$_pair' 缺命令"
+  done
+  unset _agent_pairs _pair _ar
+fi
+agent_override() { # role 名 → 该角色的 --agent 覆盖命令 (无覆盖则空)
+  local role="$1" pair pairs
+  if [ -n "$AGENT_ARGS" ]; then
+    IFS=',' read -ra pairs <<<"$AGENT_ARGS"
+    for pair in "${pairs[@]}"; do
+      case "$pair" in
+        "$role"=*) printf '%s' "${pair#*=}"; return 0 ;;
+      esac
+    done
+  fi
+  return 0
+}
 resolve_cmd() { # role 名 → 命令字符串
-  local role="$1" cmd="" fallback
+  local role="$1" cmd="" fallback ov
   case "$role" in
     coordinator) cmd="${COHERD_COORDINATOR_CMD:-}"; fallback=pi ;;
     executor)    cmd="${COHERD_EXECUTOR_CMD:-}";    fallback=omp ;;
@@ -132,6 +174,8 @@ resolve_cmd() { # role 名 → 命令字符串
     lead)        cmd="${COHERD_LEAD_CMD:-${COHERD_COORDINATOR_CMD:-}}"; fallback=pi ;;
     dev)         cmd="${COHERD_DEV_CMD:-${COHERD_EXECUTOR_CMD:-}}";     fallback=omp ;;
   esac
+  ov="$(agent_override "$role")"
+  if [ -n "$ov" ]; then cmd="$ov"; fi   # --agent 本次运行覆盖优先于 COHERD_*_CMD
   if [ -n "$cmd" ]; then
     printf '%s' "$cmd"
     return 0

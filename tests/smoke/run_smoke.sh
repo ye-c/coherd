@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# coherd 双角色 simple 模式端到端冒烟 T2–T6 (spec w5f-20261010141636 §5)
+# coherd 双角色 simple 模式端到端冒烟 T2–T7 (spec w5f-20261010141636 §5)
 #
 #   · fake herdr / fake sleep 前置 PATH → 不依赖真 herdr 与真 agent CLI, 可 CI
 #   · HOME 指向临时目录 → 契约文档与 session 目录都落临时区, 不碰真实 ~/.config 与用户 session
 #   · trap 清理 → 可重复跑不残留
 #
-# 用法: bash tests/smoke/run_smoke.sh      # 退出码 0 = T2–T6 全过
+# 用法: bash tests/smoke/run_smoke.sh      # 退出码 0 = T2–T7 全过
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -148,15 +148,50 @@ case_t6() {
   eq "-s -p: 仍走上下 (splits=1 tabs=0)" "1 0" "$(cnt x "$st/splitcnt") $(cnt x "$st/tabcnt")"
 }
 
-printf 'coherd simple 模式冒烟 T2–T6 (fake herdr, HOME 隔离, work=%s)\n' "$WORK"
+case_t7() {
+  printf '\n== T7: --agent 按角色覆盖启动命令 (per-run, 优先于 COHERD_*_CMD) + 非法输入早退\n'
+  state t7a; local st="$COHERD_SMOKE_STATE"
+  run_coherd a -s --agent lead=codex-x,dev=opencode-y "$WORK/repo" sm11 \
+    || { bad "--agent 启动非 0: $(cat "$st/out-a")"; return; }
+  eq "simple: lead 命令被覆盖" "pane-root-1|codex-x" "$(grep -F -- 'codex-x' "$st/runs")"
+  eq "simple: dev 命令被覆盖" "pane-split-1|opencode-y" "$(grep -F -- 'opencode-y' "$st/runs")"
+  eq "simple: env 的 COHERD_LEAD_CMD 未生效" "0" "$(grep -cF -- 'lead-cli' "$st/runs")"
+  eq "simple: rename 不受影响 (仍按 ws slug)" "2" "$(wc -l <"$st/renames" | tr -d ' ')"
+
+  state t7b; st="$COHERD_SMOKE_STATE"    # 三角色: 只覆盖 executor, 其余仍走 env
+  run_coherd b --agent executor=codex-z "$WORK/repo" sm12 \
+    || { bad "--agent 三角色启动非 0: $(cat "$st/out-b")"; return; }
+  eq "三角色: 指定 executor 被覆盖" "pane-split-2|codex-z" "$(grep -F -- 'codex-z' "$st/runs")"
+  eq "三角色: 未指定的 coordinator 保持 env 值" "pane-split-1|coord-cli" "$(grep -F -- 'coord-cli' "$st/runs")"
+  eq "三角色: 未指定的 reviewer 保持 env 值" "pane-root-1|rev-cli" "$(grep -F -- 'rev-cli' "$st/runs")"
+
+  # 非法输入一律早退且不建集群 (校验在 herdr server/布局之前)
+  # tag 用显式序号: arg 归一化会撞名 (lead 与 lead= 都成 bad-lead), 撞名 → 共用 state 目录/输出文件, 隔离被打破
+  local i=0 case_spec arg needle tag
+  for case_spec in "leed=codex-x|未知角色" "lead|缺 '='" "lead=|缺命令"; do
+    i=$((i+1)); tag="bad-$i"
+    arg="${case_spec%%|*}"; needle="${case_spec##*|}"
+    state "t7-$tag"; st="$COHERD_SMOKE_STATE"
+    if run_coherd "$tag" -s --agent "$arg" "$WORK/repo" sm13; then
+      bad "--agent '$arg' 应报错退出"
+    else
+      ok "--agent '$arg' 报错退出 (exit≠0)"
+    fi
+    contains "--agent '$arg' 报错含 '$needle'" "$needle" "$st/out-$tag"
+    eq "--agent '$arg': 未 pane run (未建集群)" "0" "$(cnt x "$st/runs")"
+  done
+}
+
+printf 'coherd simple 模式冒烟 T2–T7 (fake herdr, HOME 隔离, work=%s)\n' "$WORK"
 case_t2
 case_t3
 case_t4
 case_t5
 case_t6
+case_t7
 
 if [ "$FAILED" = 0 ]; then
-  printf '\nALL PASS (T2–T6)\n'
+  printf '\nALL PASS (T2–T7)\n'
 else
   printf '\nFAILED — 见上方 FAIL 行\n'
 fi
