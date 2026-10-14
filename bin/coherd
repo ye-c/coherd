@@ -14,7 +14,7 @@
 #     未设置时回退 PATH 中的 pi / omp / cc; 均缺则 die 指向 docs/configuration.md
 #   agent 私有配置 (env/flag/wrapper 内容) 由用户自备, 本脚本不注入不修改
 #
-# 双角色简易模式: -s/--simple → lead(检查者: 协调+审查合一) + dev(执行者) 两 pane (默认 lead 上 / dev 下)
+# 双角色简易模式: -s/--simple → lead(检查者: 协调+审查合一) + dev(执行者) 两 tab (1 lead / 2 dev)
 #   命令: COHERD_LEAD_CMD / COHERD_DEV_CMD; 未设置时回退 lead→COHERD_COORDINATOR_CMD→pi, dev→COHERD_EXECUTOR_CMD→omp
 #   契约: CONTRACT-simple.md + lead.md / dev.md (三角色模式零改动, 两模式以 -s 切换)
 #
@@ -23,7 +23,7 @@
 #   横屏: reviewer 左上 / executor 右上 / coordinator 下全宽
 #   竖屏: coordinator 上 / reviewer 中 / executor 下 (均分三行)
 #   tabs:  每角色一 tab (1 coord / 2 rev / 3 exec), 4-libero 预留空 tab 交用户手动加载
-#   simple(-s): lead 上 / dev 下; -s -t 两 tab (1 lead / 2 dev); -s -p 无意义(恒上下), 忽略并告警
+#   simple(-s): 恒两 tab (1 lead / 2 dev), 无需传 -t; -s -p 无意义(恒 tabs), 忽略并告警
 #
 # 幂等:  按 workspace label 查重, 已存在则聚焦后退出 (不重建); init 子命令除外: 先 close 再重建
 # 失败:  set -euo pipefail, ERR 时提示 workspace_id 供手动清理
@@ -55,15 +55,15 @@ coherd — 从零拉起 herdr 多 agent 协作集群
 
 用法: coherd [init] [-s|--simple] [-p|--portrait] [-t|--tabs] [--agent role=cmd[,...]] [REPO] [LABEL]
   init            强制重建同 label 集群; 普通调用幂等 focus+exit
-  -s, --simple    双角色简易模式 (lead 上 / dev 下); 契约 CONTRACT-simple.md; -p 忽略并告警
+  -s, --simple    双角色简易模式 (lead / dev 两 tab, 恒 tabs 无需 -t); 契约 CONTRACT-simple.md; -p 忽略并告警
   -p, --portrait  竖屏布局 (默认横屏); -t 时忽略
-  -t, --tabs      每角色独立 tab (普通模式 1 coord / 2 rev / 3 exec / 4 libero 手动; simple 模式 1 lead / 2 dev); 与 -p 互斥, 优先 tabs
+  -t, --tabs      每角色独立 tab (普通模式 1 coord / 2 rev / 3 exec / 4 libero 手动); 与 -p 互斥, 优先 tabs; simple 模式恒 tabs, 此 flag 冗余
   --agent         按角色覆盖本次启动的 agent 命令 (如 --agent lead=codex,dev=opencode); 优先于 COHERD_*_CMD 与 PATH 回退
   REPO            目标仓库目录 (默认 $PWD)
   LABEL           workspace 标签 (默认 repo basename)
 
 布局: 默认横屏; 加 -p 竖屏; 加 -t 每角色独立 tab (含手动 libero tab)
-      simple(-s): lead 上 / dev 下 (两 pane); -s -t 两 tab
+      simple(-s): lead / dev 两 tab (1 lead / 2 dev)
 EOF
 }
 
@@ -87,9 +87,9 @@ while [ "$#" -gt 0 ]; do
     *) break ;;
   esac
 done
-# simple 恒上下两 pane, -p 无意义
+# simple 恒 tabs, -p 无意义
 if [ "$SIMPLE" = 1 ] && [ "$PORTRAIT" = 1 ]; then
-  echo "coherd: -s 模式下 -p 无意义 (simple 恒 lead 上 / dev 下), 已忽略" >&2
+  echo "coherd: -s 模式下 -p 无意义 (simple 恒两 tab), 已忽略" >&2
   PORTRAIT=0
 fi
 
@@ -285,17 +285,13 @@ TAB() { # label → 新 tab 的 root pane id
   out="$(herdr tab create --workspace "$WS" --cwd "$REPO" --label "$label")"
   jqr '.result.root_pane.pane_id' "$out"
 }
-# simple(-s): 默认 lead 上 / dev 下; -s -t 两 tab (root tab 已含 lead pane)
-if [ "$SIMPLE" = 1 ] && [ "$TABS" = 1 ]; then
+# simple(-s): 恒两 tab (root tab 已含 lead pane) — 上下 pane 布局已废弃
+if [ "$SIMPLE" = 1 ]; then
   LEAD_PANE="$ROOT"
   ROOT_TAB="$(jqr '.result.workspace.active_tab_id' "$(herdr workspace get "$WS")")"
   herdr tab rename "$ROOT_TAB" lead >/dev/null 2>&1 || true
   DEV_PANE="$(TAB dev)"             # tab#2
   info "布局: tabs (lead=$LEAD_PANE / dev=$DEV_PANE)"
-elif [ "$SIMPLE" = 1 ]; then
-  LEAD_PANE="$ROOT"
-  DEV_PANE="$(SPLIT "$ROOT" down 0.5)"   # 上 lead / 下 dev
-  info "布局: simple 上下 (lead 上 / dev 下)"
 elif [ "$TABS" = 1 ]; then
   COORD_PANE="$ROOT"                # root tab(#1) 已建, pane=coordinator
   # root tab 默认 label 为其编号 "1"; 改名 coord 使四 tab 标签统一 coord/rev/exec/libero

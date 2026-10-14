@@ -62,23 +62,23 @@ export COHERD_REVIEWER_CMD=~/bin/my-reviewer-cli
 coherd [init] [-s|--simple] [-p|--portrait] [-t|--tabs] [--agent role=cmd[,...]] [REPO] [LABEL]
 # REPO 仓库目录（默认当前目录）；LABEL workspace 标签（默认仓库名）
 # init 强制(重)建：同 label 已存在时先关闭再重建（CONTRACT.md/brief/agent 配置改动后重启用）；不存在则等同普通创建
-# -s / --simple   双角色简易模式：lead（检查者）上 / dev（执行者）下两 pane；-p 在该模式下无意义（忽略并告警）
+# -s / --simple   双角色简易模式：lead（检查者）/ dev（执行者）两个 tab；-p 在该模式下无意义（忽略并告警）
 # -p / --portrait 竖屏布局（默认横屏，无需赋值，存在即启用）
-# -t / --tabs     每角色独立 tab（三角色 1 coord / 2 rev / 3 exec / 4 libero 手动；-s 时 1 lead / 2 dev）；与 -p 互斥，tabs 优先
+# -t / --tabs     每角色独立 tab（1 coord / 2 rev / 3 exec / 4 libero 手动）；与 -p 互斥，tabs 优先；-s 恒用 tab，此 flag 冗余
 # --agent         按角色覆盖本次启动命令（如 --agent lead=codex,dev=opencode）；per-run，优先于 COHERD_*_CMD 与 PATH 回退
 ```
 
 - 横屏（默认）：reviewer 左上 / executor 右上 / coordinator 下全宽
 - 竖屏：`-p` / `--portrait` 触发 — coordinator 上 / reviewer 中 / executor 下
 - tabs：`-t` / `--tabs` 触发 — 每角色独立 tab（1 coord / 2 rev / 3 exec），另备 4-libero 自由 tab 供手动加载
-- simple（`-s`）上下两 pane：lead 上 / dev 下；`-s -t` 两个 tab（1 lead / 2 dev）
+- simple（`-s`）恒两个 tab：1 lead / 2 dev（无需 `-t`）
 
 ```bash
 coherd                              # 在当前目录起集群（横屏）
 coherd ~/code/myapp                 # 指定仓库
 coherd -p ~/code/myapp mylabel      # 竖屏 + 自定义标签
 coherd -t ~/code/myapp              # 每角色独立 tab（含手动 libero tab）
-coherd -s ~/code/myapp              # 双角色简易模式（lead 上 / dev 下）
+coherd -s ~/code/myapp              # 双角色简易模式（lead / dev 两个 tab）
 coherd init ~/code/myapp            # 强制重建同 label 集群（已存在先关闭）
 ```
 
@@ -86,7 +86,7 @@ coherd init ~/code/myapp            # 强制重建同 label 集群（已存在�
 
 ## 双角色简易模式（`-s`）
 
-两 pane 的小集群：用户与 **lead**（检查者）交互，lead 干活拆解给 **dev**（执行者）。
+两个 tab 的小集群：用户与 **lead**（检查者）交互，lead 干活拆解给 **dev**（执行者）。
 
 ```
 你 ──> lead（协调 + 审查）──> dev（执行）──> lead（自审 + 整合交付）──> 你

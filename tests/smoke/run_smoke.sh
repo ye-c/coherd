@@ -43,17 +43,17 @@ run_coherd() { # tag arg... — 退出码非 0 由调用方判
 slug_of() { printf 'w%s' "$1"; }   # label → agent 名前缀 (ws id = w<LABEL 大写>, slug = 小写)
 
 case_t2() {
-  printf '\n== T2: coherd -s 起 2 pane (lead 上 / dev 下) + 2 agent + brief 送达锚\n'
+  printf '\n== T2: coherd -s 起 2 tab (1 lead / 2 dev) + 2 agent + brief 送达锚\n'
   state t2; local st="$COHERD_SMOKE_STATE"
   run_coherd t2 -s "$WORK/repo" sm1 || { bad "coherd -s 退出非 0: $(cat "$st/out-t2")"; return; }
 
   eq "pane run 恰好 2 条" "2" "$(wc -l <"$st/runs" | tr -d ' ')"
-  eq "split 恰好 1 次 (上下两 pane)" "1" "$(cnt x "$st/splitcnt")"
-  eq "split 方向 = down" "pane-root-1|down" "$(cat "$st/splits")"
-  eq "lead 占 root pane (上)" "pane-root-1|lead-cli" "$(grep -F -- 'lead-cli' "$st/runs")"
-  eq "dev 占 split pane (下)" "pane-split-1|dev-cli" "$(grep -F -- 'dev-cli' "$st/runs")"
+  eq "tab create 恰好 1 次 (lead tab + dev tab)" "1" "$(cnt x "$st/tabcnt")"
+  eq "split 恰好 0 次 (simple 恒 tabs)" "0" "$(cnt x "$st/splitcnt")"
+  eq "lead 占 root pane (tab#1)" "pane-root-1|lead-cli" "$(grep -F -- 'lead-cli' "$st/runs")"
+  eq "dev 占 tab pane (tab#2)" "pane-tab-1|dev-cli" "$(grep -F -- 'dev-cli' "$st/runs")"
   eq "rename → wsm1-lead" "pane-root-1|wsm1-lead" "$(grep -F -- '|wsm1-lead' "$st/renames")"
-  eq "rename → wsm1-dev" "pane-split-1|wsm1-dev" "$(grep -F -- '|wsm1-dev' "$st/renames")"
+  eq "rename → wsm1-dev" "pane-tab-1|wsm1-dev" "$(grep -F -- '|wsm1-dev' "$st/renames")"
 
   # 送达锚: prompt 点名 dev + 全 kind 先 Enter 提交, 再验 seq 较基线变化 (不用 agent_status != blocked)
   # herdr 升级后 agent prompt 对全 kind 只 paste 不提交, seq 在文本到达即涨(非消费); 需 Enter 后重读确认。
@@ -104,7 +104,7 @@ case_t4() {
   state t4sim; st="$COHERD_SMOKE_STATE"
   run_coherd sim -s "$WORK/repo" sim1 || { bad "simple 启动非 0: $(cat "$st/out-sim")"; return; }
   eq "simple: 2 pane run (共 3 pane 不变)" "2" "$(wc -l <"$st/runs" | tr -d ' ')"
-  eq "simple: pane 数=2 (splits=1)" "1" "$(cnt x "$st/splitcnt")"
+  eq "simple: 恒 tabs (tabcnt=1 splitcnt=0)" "1 0" "$(cnt x "$st/tabcnt") $(cnt x "$st/splitcnt")"
   eq "simple: renames 2 条" "2" "$(wc -l <"$st/renames" | tr -d ' ')"
   eq "simple: 无 coordinator 残留" "0" "$(grep -cF -- 'coordinator' "$st/renames")"
   eq "simple: 无 reviewer 残留" "0" "$(grep -cF -- 'reviewer' "$st/renames")"
@@ -131,10 +131,11 @@ case_t5() {
 }
 
 case_t6() {
-  printf '\n== T6: -s 上下布局 / -s -t 两 tab / -s -p 忽略并告警\n'
+  printf '\n== T6: -s 恒两 tab / -s -t 冗余等价 / -s -p 忽略并告警\n'
   state t6a; local st="$COHERD_SMOKE_STATE"
   run_coherd a -s "$WORK/repo" sm6 || { bad "-s 非 0: $(cat "$st/out-a")"; return; }
-  eq "-s: splits=1 tabs=0" "1 0" "$(cnt x "$st/splitcnt") $(cnt x "$st/tabcnt")"
+  eq "-s: tabs=1 splits=0" "1 0" "$(cnt x "$st/tabcnt") $(cnt x "$st/splitcnt")"
+  eq "-s: dev 在 tab pane" "1" "$(grep -cF -- 'pane-tab-1|dev-cli' "$st/runs")"
 
   state t6b; st="$COHERD_SMOKE_STATE"
   run_coherd b -s -t "$WORK/repo" sm7 || { bad "-s -t 非 0: $(cat "$st/out-b")"; return; }
@@ -145,7 +146,7 @@ case_t6() {
   state t6c; st="$COHERD_SMOKE_STATE"
   run_coherd c -s -p "$WORK/repo" sm8 || { bad "-s -p 非 0: $(cat "$st/out-c")"; return; }
   contains "-s -p: 告警已忽略" "-p 无意义" "$st/out-c"
-  eq "-s -p: 仍走上下 (splits=1 tabs=0)" "1 0" "$(cnt x "$st/splitcnt") $(cnt x "$st/tabcnt")"
+  eq "-s -p: 仍走 tabs (tabs=1 splits=0)" "1 0" "$(cnt x "$st/tabcnt") $(cnt x "$st/splitcnt")"
 }
 
 case_t7() {
@@ -154,7 +155,7 @@ case_t7() {
   run_coherd a -s --agent lead=codex-x,dev=opencode-y "$WORK/repo" sm11 \
     || { bad "--agent 启动非 0: $(cat "$st/out-a")"; return; }
   eq "simple: lead 命令被覆盖" "pane-root-1|codex-x" "$(grep -F -- 'codex-x' "$st/runs")"
-  eq "simple: dev 命令被覆盖" "pane-split-1|opencode-y" "$(grep -F -- 'opencode-y' "$st/runs")"
+  eq "simple: dev 命令被覆盖" "pane-tab-1|opencode-y" "$(grep -F -- 'opencode-y' "$st/runs")"
   eq "simple: env 的 COHERD_LEAD_CMD 未生效" "0" "$(grep -cF -- 'lead-cli' "$st/runs")"
   eq "simple: rename 不受影响 (仍按 ws slug)" "2" "$(wc -l <"$st/renames" | tr -d ' ')"
 
