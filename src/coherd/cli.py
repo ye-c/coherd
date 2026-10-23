@@ -93,7 +93,7 @@ def feedback(
     else:
         if r["accepted"]:
             typer.echo(
-                f"[feedback] 已投递入框（未证消费） {r['from']} -> {r['to']} ({r['msg_id']}) 记于 {r['log_path']}"
+                f"[feedback] 已投递 {r['from']} -> {r['to']} ({r['msg_id']}) 记于 {r['log_path']}"
             )
         else:
             typer.echo(
@@ -132,7 +132,7 @@ def notify(
     else:
         if r["accepted"]:
             typer.echo(
-                f"[notify] 已投递入框（未证消费） {r['from']} -> {r['to']} ({r['msg_id']}) 记于 {r['log_path']}"
+                f"[notify] 已投递 {r['from']} -> {r['to']} ({r['msg_id']}) 记于 {r['log_path']}"
             )
         else:
             typer.echo(
