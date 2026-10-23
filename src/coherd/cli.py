@@ -6,7 +6,9 @@
 
 from __future__ import annotations
 
+import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 import typer
 
@@ -16,6 +18,11 @@ from .id_gen import next_id
 
 app = typer.Typer(
     name="coherd", help="coherd 多 agent 协作集群：任务管理 CLI", no_args_is_help=True
+)
+
+_BODY_HELP = (
+    "消息正文（只写 body，禁含 [<role>|...] 前缀——CLI 自动注入）。"
+    "传 `-` 从 stdin 读，避免 shell 求值正文里的反引号 / $ / ! / 方括号"
 )
 
 task_app = typer.Typer(
@@ -29,25 +36,58 @@ def _fatal(msg: str) -> None:
     raise typer.Exit(code=1)
 
 
+def _read_body(msg: str | None, body_file: str | None) -> str:
+    """解析 body 三源（positional msg / `-`=stdin / --body-file），互斥且拒空。
+
+    走 stdin/file 是为了绕开 shell：body 作为 argv 时反引号、$、!、方括号会被
+    shell 求值替换，被吞的往往是路径与正则（历史 events.log 中 30+ 条实测重发）。
+    归一化只剥末尾单个换行（heredoc/echo 惯例），其余字节原样保留。
+    """
+    if msg is not None and body_file is not None:
+        _fatal("body 源互斥：positional msg 与 --body-file 只能给一个（stdin 用 `-`）")
+    if msg is None and body_file is None:
+        _fatal("缺 body：给 positional msg、`-`（stdin）或 --body-file <path>")
+    if body_file is not None:
+        if body_file == "-":
+            raw = sys.stdin.read()
+        else:
+            try:
+                raw = Path(body_file).read_text(encoding="utf-8")
+            except OSError as e:
+                _fatal(f"读 --body-file 失败: {body_file}: {e}")
+                return ""  # 不可达（_fatal 已 Exit），供类型收窄
+    else:
+        raw = sys.stdin.read() if msg == "-" else msg
+    body = raw[:-1] if raw.endswith("\n") else raw
+    if not body.strip():
+        _fatal("body 为空（仅空白）：stdin / 文件需含实际正文")
+    return body
+
+
 @app.command(name="feedback")
 def feedback(
     peer_agent: str = typer.Argument(
         ..., help="对端 herdr agent 全名，如 w2p-reviewer"
     ),
-    msg: str = typer.Argument(..., help="消息正文，只写 body，禁含 [<role>|...] 前缀——CLI 自动注入"),
+    msg: str = typer.Argument(None, help=_BODY_HELP),
     ws: str = typer.Option(
         None, "--ws", help="自身 ws 短号（缺省取 HERDR_WORKSPACE_ID 小写）"
     ),
     role: str = typer.Option(
         None, "--role", help="自身 role（缺省从 COHERD_ROLE / agent 名派生）"
     ),
+    body_file: str = typer.Option(
+        None, "--body-file", help="从文件读 body；`-` = stdin（与 positional msg 互斥）"
+    ),
 ) -> None:
     """feedback 类型标记：CLI 只注入一次前缀（`[<role>|feedback]: `）；正文带前缀将被拒绝。
 
     命令名即语义（=标记名），无缺省值陷阱；送达失败不丢审计行。
+    body 可走 stdin / --body-file，避免 shell 求值吞正文。
     """
+    body = _read_body(msg, body_file)
     try:
-        r = _push.run(peer_agent, msg, ws=ws, role=role, msg_type="feedback")
+        r = _push.run(peer_agent, body, ws=ws, role=role, msg_type="feedback")
     except ValueError as e:
         _fatal(str(e))
     else:
@@ -68,20 +108,25 @@ def notify(
     peer_agent: str = typer.Argument(
         ..., help="对端 herdr agent 全名，如 w2p-reviewer"
     ),
-    msg: str = typer.Argument(..., help="消息正文，只写 body，禁含 [<role>|...] 前缀——CLI 自动注入"),
+    msg: str = typer.Argument(None, help=_BODY_HELP),
     ws: str = typer.Option(
         None, "--ws", help="自身 ws 短号（缺省取 HERDR_WORKSPACE_ID 小写）"
     ),
     role: str = typer.Option(
         None, "--role", help="自身 role（缺省从 COHERD_ROLE / agent 名派生）"
     ),
+    body_file: str = typer.Option(
+        None, "--body-file", help="从文件读 body；`-` = stdin（与 positional msg 互斥）"
+    ),
 ) -> None:
     """notify 类型标记：CLI 只注入一次前缀（`[<role>|notify]: `）；正文带前缀将被拒绝。
 
     命令名即语义；丢包自兜：delivered 假 → 非零退出提示转 feedback 重发。
+    body 可走 stdin / --body-file，避免 shell 求值吞正文。
     """
+    body = _read_body(msg, body_file)
     try:
-        r = _push.run(peer_agent, msg, ws=ws, role=role, msg_type="notify")
+        r = _push.run(peer_agent, body, ws=ws, role=role, msg_type="notify")
     except ValueError as e:
         _fatal(str(e))
     else:
