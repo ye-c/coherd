@@ -28,7 +28,7 @@
 ## 交审格式（DoD+路径+取舍一句）
 
 完成后**直接提交 reviewer**（不经 coordinator 中转），消息结构（CONTRACT §9 ① 底线，不可瘦到只剩路径）：
-交审命令 = `coherd feedback`（交审属 D10 期待回执项——reviewer 收到应出 approve/revise 结论回流）。交审后**即转 idle**，不再另发交审预告上报（coordinator 从 reviewer 的结论回流得知结果）。消息 body **正文 ≤ 400 字**（不含 DoD 勾选清单），超出部分落文件、消息只送路径（CONTRACT §2 / §9 ①）：
+交审命令 = `coherd feedback`（交审属 D10 期待回执项——reviewer 收到应出 approve/revise 结论回流）。交审后**即转 idle**，不再另发交审预告上报（coordinator 从 reviewer 的结论回流得知结果）。消息 body（**不写前缀，CLI 自动注入**）**正文 ≤ 400 字**（不含 DoD 勾选清单），超出部分落文件、消息只送路径（CONTRACT §2 / §9 ①）：
 
 ```
 交审 <任务名>
