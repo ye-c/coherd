@@ -91,9 +91,9 @@ def feedback(
     except ValueError as e:
         _fatal(str(e))
     else:
-        if r["delivered"]:
+        if r["accepted"]:
             typer.echo(
-                f"[feedback] 已送达 {r['from']} -> {r['to']} ({r['msg_id']}) 记于 {r['log_path']}"
+                f"[feedback] 已投递入框（未证消费） {r['from']} -> {r['to']} ({r['msg_id']}) 记于 {r['log_path']}"
             )
         else:
             typer.echo(
@@ -121,7 +121,7 @@ def notify(
 ) -> None:
     """notify 类型标记：CLI 只注入一次前缀（`[<role>|notify]: `）；正文带前缀将被拒绝。
 
-    命令名即语义；丢包自兜：delivered 假 → 非零退出提示转 feedback 重发。
+    命令名即语义；丢包自兜：accepted 假 → 非零退出提示转 feedback 重发。
     body 可走 stdin / --body-file，避免 shell 求值吞正文。
     """
     body = _read_body(msg, body_file)
@@ -130,9 +130,9 @@ def notify(
     except ValueError as e:
         _fatal(str(e))
     else:
-        if r["delivered"]:
+        if r["accepted"]:
             typer.echo(
-                f"[notify] 已送达 {r['from']} -> {r['to']} ({r['msg_id']}) 记于 {r['log_path']}"
+                f"[notify] 已投递入框（未证消费） {r['from']} -> {r['to']} ({r['msg_id']}) 记于 {r['log_path']}"
             )
         else:
             typer.echo(

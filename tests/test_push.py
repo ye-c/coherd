@@ -202,7 +202,7 @@ class DeliveryTest(unittest.TestCase):
             log_path=path,
             sender=lambda p, m: False,
         )
-        self.assertFalse(r["delivered"])
+        self.assertFalse(r["accepted"])
         lines = [l for l in path.read_text(encoding="utf-8").splitlines() if l]
         self.assertEqual(len(lines), 1)  # 送达失败日志行不丢
         self.assertEqual(json.loads(lines[0])["type"], "feedback")
@@ -224,7 +224,7 @@ class DeliveryTest(unittest.TestCase):
             log_path=path,
             sender=sender,
         )
-        self.assertTrue(r["delivered"])
+        self.assertTrue(r["accepted"])
         self.assertEqual(seen["peer"], "w2p-reviewer")
         self.assertEqual(seen["msg"], "[coordinator|feedback]: ok")
         self.assertEqual(r["log_path"], str(path))
@@ -270,28 +270,28 @@ class PeerValidationTest(EnvMixin, unittest.TestCase):
 
     def test_known_peer_passes(self):
         r, path = self._run("w2p-reviewer", peer_list_fn=lambda: ["w2p-reviewer", "x"])
-        self.assertTrue(r["delivered"])
+        self.assertTrue(r["accepted"])
         self.assertEqual(len(path.read_text(encoding="utf-8").splitlines()), 1)
 
     def test_empty_list_fails_open(self):
         r, _ = self._run("@用户", peer_list_fn=lambda: [])
-        self.assertTrue(r["delivered"])
+        self.assertTrue(r["accepted"])
 
     def test_none_list_fails_open(self):
         r, _ = self._run("chace-user", peer_list_fn=lambda: None)
-        self.assertTrue(r["delivered"])
+        self.assertTrue(r["accepted"])
 
     def test_no_socket_env_fails_open_via_default(self):
         for k in self.KEYS:
             os.environ.pop(k, None)
         r, _ = self._run("user")  # 默认 known_peers：无 HERDR_SOCKET_PATH → None
-        self.assertTrue(r["delivered"])
+        self.assertTrue(r["accepted"])
 
     def test_default_impl_empty_agent_list_fails_open(self):
         os.environ["HERDR_SOCKET_PATH"] = "/tmp/fake.sock"
         with mock.patch.object(P, "agent_list", return_value=[]):
             r, _ = self._run("user")
-        self.assertTrue(r["delivered"])
+        self.assertTrue(r["accepted"])
 
     def test_default_impl_rejects_when_list_has_others(self):
         os.environ["HERDR_SOCKET_PATH"] = "/tmp/fake.sock"
@@ -439,7 +439,7 @@ class PrefixGuardTest(EnvMixin, unittest.TestCase):
             log_path=path,
             sender=_delivered,
         )
-        self.assertTrue(r["delivered"])
+        self.assertTrue(r["accepted"])
 
 
 if __name__ == "__main__":

@@ -123,7 +123,12 @@ def append_event(log_path: Path, line: str) -> None:
 
 
 def send_prompt(peer_agent: str, msg: str) -> bool:
-    """默认送达器：`herdr agent prompt <peer> "<msg>"`。失败返回 False。"""
+    """默认送达器：`herdr agent prompt <peer> "<msg>"`。返回 accepted（见 run 文档串）。
+
+    注意 `returncode == 0` 只等于**文本进了对端输入框**，不等于被消费：herdr 对输入框型
+    TUI 只 paste 不提交，state_change_seq 在文本到达即涨（见 bin/coherd:402-403 自述）。
+    故本函数返回的是 accepted，不是 delivered。
+    """
     try:
         proc = subprocess.run(
             ["herdr", "agent", "prompt", peer_agent, msg],
@@ -131,6 +136,7 @@ def send_prompt(peer_agent: str, msg: str) -> bool:
             text=True,
             timeout=30,
         )
+        # 入框 ≠ 消费；只报"已投递入框，未证被消费"
         return proc.returncode == 0
     except (subprocess.SubprocessError, FileNotFoundError, OSError):
         return False
@@ -153,7 +159,8 @@ def run(
     - 标记：`[<role>|<type>]: <body>`（type=feedback/notify，CLI 注入，agent 只写 body）。
     - peer 校验：拿不到名单（None）放行；拿到且 peer 不在其中 → 拒发且不写日志。
     - 日志先行：append 成功即审计完成，后续送达失败不丢行。
-    - 返回含 from/to/type/msg_id/ts/delivered/line，供调用方回显与测试断言。
+    - 返回含 from/to/type/msg_id/ts/accepted/line，供调用方回显与测试断言。
+     `accepted` = 送达器返回值，含义"文本已投递入对端输入框，未证被消费"（入框 ≠ 消费）。
     """
     if not peer_agent or not msg:
         raise ValueError("peer 与消息均不可为空")
@@ -220,8 +227,8 @@ def run(
     path = log_path or ((session / "events.log") if session else DEFAULT_LOG)
     append_event(path, line)
 
-    # ⑤ 送达注入标记后的消息（失败不丢审计行，返回 delivered=False）
-    delivered = sender(peer_agent, signed_msg)
+    # ⑤ 送达注入标记后的消息（失败不丢审计行，返回 accepted=False）
+    accepted = sender(peer_agent, signed_msg)
 
     return {
         "ws": resolved_ws,
@@ -231,7 +238,7 @@ def run(
         "peer_agent": peer_agent,
         "msg_id": event["msg_id"],
         "ts": event["ts"],
-        "delivered": delivered,
+        "accepted": accepted,
         "log_path": str(path),
         "line": line,
     }
