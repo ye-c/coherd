@@ -231,10 +231,12 @@ class DeliveryTest(unittest.TestCase):
 
 
 class PeerValidationTest(EnvMixin, unittest.TestCase):
-    """peer 名校验：静默丢消息的实测来源是发往 user/@用户/NOBODY/chace-user。
+    """peer 名校验：只抓"错拼全名"，不抓"非 agent 名"。
 
-    铁律 fail-open：拿不到名单（None）一律放行——standalone/libero/socket 抖动
-    都要能正常发；只有权威非空名单里查无此人，才拒发（且不写日志）。
+    校验范围与命名空间同构——集群 agent 全名恒为 `${ws}-${role}`；裸名（`user` /
+    `@用户` / `chace-user` / `pi`）只可能是 standalone agent 或交付收件人，无法从
+    agent list 判定，一律放行（CONTRACT 要求 coordinator 以 notify 交付给用户）。
+    铁律 fail-open：拿不到名单（None 或空）一律放行。
     """
 
     def _run(self, peer: str, peer_list_fn=None):
@@ -251,12 +253,12 @@ class PeerValidationTest(EnvMixin, unittest.TestCase):
         )
         return r, path
 
-    def test_unknown_peer_rejected_without_log(self):
+    def test_misspelled_full_name_rejected_without_log(self):
         path, cleanup = _tmp_log()
         self.addCleanup(cleanup)
         with self.assertRaises(ValueError) as ctx:
             P.run(
-                "NOBODY",
+                "w2p-reviewerr",
                 "m",
                 ws="w2p",
                 role="executor",
@@ -264,8 +266,10 @@ class PeerValidationTest(EnvMixin, unittest.TestCase):
                 sender=_delivered,
                 peer_list_fn=lambda: ["w2p-reviewer"],
             )
-        self.assertIn("NOBODY", str(ctx.exception))
-        self.assertIn("herdr agent list", str(ctx.exception))
+        msg = str(ctx.exception)
+        self.assertIn("w2p-reviewerr", msg)
+        self.assertIn("herdr agent list", msg)
+        self.assertIn("仅 `w2p-` 前缀", msg)  # 拒绝文案说明校验范围
         self.assertFalse(path.exists())  # 拒发不写日志
 
     def test_known_peer_passes(self):
@@ -273,33 +277,47 @@ class PeerValidationTest(EnvMixin, unittest.TestCase):
         self.assertTrue(r["accepted"])
         self.assertEqual(len(path.read_text(encoding="utf-8").splitlines()), 1)
 
+    def test_bare_name_user_passes_with_nonempty_list(self):
+        """交付收件人 `user` 不在 list，但无 ws 前缀 → 放行（否则交付路径被打断）。"""
+        r, _ = self._run("user", peer_list_fn=lambda: ["w2p-reviewer"])
+        self.assertTrue(r["accepted"])
+
+    def test_bare_at_alias_passes(self):
+        r, _ = self._run("@用户", peer_list_fn=lambda: ["w2p-reviewer"])
+        self.assertTrue(r["accepted"])
+
+    def test_bare_alias_and_standalone_pass(self):
+        for peer in ("chace-user", "pi"):
+            r, _ = self._run(peer, peer_list_fn=lambda: ["w2p-reviewer"])
+            self.assertTrue(r["accepted"], peer)
+
     def test_empty_list_fails_open(self):
-        r, _ = self._run("@用户", peer_list_fn=lambda: [])
+        r, _ = self._run("w2p-reviewer", peer_list_fn=lambda: [])
         self.assertTrue(r["accepted"])
 
     def test_none_list_fails_open(self):
-        r, _ = self._run("chace-user", peer_list_fn=lambda: None)
+        r, _ = self._run("w2p-reviewer", peer_list_fn=lambda: None)
         self.assertTrue(r["accepted"])
 
     def test_no_socket_env_fails_open_via_default(self):
         for k in self.KEYS:
             os.environ.pop(k, None)
-        r, _ = self._run("user")  # 默认 known_peers：无 HERDR_SOCKET_PATH → None
+        r, _ = self._run("w2p-reviewer")  # 默认 known_peers：无 HERDR_SOCKET_PATH → None
         self.assertTrue(r["accepted"])
 
     def test_default_impl_empty_agent_list_fails_open(self):
         os.environ["HERDR_SOCKET_PATH"] = "/tmp/fake.sock"
         with mock.patch.object(P, "agent_list", return_value=[]):
-            r, _ = self._run("user")
+            r, _ = self._run("w2p-reviewer")
         self.assertTrue(r["accepted"])
 
-    def test_default_impl_rejects_when_list_has_others(self):
+    def test_default_impl_rejects_misspelled_full_name(self):
         os.environ["HERDR_SOCKET_PATH"] = "/tmp/fake.sock"
         with mock.patch.object(
             P, "agent_list", return_value=[{"name": "w2p-reviewer"}]
         ):
             with self.assertRaises(ValueError):
-                self._run("user")
+                self._run("w2p-reviewerr")
 
 
 class ConcurrencyTest(unittest.TestCase):

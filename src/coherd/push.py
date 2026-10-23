@@ -198,14 +198,21 @@ def run(
 
     peer_role = derive_role(peer_agent, resolved_ws)
 
-    # ② peer 名校验（fail-open）：发往 user/@用户/NOBODY 这类非 agent 名的消息会被
-    # `herdr agent prompt` 静默失败（sender 只把失败折成 False），消息只落进日志里。
-    # 只有确实拿到非空名单才判定；拒发发生在写日志之前，审计不被垃圾污染。
+    # ② peer 名校验（fail-open）：发往错拼全名的消息会被 `herdr agent prompt` 静默失败
+    # （sender 只把失败折成 False），消息只落进日志里。校验范围与命名空间同构：集群内
+    # agent 全名恒为 `${ws}-${role}`（bin/coherd 即如此起名），裸名只可能是 standalone
+    # agent（如 `pi`）、交付收件人（`user` / `@用户` / 别名）——这三种无法从 list 判定，
+    # 故只校验 `${ws}-` 前缀形态，其余放行。拒发发生在写日志之前，审计不被垃圾污染。
     known = (peer_list_fn or known_peers)()
-    if known and peer_agent not in known:  # 空名单 = 无人可知 → 放行
+    if (
+        known  # 空名单 = 无人可知 → 放行
+        and peer_agent.startswith(f"{resolved_ws}-")
+        and peer_agent not in known
+    ):
         raise ValueError(
             f"未知 peer agent: {peer_agent!r}（不在 herdr agent list 中）"
-            " — 用 `herdr agent list` 查全名（形如 w2p-reviewer），本次未发送也未记账"
+            " — 用 `herdr agent list` 查全名（形如 w2p-reviewer），本次未发送也未记账。"
+            f" 仅 `{resolved_ws}-` 前缀的 agent 全名会被校验；裸名视为 standalone/交付收件人放行"
         )
 
     # ③ 注入 `[<role>|<type>]: ` 标记前缀（类型=feedback/notify，命令名即标记名）
