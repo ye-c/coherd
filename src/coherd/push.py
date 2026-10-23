@@ -5,10 +5,11 @@
 
 职责：
   1. 派生自身 role / ws / peer role
-  2. 注入 `[<role>|<type>]: ` 标记前缀（agent 只写 body 正文，不手写前缀）
-  3. O_APPEND 向 session events.log 追一行精简审计 JSON {ws,from,to,type,msg_id,ts,body}
+  2. 校验 peer 名（fail-open：拿不到 agent 列表就不校验，拿到则不在列表即拒）
+  3. 注入 `[<role>|<type>]: ` 标记前缀（agent 只写 body 正文，不手写前缀）
+  4. O_APPEND 向 session events.log 追一行精简审计 JSON {ws,from,to,type,msg_id,ts,body}
      （无 session 目录时回退全局 DEFAULT_LOG 兜底；body = 未经标记前缀的原始正文）
-  4. 调 `herdr agent prompt <peer-agent> "<msg>"` 送达
+  5. 调 `herdr agent prompt <peer-agent> "<msg>"` 送达
 落地顺序：日志先行，再送达 —— 送达失败不丢审计行。
 """
 
@@ -32,6 +33,8 @@ DEFAULT_LOG = CONFIG_HOME / "events.log"
 
 # 送达执行器签名（可注入以便测试替换真实 herdr 调用）
 Sender = Callable[[str, str], bool]
+# peer 名单提供器签名：list[str] = 权威名单；None = 无法判定（fail-open、不校验）
+PeerListFn = Callable[[], list[str] | None]
 
 
 def ws_from_env() -> str | None:
@@ -62,6 +65,23 @@ def _self_role_from_pane_list() -> str | None:
         if a.get("pane_id") == pane:
             return a.get("name")
     return None
+
+
+def known_peers() -> list[str] | None:
+    """默认 peer 名单：herdr agent.list 的 name 列表；无 socket / 失败 / 空 → None（不校验）。
+
+    fail-open 是故意：standalone / libero / 测试 / socket 抖动都拿不到名单，
+    把"拿不到"当"没这个人"会把正常发送全炸掉。
+    """
+    sock = os.environ.get("HERDR_SOCKET_PATH")
+    if not sock:
+        return None
+    try:
+        agents = agent_list(sock)
+    except Exception:  # noqa: BLE001 — 任何异常都等于无法判定，走 fail-open
+        return None
+    names = [a.get("name") for a in agents if isinstance(a, dict) and a.get("name")]
+    return names or None
 
 
 def make_msg_id() -> str:
@@ -125,11 +145,13 @@ def run(
     log_path: Path | None = None,
     sender: Sender = send_prompt,
     self_role_fn: Callable[[], str | None] | None = None,
+    peer_list_fn: PeerListFn | None = None,
     msg_type: str = "feedback",
 ) -> dict:
-    """push 主流程：① 派生（env → 显参 → 报错）② 注入标记 ③ 精简审计 ④ 送达。
+    """push 主流程：① 派生（env → 显参 → 报错）② 校验 peer ③ 注入标记 ④ 精简审计 ⑤ 送达。
 
     - 标记：`[<role>|<type>]: <body>`（type=feedback/notify，CLI 注入，agent 只写 body）。
+    - peer 校验：拿不到名单（None）放行；拿到且 peer 不在其中 → 拒发且不写日志。
     - 日志先行：append 成功即审计完成，后续送达失败不丢行。
     - 返回含 from/to/type/msg_id/ts/delivered/line，供调用方回显与测试断言。
     """
@@ -169,10 +191,20 @@ def run(
 
     peer_role = derive_role(peer_agent, resolved_ws)
 
-    # ② 注入 `[<role>|<type>]: ` 标记前缀（类型=feedback/notify，命令名即标记名）
+    # ② peer 名校验（fail-open）：发往 user/@用户/NOBODY 这类非 agent 名的消息会被
+    # `herdr agent prompt` 静默失败（sender 只把失败折成 False），消息只落进日志里。
+    # 只有确实拿到非空名单才判定；拒发发生在写日志之前，审计不被垃圾污染。
+    known = (peer_list_fn or known_peers)()
+    if known and peer_agent not in known:  # 空名单 = 无人可知 → 放行
+        raise ValueError(
+            f"未知 peer agent: {peer_agent!r}（不在 herdr agent list 中）"
+            " — 用 `herdr agent list` 查全名（形如 w2p-reviewer），本次未发送也未记账"
+        )
+
+    # ③ 注入 `[<role>|<type>]: ` 标记前缀（类型=feedback/notify，命令名即标记名）
     signed_msg = f"[{resolved_role}|{msg_type}]: {msg}"
 
-    # ③ 精简审计（O_APPEND，日志先行：type 标识消息类型，无后台待回执登记）
+    # ④ 精简审计（O_APPEND，日志先行：type 标识消息类型，无后台待回执登记）
     event = make_event(
         resolved_ws,
         resolved_role,
@@ -188,7 +220,7 @@ def run(
     path = log_path or ((session / "events.log") if session else DEFAULT_LOG)
     append_event(path, line)
 
-    # ④ 送达注入标记后的消息（失败不丢审计行，返回 delivered=False）
+    # ⑤ 送达注入标记后的消息（失败不丢审计行，返回 delivered=False）
     delivered = sender(peer_agent, signed_msg)
 
     return {
