@@ -52,7 +52,7 @@ export COHERD_EXECUTOR_CMD=~/bin/my-executor-cli
 export COHERD_REVIEWER_CMD=~/bin/my-reviewer-cli
 ```
 
-都不设置时，回退查找 PATH 中的 `pi` / `omp` / `cc`（其中 `cc` 有双重含义——既是回退命令名，通常也指你的 Claude Code）；再找不到就报错并指向 docs/configuration.md。
+都不设置时，coordinator / reviewer 回退查找 PATH 中的 `pi`、executor 回退 `omp`；再找不到就报错并指向 docs/configuration.md。
 
 双角色简易模式（`-s`）用两槽位 `COHERD_LEAD_CMD` / `COHERD_DEV_CMD`；不设置时分别回退 `COHERD_COORDINATOR_CMD` / `COHERD_EXECUTOR_CMD`，再回退 `pi` / `omp`。
 

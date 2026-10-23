@@ -33,7 +33,7 @@ coherd 的配置面很小：各槽位的启动命令 + 布局。所有配置走 
 
 1. **`--agent role=cmd[,...]`**（命令行）——per-run 一次性覆盖，如 `coherd -s --agent lead=codex,dev=opencode`；不写 conf、不改环境变量，只影响本次启动列出的角色。
 2. **`COHERD_*_CMD`** 环境变量 / `~/.config/coherd/coherd.conf`（见上两节）。
-3. **PATH 回退**，按回退表查找 `pi` / `omp` / `cc`。
+3. **PATH 回退**，按回退表查找 `pi` / `omp`（见表）。
 4. 仍缺失 → die，并指向本文件。
 
 `--agent` 中未列出的角色照常走 2 / 3 层；覆盖值与 `COHERD_*_CMD` 同信任级（同一个 `pane run` 命令行）。
@@ -44,13 +44,13 @@ coherd 的配置面很小：各槽位的启动命令 + 布局。所有配置走 
 | -------------- | -------------- | ----------- |
 | `COHERD_COORDINATOR_CMD` | `pi` | die，提示 docs/configuration.md |
 | `COHERD_EXECUTOR_CMD` | `omp` | 同上 |
-| `COHERD_REVIEWER_CMD` | `cc` | 同上 |
+| `COHERD_REVIEWER_CMD` | `pi` | 同上 |
 | `COHERD_LEAD_CMD` | `COHERD_COORDINATOR_CMD`（若设）→ 否则 `pi` | 同上 |
 | `COHERD_DEV_CMD` | `COHERD_EXECUTOR_CMD`（若设）→ 否则 `omp` | 同上 |
 
 `lead` / `dev` 多一级回退：未设 simple 专属 CMD 时复用你已配好的 coordinator / executor 命令，避免为简易模式重复配置（reviewer 命令在 `-s` 下不使用）。
 
-回退只是便利，不是 coherd 对特定 CLI 的依赖。注意 `cc` 有**双重含义**：它既是回退表的命令名，也是 Claude Code 的常见别名——PATH 里的 `cc` 通常就是用户的 Claude Code。fallback 表 `cc` → reviewer 指"名为 `cc` 的命令"，不指定具体实现；该命令的语言/行为由 CLI 自身决定；brief 与 coherd 自身输出固定为中文，CLI 实例的默认语言可能不同（不强制对齐）。
+回退只是便利，不是 coherd 对特定 CLI 的依赖。回退表里的名字指“名为该名字的命令”，不指定具体实现；该命令的语言/行为由 CLI 自身决定；brief 与 coherd 自身输出固定为中文，CLI 实例的默认语言可能不同（不强制对齐）。
 
 ## coherd.conf
 
@@ -79,7 +79,7 @@ COHERD_DEV_CMD=~/bin/my-dev
 ## FAQ：coherd 报"未找到 xx 的启动命令"
 
 1. 设置对应 `COHERD_*_CMD` 指向你的 agent CLI（推荐），或
-2. 把旧名 `pi`/`omp`/`cc` 放进 PATH，或
+2. 把回退名 `pi`/`omp` 放进 PATH，或
 3. 确认你的 CLI 在 herdr 21 种可识别列表内（docs/agents.md），否则改用列表内的。
 
 ## herdr 相关

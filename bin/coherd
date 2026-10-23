@@ -11,7 +11,7 @@
 # 角色:  coordinator 协调 (可与 reviewer 讨论) / executor 执行 / reviewer 审查
 #   三角色均为「槽位」, 具体 agent CLI 由配置决定, 本脚本不绑定任何特定 CLI:
 #     COHERD_COORDINATOR_CMD / COHERD_EXECUTOR_CMD / COHERD_REVIEWER_CMD
-#     未设置时回退 PATH 中的 pi / omp / cc; 均缺则 die 指向 docs/configuration.md
+#     未设置时 coordinator/reviewer 回退 pi、executor 回退 omp; 均缺则 die 指向 docs/configuration.md
 #   agent 私有配置 (env/flag/wrapper 内容) 由用户自备, 本脚本不注入不修改
 #
 # 双角色简易模式: -s/--simple → lead(检查者: 协调+审查合一) + dev(执行者) 两 tab (1 lead / 2 dev)
@@ -143,7 +143,7 @@ if [ -f "$CONF" ]; then
   unset _pre _kv
 fi
 
-# ── 0.5. 解析启动命令: --agent 覆盖 → CMD 变量 → PATH 回退(pi/omp/cc) → die ──
+# ── 0.5. 解析启动命令: --agent 覆盖 → CMD 变量 → PATH 回退(pi/omp) → die ──
 #   simple 追加 lead/dev: lead → COHERD_LEAD_CMD → COHERD_COORDINATOR_CMD → pi
 #                            dev  → COHERD_DEV_CMD  → COHERD_EXECUTOR_CMD  → omp
 # 唯一权威角色表 (校验/报错通用, 不另处硬编码)
@@ -185,7 +185,7 @@ resolve_cmd() { # role 名 → 命令字符串
   case "$role" in
     coordinator) cmd="${COHERD_COORDINATOR_CMD:-}"; fallback=pi ;;
     executor)    cmd="${COHERD_EXECUTOR_CMD:-}";    fallback=omp ;;
-    reviewer)    cmd="${COHERD_REVIEWER_CMD:-}";    fallback=cc ;;
+    reviewer)    cmd="${COHERD_REVIEWER_CMD:-}";    fallback=pi ;;
     # fallback 兼容三角色配置: 未设 simple 专属 CMD 时复用已配的 coordinator/executor 命令
     lead)        cmd="${COHERD_LEAD_CMD:-${COHERD_COORDINATOR_CMD:-}}"; fallback=pi ;;
     dev)         cmd="${COHERD_DEV_CMD:-${COHERD_EXECUTOR_CMD:-}}";     fallback=omp ;;
