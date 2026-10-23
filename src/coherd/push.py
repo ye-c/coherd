@@ -5,7 +5,8 @@
 
 职责：
   1. 派生自身 role / ws / peer role
-  2. 校验 peer 名（fail-open：拿不到 agent 列表就不校验，拿到则不在列表即拒）
+  2. 校验 peer 名（fail-open：拿不到 agent 列表不校验；仅 `${ws}-` 前缀的全名在名单外才拒，
+     裸名视为 standalone / 交付收件人放行）
   3. 注入 `[<role>|<type>]: ` 标记前缀（agent 只写 body 正文，不手写前缀）
   4. O_APPEND 向 session events.log 追一行精简审计 JSON {ws,from,to,type,msg_id,ts,body}
      （无 session 目录时回退全局 DEFAULT_LOG 兜底；body = 未经标记前缀的原始正文）
@@ -157,7 +158,7 @@ def run(
     """push 主流程：① 派生（env → 显参 → 报错）② 校验 peer ③ 注入标记 ④ 精简审计 ⑤ 送达。
 
     - 标记：`[<role>|<type>]: <body>`（type=feedback/notify，CLI 注入，agent 只写 body）。
-    - peer 校验：拿不到名单（None）放行；拿到且 peer 不在其中 → 拒发且不写日志。
+    - peer 校验：名单 None 或 peer 非 `${ws}-` 前缀 → 放行；`${ws}-` 前缀全名不在名单 → 拒发且不写日志。
     - 日志先行：append 成功即审计完成，后续送达失败不丢行。
     - 返回含 from/to/type/msg_id/ts/accepted/line，供调用方回显与测试断言。
      `accepted` = 送达器返回值，含义"文本已投递入对端输入框，未证被消费"（入框 ≠ 消费）。
