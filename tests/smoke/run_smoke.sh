@@ -18,7 +18,7 @@ export HOME="$WORK/home"                 # 隔离: 契约文档/conf/session 全
 export PATH="$HERE/bin:$PATH"            # fake herdr + fake sleep 前置
 export COHERD_CONF=/dev/null             # 不吃用户 coherd.conf
 export COHERD_COORDINATOR_CMD=coord-cli COHERD_EXECUTOR_CMD=exec-cli COHERD_REVIEWER_CMD=rev-cli
-export COHERD_LEAD_CMD=lead-cli COHERD_DEV_CMD=dev-cli
+export COHERD_LED_CMD=led-cli COHERD_DEV_CMD=dev-cli
 mkdir -p "$HOME/.config/coherd" "$WORK/repo"
 cp "$ROOT"/roles/*.md "$HOME/.config/coherd/"   # coherd 启动会检查契约文件存在
 
@@ -43,16 +43,16 @@ run_coherd() { # tag arg... — 退出码非 0 由调用方判
 slug_of() { printf 'w%s' "$1"; }   # label → agent 名前缀 (ws id = w<LABEL 大写>, slug = 小写)
 
 case_t2() {
-  printf '\n== T2: coherd -s 起 2 tab (1 lead / 2 dev) + 2 agent + brief 送达锚\n'
+  printf '\n== T2: coherd -s 起 2 tab (1 led / 2 dev) + 2 agent + brief 送达锚\n'
   state t2; local st="$COHERD_SMOKE_STATE"
   run_coherd t2 -s "$WORK/repo" sm1 || { bad "coherd -s 退出非 0: $(cat "$st/out-t2")"; return; }
 
   eq "pane run 恰好 2 条" "2" "$(wc -l <"$st/runs" | tr -d ' ')"
-  eq "tab create 恰好 1 次 (lead tab + dev tab)" "1" "$(cnt x "$st/tabcnt")"
+  eq "tab create 恰好 1 次 (led tab + dev tab)" "1" "$(cnt x "$st/tabcnt")"
   eq "split 恰好 0 次 (simple 恒 tabs)" "0" "$(cnt x "$st/splitcnt")"
-  eq "lead 占 root pane (tab#1)" "pane-root-1|lead-cli" "$(grep -F -- 'lead-cli' "$st/runs")"
+  eq "led 占 root pane (tab#1)" "pane-root-1|led-cli" "$(grep -F -- 'led-cli' "$st/runs")"
   eq "dev 占 tab pane (tab#2)" "pane-tab-1|dev-cli" "$(grep -F -- 'dev-cli' "$st/runs")"
-  eq "rename → wsm1-lead" "pane-root-1|wsm1-lead" "$(grep -F -- '|wsm1-lead' "$st/renames")"
+  eq "rename → wsm1-led" "pane-root-1|wsm1-led" "$(grep -F -- '|wsm1-led' "$st/renames")"
   eq "rename → wsm1-dev" "pane-tab-1|wsm1-dev" "$(grep -F -- '|wsm1-dev' "$st/renames")"
 
   # 送达锚: prompt 点名 dev + 全 kind 先 Enter 提交, 再验 seq 较基线变化 (不用 agent_status != blocked)
@@ -63,9 +63,9 @@ case_t2() {
   contains "dev brief 点名自身 agent 名" "agent 名 wsm1-dev" "$st/brief_wsm1-dev"
   contains "dev brief 指 CONTRACT-simple.md" "CONTRACT-simple.md" "$st/brief_wsm1-dev"
   contains "dev brief 指 dev.md" "dev.md" "$st/brief_wsm1-dev"
-  contains "dev brief 单 standby 指令 (指向 lead)" 'coherd notify wsm1-lead "standby"' "$st/brief_wsm1-dev"
-  contains "lead brief 指 lead.md" "lead.md" "$st/brief_wsm1-lead"
-  contains "lead brief 待机=被动接收" "被动接收不回执" "$st/brief_wsm1-lead"
+  contains "dev brief 单 standby 指令 (指向 led)" 'coherd notify wsm1-led "standby"' "$st/brief_wsm1-dev"
+  contains "led brief 指 led.md" "led.md" "$st/brief_wsm1-led"
+  contains "led brief 待机=被动接收" "被动接收不回执" "$st/brief_wsm1-led"
 }
 
 case_t3() {
@@ -112,7 +112,7 @@ case_t4() {
 }
 
 case_t5() {
-  printf '\n== T5: simple 集群内 lead → dev 送达 (标记注入)\n'
+  printf '\n== T5: simple 集群内 led → dev 送达 (标记注入)\n'
   state t5; local st="$COHERD_SMOKE_STATE"
   if [ ! -x "$ROOT/.venv/bin/coherd" ]; then
     bad "T5 需要 $ROOT/.venv/bin/coherd (coherd notify CLI) — 先跑 ./install.sh"
@@ -120,14 +120,14 @@ case_t5() {
   fi
   run_coherd t5s -s "$WORK/repo" sm5 || { bad "启动 simple 集群非 0: $(cat "$st/out-t5s")"; return; }
 
-  HERDR_WORKSPACE_ID=wSM5 COHERD_ROLE=lead "$BIN" notify wsm5-dev "test" \
-    >"$st/notify1" 2>&1 || bad "lead notify dev 退出非 0: $(cat "$st/notify1")"
-  eq "lead→dev 送达文本带发送方标记" "wsm5-dev|[lead|notify]: test" "$(tail -1 "$st/prompts")"
+  HERDR_WORKSPACE_ID=wSM5 COHERD_ROLE=led "$BIN" notify wsm5-dev "test" \
+    >"$st/notify1" 2>&1 || bad "led notify dev 退出非 0: $(cat "$st/notify1")"
+  eq "led→dev 送达文本带发送方标记" "wsm5-dev|[led|notify]: test" "$(tail -1 "$st/prompts")"
 
   # dev 作为发送方时标记为 [dev|notify]: (标记 = 发送方 role; DoD 字面 '[dev|notify]' 只在此方向成立)
-  HERDR_WORKSPACE_ID=wSM5 COHERD_ROLE=dev "$BIN" notify wsm5-lead "test2" \
-    >"$st/notify2" 2>&1 || bad "dev notify lead 退出非 0: $(cat "$st/notify2")"
-  eq "dev→lead 送达文本带 [dev|notify] 标记" "wsm5-lead|[dev|notify]: test2" "$(tail -1 "$st/prompts")"
+  HERDR_WORKSPACE_ID=wSM5 COHERD_ROLE=dev "$BIN" notify wsm5-led "test2" \
+    >"$st/notify2" 2>&1 || bad "dev notify led 退出非 0: $(cat "$st/notify2")"
+  eq "dev→led 送达文本带 [dev|notify] 标记" "wsm5-led|[dev|notify]: test2" "$(tail -1 "$st/prompts")"
 }
 
 case_t6() {
@@ -152,11 +152,11 @@ case_t6() {
 case_t7() {
   printf '\n== T7: --agent 按角色覆盖启动命令 (per-run, 优先于 COHERD_*_CMD) + 非法输入早退\n'
   state t7a; local st="$COHERD_SMOKE_STATE"
-  run_coherd a -s --agent lead=codex-x,dev=opencode-y "$WORK/repo" sm11 \
+  run_coherd a -s --agent led=codex-x,dev=opencode-y "$WORK/repo" sm11 \
     || { bad "--agent 启动非 0: $(cat "$st/out-a")"; return; }
-  eq "simple: lead 命令被覆盖" "pane-root-1|codex-x" "$(grep -F -- 'codex-x' "$st/runs")"
+  eq "simple: led 命令被覆盖" "pane-root-1|codex-x" "$(grep -F -- 'codex-x' "$st/runs")"
   eq "simple: dev 命令被覆盖" "pane-tab-1|opencode-y" "$(grep -F -- 'opencode-y' "$st/runs")"
-  eq "simple: env 的 COHERD_LEAD_CMD 未生效" "0" "$(grep -cF -- 'lead-cli' "$st/runs")"
+  eq "simple: env 的 COHERD_LED_CMD 未生效" "0" "$(grep -cF -- 'led-cli' "$st/runs")"
   eq "simple: rename 不受影响 (仍按 ws slug)" "2" "$(wc -l <"$st/renames" | tr -d ' ')"
 
   state t7b; st="$COHERD_SMOKE_STATE"    # 三角色: 只覆盖 executor, 其余仍走 env
@@ -167,9 +167,9 @@ case_t7() {
   eq "三角色: 未指定的 reviewer 保持 env 值" "pane-root-1|rev-cli" "$(grep -F -- 'rev-cli' "$st/runs")"
 
   # 非法输入一律早退且不建集群 (校验在 herdr server/布局之前)
-  # tag 用显式序号: arg 归一化会撞名 (lead 与 lead= 都成 bad-lead), 撞名 → 共用 state 目录/输出文件, 隔离被打破
+  # tag 用显式序号: arg 归一化会撞名 (led 与 led= 都成 bad-led), 撞名 → 共用 state 目录/输出文件, 隔离被打破
   local i=0 case_spec arg needle tag
-  for case_spec in "leed=codex-x|未知角色" "lead|缺 '='" "lead=|缺命令"; do
+  for case_spec in "leed=codex-x|未知角色" "led|缺 '='" "led=|缺命令"; do
     i=$((i+1)); tag="bad-$i"
     arg="${case_spec%%|*}"; needle="${case_spec##*|}"
     state "t7-$tag"; st="$COHERD_SMOKE_STATE"

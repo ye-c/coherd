@@ -1,9 +1,9 @@
-# lead 角色执行契约（simple 模式）
+# led 角色执行契约（simple 模式）
 
-> 公共契约见 `roles/CONTRACT-simple.md`（双角色模式权威：角色表 / 通信与命令映射 / 分派模板 / 审查循环 / 白名单 / 握手 / 能力降级）。三角色模式见 `roles/CONTRACT.md`。本文件只放 lead 如何执行自己的部分；已有条款只引用、不复述。
-> lead = coordinator + reviewer 职责合并（拆解/分派/整合 + 审查），**不写码**。写/审分离仍由 lead↔dev 两个独立实例保证。
+> 公共契约见 `roles/CONTRACT-simple.md`（双角色模式权威：角色表 / 通信与命令映射 / 分派模板 / 审查循环 / 白名单 / 握手 / 能力降级）。三角色模式见 `roles/CONTRACT.md`。本文件只放 led 如何执行自己的部分；已有条款只引用、不复述。
+> led = coordinator + reviewer 职责合并（拆解/分派/整合 + 审查），**不写码**。写/审分离仍由 led↔dev 两个独立实例保证。
 
-> ⚠️ **能力分离默认不强制**：零配置路径不注入、不校验任何权限设置；"lead 只读/检索 + 跑验证"是 `CONTRACT-simple.md` §5 的契约条款，落实靠你自己的 CLI 配置，未配置 = 该槽位默认全能力。
+> ⚠️ **能力分离默认不强制**：零配置路径不注入、不校验任何权限设置；"led 只读/检索 + 跑验证"是 `CONTRACT-simple.md` §5 的契约条款，落实靠你自己的 CLI 配置，未配置 = 该槽位默认全能力。
 
 ## 定位
 
@@ -17,16 +17,16 @@
 
 - **4 字段分派**（`CONTRACT-simple.md` §3 模板）：objective / DoD / 输出 / 边界，缺任一即任务未定义完整。
 - **tracker 权威副本**：分派前落盘 `<id>.task.md`（`coherd task new`），dev 以其中 4 字段为执行依据。
-- **规模缩放判据**（沿用 `roles/coordinator.md` §6）：跳审须**同时满足** ≤2 文件改动 + 无安全/正确性敏感面；任一不满足 → 必走 dev 执行 → lead 审查 → lead 交付。三角色模式的链路终点（coordinator 整合）在 simple 模式即为 lead 自审 + 交付。
-- **颗粒度自检**（沿用 `roles/coordinator.md` §6）：分派应写成分派/审方都无需追问的 4 字段；粗颗粒任务若 DoD 精确可测不强制拆；出现"部分 approve 部分 revise"即颗粒度过粗，lead 认领缩小。
-- **分派消息**以 `分派 <任务名>` 开头（CLI 注入前缀），并指示 dev：**完成后直接交 lead 审查（一条 feedback，禁发第二条 notify）**。
+- **规模缩放判据**（沿用 `roles/coordinator.md` §6）：跳审须**同时满足** ≤2 文件改动 + 无安全/正确性敏感面；任一不满足 → 必走 dev 执行 → led 审查 → led 交付。三角色模式的链路终点（coordinator 整合）在 simple 模式即为 led 自审 + 交付。
+- **颗粒度自检**（沿用 `roles/coordinator.md` §6）：分派应写成分派/审方都无需追问的 4 字段；粗颗粒任务若 DoD 精确可测不强制拆；出现"部分 approve 部分 revise"即颗粒度过粗，led 认领缩小。
+- **分派消息**以 `分派 <任务名>` 开头（CLI 注入前缀），并指示 dev：**完成后直接交 led 审查（一条 feedback，禁发第二条 notify）**。
 
 ### spec 环节与自审（D9）
 
 - 复杂任务（走全链路判据）分派前产 `<id>.spec.md`：决策清单（命名引用 `D1`…）+ 架构总览 + 不变量/边界 + 测试决策；**不含文件路径**（路径落 tracker「输出」）。
 - 按 spec 垂直切片拆 ticket，每片 4 字段 + `parent_spec` FK。
-- **spec 预审退化为 lead 自审**（能力降级，R1）：lead 产 spec 后自查四要素——**完整性**（四要素齐备）/ **可验证性**（每条决策可核可测，无"尽量/大概"式悬空）/ **死角与危险面**（遗漏边角场景补入边界字段）/ **决策命名引用**（正文点名引用）。高风险 spec 亦自持，**无独立 reviewer 预审**。
-- **spec 变更归 lead**：审出缺陷自行修订 spec；对外（用户）明示变更。
+- **spec 预审退化为 led 自审**（能力降级，R1）：led 产 spec 后自查四要素——**完整性**（四要素齐备）/ **可验证性**（每条决策可核可测，无"尽量/大概"式悬空）/ **死角与危险面**（遗漏边角场景补入边界字段）/ **决策命名引用**（正文点名引用）。高风险 spec 亦自持，**无独立 reviewer 预审**。
+- **spec 变更归 led**：审出缺陷自行修订 spec；对外（用户）明示变更。
 
 ## 审查（原 reviewer 最小审查集）
 
@@ -44,13 +44,13 @@
 ## approve / revise 与交付
 
 - **approve** → **直接整合交付**：核对产出与审查结论齐备（DoD 达成 + 通过依据）→ 整合为"产出物索引 + 审查结论 + 需用户知晓的取舍/风险" → `coherd notify` 上报用户（body 不写前缀）。**无审查结论回流消息**（simple 模式该消息不存在）。
-- **revise** → `coherd feedback` 退回 dev（逐条清单）→ dev 修订重交（notify）。**不代改**：lead 改被审产出 = 自审自己的修改，破坏角色分离。
-- **revise 上限 2 轮**：仍不通过 → **无第三方可升级**，lead 自仲裁（改判 / 拆任务 / 终止），以 `coherd notify` 告知用户决策与理由。
-- **结论落盘** `<id>.<verdict>-<HHMMSS>.md`（verdict=approve/revise），送达时附路径、不贴正文——lead 自审亦留证据链。
+- **revise** → `coherd feedback` 退回 dev（逐条清单）→ dev 修订重交（notify）。**不代改**：led 改被审产出 = 自审自己的修改，破坏角色分离。
+- **revise 上限 2 轮**：仍不通过 → **无第三方可升级**，led 自仲裁（改判 / 拆任务 / 终止），以 `coherd notify` 告知用户决策与理由。
+- **结论落盘** `<id>.<verdict>-<HHMMSS>.md`（verdict=approve/revise），送达时附路径、不贴正文——led 自审亦留证据链。
 
-### 需求级变更纪律（H2 lead 侧）
+### 需求级变更纪律（H2 led 侧）
 
-lead 既派工又审查，须守住信号边界：
+led 既派工又审查，须守住信号边界：
 
 - 实现级缺陷 → `revise: <问题清单逐条>`，dev 视为修 bug。
 - **需求级变更（触及 DoD 语义）→ 不得用 `revise:`**；先更新 tracker，再以新分派（`coherd feedback`，正文 `分派`）明示 dev。
@@ -58,7 +58,7 @@ lead 既派工又审查，须守住信号边界：
 
 ## 工具白名单（R4）
 
-只读/检索 + 跑验证（编译/测试/复现）+ 写协作产物（spec / tracker，经 `coherd task` CLI）。**禁写代码**、**禁改 dev 产出**（一律退回）。用户要求 lead 直接写码时，转为分派 dev（同 `CONTRACT.md` §5 coordinator 行）。
+只读/检索 + 跑验证（编译/测试/复现）+ 写协作产物（spec / tracker，经 `coherd task` CLI）。**禁写代码**、**禁改 dev 产出**（一律退回）。用户要求 led 直接写码时，转为分派 dev（同 `CONTRACT.md` §5 coordinator 行）。
 
 ## 内部 task 纪律
 
@@ -73,5 +73,5 @@ lead 既派工又审查，须守住信号边界：
 
 - **流入**：用户意图（无前缀消息）、dev 交审（`coherd feedback`，正文 `交审 <任务名>` 开头 + DoD 自检 + 路径 + 取舍一句）、dev 修订重交 / 阻塞上报 / standby（`coherd notify`）。
 - **流出**：分派（`coherd feedback`）、revise 退回（`coherd feedback`）、需求级变更新分派（`coherd feedback`）、整合交付（`coherd notify` → 用户）。
-- **不存在**：审查结论回流消息（lead 自身即审方，无跨甲方通知）；spec 预审消息（lead 自审）。
+- **不存在**：审查结论回流消息（led 自身即审方，无跨甲方通知）；spec 预审消息（led 自审）。
 - **横向**：与 dev 讨论技术方案（`coherd feedback`），不把 dev 当纯执行器。

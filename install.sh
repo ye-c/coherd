@@ -34,8 +34,8 @@ chmod +x "$HERE/bin/coherd" # 幂等: 确保 target 可执行(不 chmod symlink 
 info "已安装 $BIN_DIR/coherd → $HERE/bin/coherd (symlink)"
 
 # ── 拷贝契约文件 (CONTRACT.md + CONTRACT-simple.md + per-role) ──
-#   per-role 含三角色 (coordinator/executor/reviewer/libero) + 双角色简易模式 (lead/dev)
-ROLE_DOCS=("coordinator" "executor" "reviewer" "libero" "lead" "dev")
+#   per-role 含三角色 (coordinator/executor/reviewer/libero) + 双角色简易模式 (led/dev)
+ROLE_DOCS=("coordinator" "executor" "reviewer" "libero" "led" "dev")
 [ -f "$HERE/roles/CONTRACT.md" ] || die "缺失 $HERE/roles/CONTRACT.md"
 mkdir -p "$CFG_DIR"
 _install_doc() { # 文件名 → 装到 $CFG_DIR (已有则备份后覆盖; .bak 覆盖式只留一份)

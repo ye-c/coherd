@@ -16,10 +16,10 @@ coherd 的配置面很小：各槽位的启动命令 + 布局。所有配置走 
 
 | 变量 | 角色 | 说明 |
 | ------ | ------ | ------ |
-| `COHERD_LEAD_CMD` | lead | 启动检查者（协调+审查合一）agent 的命令（可带参数） |
+| `COHERD_LED_CMD` | led | 启动检查者（协调+审查合一）agent 的命令（可带参数） |
 | `COHERD_DEV_CMD` | dev | 启动执行者 agent 的命令（可带参数） |
 
-三角色与 `-s` 互不影响：`-s` 只解析 lead/dev 两个 CMD，三角色模式的三个 CMD 在该模式下不使用（反之亦然）。
+三角色与 `-s` 互不影响：`-s` 只解析 led/dev 两个 CMD，三角色模式的三个 CMD 在该模式下不使用（反之亦然）。
 
 契约：
 
@@ -31,7 +31,7 @@ coherd 的配置面很小：各槽位的启动命令 + 布局。所有配置走 
 
 同一槽位的最终启动命令按以下优先级解析（高 → 低），与 `bin/coherd` 实现一致：
 
-1. **`--agent role=cmd[,...]`**（命令行）——per-run 一次性覆盖，如 `coherd -s --agent lead=codex,dev=opencode`；不写 conf、不改环境变量，只影响本次启动列出的角色。
+1. **`--agent role=cmd[,...]`**（命令行）——per-run 一次性覆盖，如 `coherd -s --agent led=codex,dev=opencode`；不写 conf、不改环境变量，只影响本次启动列出的角色。
 2. **`COHERD_*_CMD`** 环境变量 / `~/.config/coherd/coherd.conf`（见上两节）。
 3. **PATH 回退**，按回退表查找 `pi` / `omp`（见表）。
 4. 仍缺失 → die，并指向本文件。
@@ -45,10 +45,10 @@ coherd 的配置面很小：各槽位的启动命令 + 布局。所有配置走 
 | `COHERD_COORDINATOR_CMD` | `pi` | die，提示 docs/configuration.md |
 | `COHERD_EXECUTOR_CMD` | `omp` | 同上 |
 | `COHERD_REVIEWER_CMD` | `pi` | 同上 |
-| `COHERD_LEAD_CMD` | `COHERD_COORDINATOR_CMD`（若设）→ 否则 `pi` | 同上 |
+| `COHERD_LED_CMD` | `COHERD_COORDINATOR_CMD`（若设）→ 否则 `pi` | 同上 |
 | `COHERD_DEV_CMD` | `COHERD_EXECUTOR_CMD`（若设）→ 否则 `omp` | 同上 |
 
-`lead` / `dev` 多一级回退：未设 simple 专属 CMD 时复用你已配好的 coordinator / executor 命令，避免为简易模式重复配置（reviewer 命令在 `-s` 下不使用）。
+`led` / `dev` 多一级回退：未设 simple 专属 CMD 时复用你已配好的 coordinator / executor 命令，避免为简易模式重复配置（reviewer 命令在 `-s` 下不使用）。
 
 回退只是便利，不是 coherd 对特定 CLI 的依赖。回退表里的名字指“名为该名字的命令”，不指定具体实现；该命令的语言/行为由 CLI 自身决定；brief 与 coherd 自身输出固定为中文，CLI 实例的默认语言可能不同（不强制对齐）。
 
@@ -62,7 +62,7 @@ COHERD_COORDINATOR_CMD=~/bin/my-coordinator
 COHERD_EXECUTOR_CMD=~/bin/my-executor
 COHERD_REVIEWER_CMD=~/bin/my-reviewer
 # 双角色简易模式 (coherd -s) 可选; 不设则回退上面两个
-COHERD_LEAD_CMD=~/bin/my-lead
+COHERD_LED_CMD=~/bin/my-led
 COHERD_DEV_CMD=~/bin/my-dev
 ```
 
