@@ -90,7 +90,7 @@ cat <<'EOF'
      export COHERD_COORDINATOR_CMD=...   (或写 ~/.config/coherd/coherd.conf)
      export COHERD_EXECUTOR_CMD=...
      export COHERD_REVIEWER_CMD=...
-     都未设置时, coherd 回退找 PATH 中的 pi / omp / cc
+     都未设置时, coordinator/reviewer 回退找 PATH 中的 pi, executor 回退 omp
   3. 起飞: coherd [REPO] [LABEL]
 EOF
 
