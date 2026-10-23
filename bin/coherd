@@ -117,6 +117,22 @@ jqr()  { jq -r "$1" <<<"$2"; }
 command -v herdr >/dev/null || die "herdr CLI 不在 PATH — 见 docs/configuration.md"
 command -v jq    >/dev/null || die "需要 jq — 见 docs/configuration.md"
 
+# ── 0.1 herdr 版本可见性 (fail-open: 取不到版本号就静默跳过, 不报错不阻断) ──
+# 为什么打一行: brief 送达逻辑依赖 herdr 输入框行为 (见 §7 注释), 升级曾坏过一次 (w54)。
+# 兼容基线 0.9.x = 当前实测; 区间外只 WARN 不阻断 (用户可能已在更新版本上跑通)。
+# tests/smoke/bin/herdr 是 stub, 不认 --version (落到 *) 分支无输出) → 静默跳过, 不会把 smoke 打挂。
+_herdr_ver="$(herdr --version 2>/dev/null | head -1 || true)"
+_herdr_num="${_herdr_ver##* }"
+case "$_herdr_num" in
+  [0-9]*.[0-9]*.[0-9]*)
+    info "herdr $_herdr_num"
+    case "$_herdr_num" in
+      0.9.*) ;;
+      *) echo "coherd: WARN: herdr $_herdr_num 不在已知兼容区间 0.9.x — brief 送达依赖 prompt 输入框行为, 升级后先跑 tests/smoke/run_smoke.sh" >&2 ;;
+    esac ;;
+esac
+unset _herdr_ver _herdr_num
+
 # ── 0. 加载 coherd.conf (若存在); 已显式设置的 COHERD_* 环境变量优先于 conf ──
 if [ -f "$CONF" ]; then
   _pre="$(env | grep -E '^COHERD_[A-Z_]+=' || true)"
@@ -420,16 +436,31 @@ _role_doc() { # role 名 → per-role 契约文档路径 (安装目录)
 TASK_TS="$(date +%Y%m%d%H%M%S)"
 SESSION_DIR="$HOME/.config/coherd/sessions/${WS_SLUG}-${TASK_TS}-$$"
 mkdir -p "$SESSION_DIR"
-_brief() { # 身份+名字 + 双@指路 + session + 待机 + 回执唯一权威 (精简版, 只引不重述)
-  local _standby; case "$1" in
+_contract_fp() { # 公共契约文件 → "契约指纹: <sha256 前 8 位>"; 取不到则无输出 (调用方跳过该行)
+  local f="$1" h=""
+  [ -f "$f" ] || return 0
+  if command -v sha256sum >/dev/null 2>&1; then
+    h="$(sha256sum "$f" 2>/dev/null | cut -c1-8)"
+  elif command -v shasum >/dev/null 2>&1; then
+    h="$(shasum -a 256 "$f" 2>/dev/null | cut -c1-8)"
+  fi
+  [ -n "$h" ] && printf '契约指纹: %s' "$h"
+  return 0
+}
+_brief() { # 身份+名字 + 双@指路 + session + 契约指纹 + 待机 + 回执唯一权威 (精简版, 只引不重述)
+  local _standby _fp; case "$1" in
     executor|reviewer) _standby="读 CONTRACT 确认身份后发 \`coherd notify $COORD_NAME \"standby\"\` 再转 idle" ;;
     coordinator)       _standby="确认身份转 idle; exec/rev 的 standby 被动接收不回执" ;;
     # simple: 单 standby 握手 (spec D5) — dev 发一条给 lead, lead 被动接收不回执
     dev)               _standby="读 CONTRACT-simple 确认身份后发 \`coherd notify $LEAD_NAME \"standby\"\` 再转 idle" ;;
     lead)              _standby="确认身份转 idle; dev 的 standby 被动接收不回执" ;;
   esac
-  printf '你是 %s · agent 名 %s\n公共契约 @%s\n角色细节 @%s\nsession %s\n\n待机: %s\n回执: %s' \
-    "$1" "$2" "$CONTRACT" "$(_role_doc "$1")" "$SESSION_DIR" "$_standby" "$RECEIPT_REF"
+  # 契约指纹: 让人一眼看出 agent 读的那份 (~/.config/coherd/) 是否与 repo 漂移
+  _fp="$(_contract_fp "$CONTRACT")"
+  [ -n "$_fp" ] && _fp="
+$_fp"
+  printf '你是 %s · agent 名 %s\n公共契约 @%s\n角色细节 @%s\nsession %s%s\n\n待机: %s\n回执: %s' \
+    "$1" "$2" "$CONTRACT" "$(_role_doc "$1")" "$SESSION_DIR" "$_fp" "$_standby" "$RECEIPT_REF"
 }
 # 送达确认: 用 state_change_seq 有界重投递。先取三角色基线 seq (agent get 失败→空串),
 # 第1轮 sleep BRIEF_GRACE 后统一 send-keys enter 提交框内文本, 第2轮重读 seq 验消费(涨=已消费);
