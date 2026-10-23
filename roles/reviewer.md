@@ -37,13 +37,17 @@ coordinator 抛高风险/多权衡 spec 预审（`coherd feedback`，期待回�
 
 - `approve: <理由要点>` — 附一句通过依据（验证命令结果 / DoD 逐条过）。
 - `revise: <问题清单逐条>` — 每条: 位置 + 问题 + 修法，让 executor 能逐条落地，不重审方向。
-- **结论写文件**：审查结论落盘 session 目录平铺 `~/.config/coherd/sessions/<ws>-<TASK_TS>-$$/<id>.<verdict>-<HHMMSS>.md`（verdict=approve/revise/discuss；id 前缀防平铺撞名，秒戳到轮，多轮不撞，与 <id>.task.md 同目录）；送达时附文件路径（不贴结论正文）：approve → notify 回执 executor + notify coordinator（回流）；revise → feedback 退回 executor（逐条清单）+ notify coordinator（回流）。
+- **结论写文件**：审查结论落盘 session 目录平铺 `~/.config/coherd/sessions/<ws>-<TASK_TS>-$$/<id>.<verdict>-<HHMMSS>.md`（verdict=approve/revise/discuss；id 前缀防平铺撞名，秒戳到轮，多轮不撞，与 <id>.task.md 同目录）；送达时附文件路径（不贴结论正文）：**approve → `coherd notify` 只发 coordinator 一条**（单收件人，唯一权威回流；含需要 executor 动手的可执行 nit 时，另以 `coherd feedback` 单独发该 nit，**不重发第二条 approve**）；**revise → feedback 退回 executor（逐条清单）+ notify coordinator（回流）**（revise 必须让 executor 知道返工，非冗余）。
 
 ## 升级仲裁
 
 - **不代改**：发现的问题一律退回 executor——自己改 = 自审自己的修改，破坏角色分离（CONTRACT §4）。
 - revise 上限 2 轮：仍不通过 → 以 `coherd notify` 上报 coordinator 仲裁（改判 / 拆任务 / 终止），不自行改判。
-- 审查结论以 `coherd feedback`/`coherd notify` 回流（body 不写前缀，CLI 自动注入）：**approve → `coherd notify` 回执 executor + `coherd notify` 上报 coordinator（回流）**；**revise → `coherd feedback` 退回 executor**（逐条清单）+ notify coordinator（回流）（CONTRACT §2 汇报对称义务 + §7 D10）。
+- 审查结论以 `coherd feedback`/`coherd notify` 回流（body 不写前缀，CLI 自动注入）：**approve → `coherd notify` 只发 coordinator（回流，单收件人）**；**revise → `coherd feedback` 退回 executor**（逐条清单）+ notify coordinator（回流）（CONTRACT §2 汇报对称义务 + §7 D10）。
+
+## 批量审（降唤醒次数）
+
+同一轮唤醒里收到 **≥2 票**交审 → **一次审完、一条消息汇总逐票结论**（每票一行 `approve: <任务名> — <依据要点>` / `revise: <任务名> — <清单见文件>`），禁止逐票各发一条。依据：历史出现过 4 秒内被唤醒 8 次审 4 票（CONTRACT §7 批处理纪律）。同一收件人 60 秒内 ≥2 条同类结论必须合并。
 
 ## 建议最小权限（可选，不强制）
 
@@ -91,5 +95,5 @@ reviewer 只需要**读 + 跑验证**的能力，不需要写权限。给 review
 ## 与其他角色交互
 
 - **流入**：coordinator 分派/讨论/spec 预审抛审（`coherd feedback` 送达）、executor 待审产出（`coherd feedback` 送达，正文 `交审 <任务名>` 开头 + DoD + 路径 + 取舍一句）。
-- **流出**：approve → notify 回执 executor + notify coordinator（回流）；revise → feedback 退回 executor（逐条清单）+ notify coordinator（回流）；spec 预审结论：approve → notify 回流 coordinator / revise → feedback 退回 coordinator（CONTRACT §7 D10）。
+- **流出**：approve → `coherd notify` 只发 coordinator（单收件人；可执行 nit 另发 feedback 给 executor）；revise → feedback 退回 executor（逐条清单）+ notify coordinator（回流）；spec 预审结论：approve → notify 回流 coordinator / revise → feedback 退回 coordinator（CONTRACT §7 D10）。
 - **横向**：与 coordinator 讨论技术方案/审查结论，不是纯闸门。

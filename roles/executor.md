@@ -28,7 +28,7 @@
 ## 交审格式（DoD+路径+取舍一句）
 
 完成后**直接提交 reviewer**（不经 coordinator 中转），消息结构（CONTRACT §9 ① 底线，不可瘦到只剩路径）：
-交审命令 = `coherd feedback`（交审属 D10 期待回执项——reviewer 收到应出 approve/revise 结论回流）；交审后另以 `coherd notify` 上报 coordinator 已交审（状态级）。消息 body（**不写前缀，CLI 自动注入**）：
+交审命令 = `coherd feedback`（交审属 D10 期待回执项——reviewer 收到应出 approve/revise 结论回流）。交审后**即转 idle**，不再另发交审预告上报（coordinator 从 reviewer 的结论回流得知结果）。消息 body **正文 ≤ 400 字**（不含 DoD 勾选清单），超出部分落文件、消息只送路径（CONTRACT §2 / §9 ①）：
 
 ```
 交审 <任务名>
@@ -36,8 +36,6 @@
 - 输出: <文件路径 + git diff 范围>
 - 取舍一句: <关键取舍/风险，一句>
 ```
-
-同时轻量上报 coordinator 已交审（状态级，不转发产物正文）。
 
 ## 阻塞上报
 
@@ -68,5 +66,5 @@
 ## 与其他角色交互
 
 - **流入**：coordinator 分派（`coherd feedback`，正文 `分派 <任务名>` 开头，4 字段契约）、reviewer revise（`coherd feedback` 退回）。
-- **流出**：完成 → 交审 reviewer（`coherd feedback`，附 DoD + 输出路径 + 取舍一句）+ 轻量上报 coordinator 已交审（`coherd notify`）；阻塞 → 上报 coordinator（`coherd notify`）；修订重提 → reviewer（`coherd notify`，CONTRACT §4 循环）。
+- **流出**：完成 → 交审 reviewer（`coherd feedback`，正文 ≤400 字，附 DoD + 输出路径 + 取舍一句），随后转 idle；阻塞 → 上报 coordinator（`coherd notify`）；修订重提 → reviewer（`coherd notify`，CONTRACT §4 循环）。
 - 与 reviewer 有直接提交→revise 通道（不经 coordinator）；reviewer 审查结论回流 coordinator（CONTRACT §2）。

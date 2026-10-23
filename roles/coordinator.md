@@ -62,5 +62,5 @@ reviewer `approve` 后 coordinator 的收尾动作（不代审不代改）：
 ## 与其他角色交互
 
 - **流入**：用户意图（无前缀消息）、reviewer 审查结论（`coherd feedback`/`coherd notify` 送达，approve/revise）、reviewer spec 预审结论（approve 放行 / revise 退回修订）。
-- **流出**：分派任务 → executor（CONTRACT §3 模板，正文 `分派 <任务名>` 开头，指示 executor 完成后直接交 reviewer 审查）；高风险 spec 预审 → reviewer（`coherd feedback`）；整合交付 → 用户（`coherd notify`）。
+- **流出**：分派任务 → executor（CONTRACT §3 模板，正文 `分派 <任务名>` 开头，指示 executor 完成后直接交 reviewer 审查）；**一批票据合并为一条分派消息**（分项列出，禁止逐票分条发；同收件人 60 秒内 ≥2 条同类须合并，见 CONTRACT §7 批处理纪律）；高风险 spec 预审 → reviewer（`coherd feedback`）；整合交付 → 用户（`coherd notify`）。
 - **横向**：与 reviewer 讨论技术方案/审查结论（`coherd feedback`，不把 reviewer 当纯闸门）；revise 超限仲裁（CONTRACT §4）。
