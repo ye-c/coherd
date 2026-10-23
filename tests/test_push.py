@@ -292,7 +292,7 @@ class PeerValidationTest(EnvMixin, unittest.TestCase):
             self.assertTrue(r["accepted"], peer)
 
     def test_empty_list_fails_open(self):
-        r, _ = self._run("w2p-reviewer", peer_list_fn=lambda: [])
+        r, _ = self._run("w2p-reviewer", peer_list_fn=list)
         self.assertTrue(r["accepted"])
 
     def test_none_list_fails_open(self):
@@ -313,11 +313,11 @@ class PeerValidationTest(EnvMixin, unittest.TestCase):
 
     def test_default_impl_rejects_misspelled_full_name(self):
         os.environ["HERDR_SOCKET_PATH"] = "/tmp/fake.sock"
-        with mock.patch.object(
-            P, "agent_list", return_value=[{"name": "w2p-reviewer"}]
+        with (
+            mock.patch.object(P, "agent_list", return_value=[{"name": "w2p-reviewer"}]),
+            self.assertRaises(ValueError),
         ):
-            with self.assertRaises(ValueError):
-                self._run("w2p-reviewerr")
+            self._run("w2p-reviewerr")
 
 
 class ConcurrencyTest(unittest.TestCase):

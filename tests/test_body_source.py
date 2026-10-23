@@ -165,7 +165,12 @@ class RealShellPipeTest(BodySourceTest):
             "--ws w2p --role executor -"
         )
         proc = subprocess.run(
-            ["bash", "-c", script], env=env, capture_output=True, text=True, timeout=60
+            ["bash", "-c", script],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,  # 退出码由下方断言检查，不让 run 直接抛
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         ev = self._events()

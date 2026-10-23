@@ -58,7 +58,7 @@ def _read_body(msg: str | None, body_file: str | None) -> str:
                 return ""  # 不可达（_fatal 已 Exit），供类型收窄
     else:
         raw = sys.stdin.read() if msg == "-" else msg
-    body = raw[:-1] if raw.endswith("\n") else raw
+    body = raw.removesuffix("\n")
     if not body.strip():
         _fatal("body 为空（仅空白）：stdin / 文件需含实际正文")
     return body
