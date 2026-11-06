@@ -460,5 +460,66 @@ class PrefixGuardTest(EnvMixin, unittest.TestCase):
         self.assertTrue(r["accepted"])
 
 
+class SimplePeerDefaultTest(EnvMixin, unittest.TestCase):
+    """simple 模式默认对端：省略 peer 时按自身 role 反推唯一对端（led↔dev）。
+
+    三角色模式对端多义（coordinator 对 exec/reviewer/libero），不得猜——必须报错。
+    """
+
+    def _run(self, role: str, peer_agent: str | None):
+        path, cleanup = _tmp_log()
+        self.addCleanup(cleanup)
+        r = P.run(
+            peer_agent,
+            "m",
+            ws="w2p",
+            role=role,
+            log_path=path,
+            sender=_delivered,
+            peer_list_fn=lambda: None,  # fail-open：不碰真实 herdr agent list
+        )
+        return r, path
+
+    def test_led_defaults_to_dev(self):
+        r, path = self._run("led", None)
+        self.assertEqual(r["peer_agent"], "w2p-dev")
+        self.assertEqual(r["to"], "dev")
+        self.assertEqual(len(path.read_text(encoding="utf-8").splitlines()), 1)
+
+    def test_dev_defaults_to_led(self):
+        r, _ = self._run("dev", None)
+        self.assertEqual(r["peer_agent"], "w2p-led")
+        self.assertEqual(r["to"], "led")
+
+    def test_empty_peer_also_defaults(self):
+        r, _ = self._run("led", "")
+        self.assertEqual(r["peer_agent"], "w2p-dev")
+
+    def test_explicit_peer_wins_over_default(self):
+        r, _ = self._run("led", "w2p-reviewer")
+        self.assertEqual(r["to"], "reviewer")
+
+    def test_three_role_without_peer_raises(self):
+        for role in ("coordinator", "executor", "reviewer", "libero"):
+            with self.assertRaises(ValueError) as ctx:
+                self._run(role, None)
+            self.assertIn("缺 peer", str(ctx.exception))
+
+    def test_three_role_error_writes_no_log(self):
+        path, cleanup = _tmp_log()
+        self.addCleanup(cleanup)
+        with self.assertRaises(ValueError):
+            P.run(
+                None,
+                "m",
+                ws="w2p",
+                role="coordinator",
+                log_path=path,
+                sender=_delivered,
+                peer_list_fn=lambda: None,
+            )
+        self.assertFalse(path.exists())
+
+
 if __name__ == "__main__":
     unittest.main()

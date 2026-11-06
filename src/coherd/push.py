@@ -38,6 +38,12 @@ Sender = Callable[[str, str], bool]
 PeerListFn = Callable[[], list[str] | None]
 
 
+# simple 模式（led/dev 双角色）唯一对端映射：省略 peer 时按自身 role 反推，
+# 免去每次手敲 `${ws}-dev`。三角色模式对端多义（coordinator 对 exec/reviewer/libero），
+# 绝不猜——仍须显式传 peer 全名。
+SIMPLE_PEER = {"led": "dev", "dev": "led"}
+
+
 def ws_from_env() -> str | None:
     """从 env 派生 ws 短号（HERDR_WORKSPACE_ID 小写），无则 None。"""
     raw = os.environ.get("HERDR_WORKSPACE_ID")
@@ -144,7 +150,7 @@ def send_prompt(peer_agent: str, msg: str) -> bool:
 
 
 def run(
-    peer_agent: str,
+    peer_agent: str | None,
     msg: str,
     *,
     ws: str | None = None,
@@ -158,13 +164,14 @@ def run(
     """push 主流程：① 派生（env → 显参 → 报错）② 校验 peer ③ 注入标记 ④ 精简审计 ⑤ 送达。
 
     - 标记：`[<role>|<type>]: <body>`（type=feedback/notify，CLI 注入，agent 只写 body）。
+    - peer 补全：peer 省略时按 SIMPLE_PEER（led↔dev）反推；非 simple role 无唯一对端 → 报错不猜。
     - peer 校验：名单 None 或 peer 非 `${ws}-` 前缀 → 放行；`${ws}-` 前缀全名不在名单 → 拒发且不写日志。
     - 日志先行：append 成功即审计完成，后续送达失败不丢行。
     - 返回含 from/to/type/msg_id/ts/accepted/line，供调用方回显与测试断言。
      `accepted` = 送达器返回值，含义"文本已投递入对端输入框，未证被消费"（入框 ≠ 消费）。
     """
-    if not peer_agent or not msg:
-        raise ValueError("peer 与消息均不可为空")
+    if not msg:
+        raise ValueError("消息不可为空")
 
     # 前缀拒绝（机制防线）：marker 是 CLI 私有注入物，agent 只写 body。正文以
     # `[<role>|feedback]: ` / `[<role>|notify]: ` / `[<role>]: ` 开头 → 视为 agent
@@ -196,6 +203,16 @@ def run(
         raise ValueError(
             "无法派生 role：未提供 --role，且 COHERD_ROLE / HERDR_AGENT_NAME / agent.list 均缺"
         )
+
+    # ①b peer 补全：simple 模式唯一对端按 role 反推；其余 role 无唯一对端，报错不猜
+    if not peer_agent:
+        other = SIMPLE_PEER.get(resolved_role)
+        if not other:
+            raise ValueError(
+                f"缺 peer：role={resolved_role!r} 无唯一对端（仅 simple 模式 led/dev 可省略），"
+                "请显式传对端 agent 全名（形如 w2p-reviewer）"
+            )
+        peer_agent = f"{resolved_ws}-{other}"
 
     peer_role = derive_role(peer_agent, resolved_ws)
 
