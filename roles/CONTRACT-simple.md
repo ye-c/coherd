@@ -49,7 +49,11 @@
 
 read 用 `herdr agent read <name>`，仅用于核对状态/查证据，不作轮询等待（`CONTRACT.md` §2）。
 
+**通道作用域**：对端为集群内 peer（`${ws}-dev` / `${ws}-led`）时协作交互只用上表命令；对端为集群外 session 时用 `intercom`。通道选择、消息来源判定（`[<role>|<type>]:` / `**From <sender>**` / 两者皆无）、`intercom` 的内容/信号分离均沿用 `CONTRACT.md` §2，本文件不复述。
+
 **批处理纪律**（同 `CONTRACT.md` §7）：一批票据 = 一条分派消息；同一收件人 60 秒内需要发 ≥2 条同类消息 → 合并为一条。每条消息 = 对端一次完整 agent turn，合并即省一次唤醒。
+
+**省略对端与 ws**：`coherd feedback` / `notify` 的 peer 位在 simple 模式下可留空——CLI 按自身 role 反推唯一对端（led↔dev）；role 不在 led/dev 时 CLI 报 `缺 peer` 并不发送。省略 peer 时正文只能走 `-`（stdin）或 `--body-file`（不可再占 peer 位）。`--ws` 同理缺省取 `HERDR_WORKSPACE_ID` 小写（`coherd feedback` / `notify` / `task new` 一致），env 也未设时报错。
 
 ## 3. 分派契约模板（4 字段）
 
@@ -115,6 +119,8 @@ led → dev 每条任务**必须**含以下 4 字段，缺失即任务未定义�
 
 白名单为 `CONTRACT.md` §5 coordinator 行 + reviewer 行的并集；任务级边界（§3）与白名单冲突取交集。**能力分离默认不强制**：零配置路径不注入、不校验权限设置，边界靠契约与流程保障。simple 模式有写权限的槽位建议在受控仓库/沙箱运行。
 
+**git 锁争用**：led 行为与 `CONTRACT.md` §5 coordinator/reviewer 行同（只读 git 命令带 `GIT_OPTIONAL_LOCKS=0`、不执行 git 写操作与删锁）；dev 行为与 executor 行同（独占 git 写操作与 `index.lock` 治理）。孤儿锁判据与四条处置顺序见 `CONTRACT.md` §5「git 锁争用」。
+
 ## 6. 启动握手
 
 - **单 standby（D5）**：dev 启动后读本文件确认身份，以 `coherd notify <led> "standby"` 上报一次，随即**转 idle 待机**。
@@ -125,7 +131,7 @@ led → dev 每条任务**必须**含以下 4 字段，缺失即任务未定义�
 
 simple 模式以"少一个 agent、少一轮通信"换取简易，代价**必须显式**：
 
-- **R1 无独立第二意见**：无独立 reviewer —— spec/plan 预审、产出审查均由 led 自审。**不存在第三方复核**。用户选 simple 即接受此项；需要独立第二意见时切回三角色模式。
+- **R1 无独立第二意见**：无独立 reviewer —— spec/plan 预审、产出审查均由 led 自审。**不存在第三方复核**。用户选 simple 即接受此项；需要独立第二意见时切回三角色模式。（人类临时开的外部 session 不改变本条，见 §10。）
 - **R2 分派与审查同源**：led 既定 DoD 又判 DoD → 自证风险。缓解：DoD 必须可测（§3 硬要求不变）；dev 交审须附 DoD 自检，led 逐条核验（非凭感觉）。**软缓解，非硬隔离**。
 - **R3 单点**：led pane 挂 = 集群挂（与三角色模式 coordinator 挂同理，非新增风险）。
 - **R4 用户误用**：用户可能把 led 当"全能 agent"直接让其写码。**led 不写码**（§5，沿 `CONTRACT.md` §5 coordinator 行）。
@@ -142,3 +148,13 @@ simple 模式以"少一个 agent、少一轮通信"换取简易，代价**必须
 ## 9. 事实源与同步
 
 本文件与 `roles/led.md`、`roles/dev.md` 的**唯一事实源是 repo `roles/`**；repo → `~/.config/coherd/` 单向覆盖分发，禁止只改 `~/.config` 副本（`CONTRACT.md` §10）。镜像一致校验需含本模式 3 个文档 + `templates/` 目录逐文件。
+
+## 10. 外部讨论方（人类临时开的外部 session）
+
+- **定义**：人类在集群外另开的 session，与集群无角色关系：无 `[<role>|<type>]:` 标记、无 tracker、不在 §1 槽位表内。人类决定它是否存在、与谁对话。
+- **通道**：`intercom`（`CONTRACT.md` §2 通道作用域表第二行）。
+- **结论性质**：外部结论是**输入证据**，不构成 §4 的 `approve` / `revise` 判定，也不补齐 §7 R1 的独立第二意见缺口——不因开了外部 session 而获得「独立第二意见」；simple 模式仍按 R1 / R2 承担自证与单点风险。
+- **意图重定向（写权不转移）**：人类关于写代码的直接指令恒定性为**分派意图**——led 接收后落盘 tracker 并分派 dev 执行，不自行代写；写/审分离（I1）为硬性不变量，口头授权未免除自写自审禁令。工件落盘归属不变：代码 → dev；spec / plan / tracker / 契约文本 → led。
+- **对端感知**：引入外部讨论方时，led 以**一条** `coherd notify` 告知 dev：谁、讨论什么工件、是否触及 dev 当前任务边界。外部结论影响后续动作时走既有通道（新 `feedback` 分派或 `revise:` 退回），不直接改 dev 产出。
+- **版本冻结（机检判据）**：某工件「在审中」= 在 `~/.config/coherd/sessions/**/*.task.md` 中搜该工件路径，命中文件的 frontmatter `status` 为 `pending` 或 `active`。在审期间该工件只读：led 若需修订，先 `coherd notify` 作废/挂起该 review 任务，落盘新版本后重新下派，禁止就地并发篡改；改动后以一条 `notify` 报 delta（文件 + 行号 + 一句原因）。
+- **冲突处置**：外部结论与集群内审结论相反时，不自行取舍，一条消息报人类裁决。

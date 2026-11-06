@@ -45,10 +45,23 @@
 - 防重复成环: 疑似未达先 herdr agent read 查证据; 有证据即停, 无证据可重发 1 次; 仍无果上报 coordinator 仲裁。
 - 用户可能用自定义昵称称呼各 agent; 遇未定义别名按上下文推断或询问, 不假设亦不硬编码映射。
 - 每个集群的 herdr agent 名是 `${WS_SLUG}-<role>`（workspace 短号小写，如 `w1p-coordinator`），非裸单词；各角色从自身 agent 名前缀（`${WS_SLUG}-`）派生 peer 名互寻址，用完整名。
-- 消息标记 `[<role>|<type>]:` 由 CLI 注入（命令名即标记名）；agent 只写 body，不手写前缀（见上文 body 格式）。无标记消息 = 用户直接输入；检测到正文自造前缀 → CLI 拒发。
+- 消息标记 `[<role>|<type>]:` 由 CLI 注入（命令名即标记名）；agent 只写 body，不手写前缀（见上文 body 格式）。无标记消息的来源判定见本节「消息来源判定」条；检测到正文自造前缀 → CLI 拒发。
 - 每个 pane 自动注入 `HERDR_WORKSPACE_ID` / `HERDR_TAB_ID` / `HERDR_PANE_ID`。
 - 汇报对称义务：executor 完成后以 `coherd feedback` 直接提交 reviewer 审查（附 DoD + 输出路径，不转发产物正文），交审后即转 idle，**不再另发交审预告上报**（coordinator 从 reviewer 的结论回流得知结果，第二份预告无新信息）；阻塞以 `coherd notify` 上报 coordinator（原因 + 已尝试手段）；reviewer 审查结论（**approve = `coherd notify` 只发 coordinator（单收件人，唯一权威回流）；revise = `coherd feedback` 退回 executor 修订 + `coherd notify` 回流 coordinator**）；approve 若附带**需要 executor 动手的可执行 nit**，把该 nit 用 `coherd feedback` 单独发 executor，**不重发第二条 approve**；executor 收到 approve 后**不回 ack**（下一步是等下一票分派，ack 无新信息）；spec/plan 预审回流同实现审查（**approve = `coherd notify` 回流 coordinator 放行；revise = `coherd feedback` 退回 coordinator 修订**，spec 变更归 coordinator，见 §4）；coordinator 整合交付以 `coherd notify` 上报用户。
 - **token 控制**：① 通信精简——结论结构化 `approve: <要点>` / `revise: <问题清单逐条>`，要点式不叙述；executor 交审消息**正文 ≤ 400 字**（不含 DoD 逐条勾选清单——每条一行 `✓/✗` 不展开），必含 `交审 <任务名>` + DoD 逐条 ✓/✗ + 产物绝对路径 + `git diff` 范围 + 关键取舍**一句**；超出 400 字的内容**必须落文件**，消息只送路径指针。**合并 N 票时按票计：每票 ≤400 字，合并消息总上限 = 400 × N**（DoD 勾选清单同样不计入）；reviewer 批量审汇总消息同理：每票一行，按票计。② 输入端控制——消息引用路径不贴大文件正文，交审附 git diff 范围 reviewer 只读变更行，长任务串轮换 session。③ revise 循环最贵：一次返工 > 一切通信压缩，投资分派质量优先。
+
+**通道作用域**：通道按对端身份确定。
+
+| 对端 | 通道 | 该通道的既成事实 |
+| ------ | ------ | ------ |
+| 集群内 peer（agent 全名形如 `${WS_SLUG}-<role>`） | `coherd feedback` / `coherd notify` | 注入 `[<role>|<type>]:` 标记；写 session `events.log` 一行审计；送达调 `herdr agent prompt <name>`，故对端必须是 herdr 托管 agent（名字不存在时该命令退出码 1、消息不进对端） |
+| 集群外 pi/omp session（即装载 `pi-intercom` 扩展的 session） | `intercom`（`ask` 的适用条件见全局 `AGENTS.md`） | pi 扩展 + 本机 broker；未装载该扩展的 session 收发均不可达；不注入 coherd 标记、不写 `events.log`；收到的消息带 `**From <sender>**` 头 |
+| 集群外非 pi/omp agent | `herdr agent prompt <name> "<msg>"`，或 `coherd feedback/notify <裸名>`（裸名不做 `${ws}-` 前缀校验，放行） | 后者同样注入标记并记审计；对端不认标记时，标记退化为正文前缀 |
+
+- **消息来源判定**（只取前缀/头，不取正文）：带 `[<role>|<type>]:` = 集群内 peer 任务消息；带 `**From <sender>**` 头 = 集群外 session 经 intercom 发来（来源是该 session，不是本地终端用户）；两者皆无 = 本地终端用户直接输入。
+- **跨通道发送的后果**：集群内 peer 消息走 intercom → 正文无标记，回执义务判定失效且 `events.log` 无该条记录；集群外 session 消息走 `coherd feedback` → 带标记但无 agent 按标记回执，审计行存在而回执不会出现。
+- **与外部规则的边界**：本契约的通道规定只覆盖集群内 peer。集群外对端的通道不在本契约范围内，由该 session 所在环境的规则决定（如全局 `AGENTS.md`）。集群内 peer 之间所有协作交互走 `coherd feedback` / `coherd notify`（无标记 = 回执义务丢失、审计断链）。
+- `intercom` 通道同样适用「内容/信号分离」：大段论证与草案正文落文件，消息只送路径与结论；不设 400 字上限（该上限属本节 token 控制条，只覆盖集群内交审消息）。
 
 ## 3. 分派契约模板（A）
 
@@ -132,11 +145,24 @@ reviewer **最小审查集**（每次审查必做，顺序固定 = 五查）：
 
 | 槽位 | 允许 | 禁止 |
 | ------ | ------ | ------ |
-| coordinator | 只读/检索类工具（拆解、分派、讨论、整合所需） | 直接编辑代码/写文件（除非明确授权） |
-| executor | 完整代码编辑与运行工具 | 越出任务工具边界的写操作；改动配置/秘密文件 |
-| reviewer | 只读审查 + 跑验证 | 直接修改被审产出（须退回 executor）；越过自己工具边界的操作 |
+| coordinator | 只读/检索类工具（拆解、分派、讨论、整合所需）；只读 git 命令（带 `GIT_OPTIONAL_LOCKS=0`） | 直接编辑代码/写文件（除非明确授权）；git 写操作（`add`/`commit`/`stash`/`checkout`/`reset`）与删除锁文件 |
+| executor | 完整代码编辑与运行工具；独占 git 写操作与 `index.lock` 治理 | 越出任务工具边界的写操作；改动配置/秘密文件 |
+| reviewer | 只读审查 + 跑验证；只读 git 命令（带 `GIT_OPTIONAL_LOCKS=0`） | 直接修改被审产出（须退回 executor）；越过自己工具边界的操作；git 写操作与删除锁文件 |
 
 executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限收紧由用户 CLI 配置负责（同 reviewer 见 roles/reviewer.md）。
+
+### git 锁争用（`index.lock`）
+
+- 写操作（`add` / `commit` / `stash` / `checkout` / `reset`）取 `$GIT_DIR/index.lock`；取不到即报 `fatal: Unable to create '<gitdir>/index.lock': File exists.` 并中止。
+- 冲突方向是从只读方到写方：`git status` 在刷新 index 时也取该锁。git 2.50.1 两次独立复现各 120 轮：`git status` 与 `git commit` 并发时，commit 因 `index.lock` 失败 64 轮与 69 轮；同条件改跑 `GIT_OPTIONAL_LOCKS=0 git status` → 两次均 0 轮失败。
+- 反向不成立：`index.lock` 已被占用时，只读命令（`git status` / `git diff` / `git log`）静默跳过 index 刷新，退出码 0，不报错。
+- `GIT_OPTIONAL_LOCKS=0`（git ≥ 2.15）使只读命令不执行需要加锁的可选子操作。变量必须覆盖子进程（`export` 或置于调用前缀）——单条命令前的临时赋值不影响脚本内部的 git 调用。git 文档对该变量的用途原文即「后台进程避免与其他操作产生锁争用」。
+- 锁文件两种状态，处置不同：
+  1. **有存活持锁方**（另有 git 进程在跑，或对端 agent 的写任务未完成）：等其完成（删除锁文件不终止持锁进程，冲突不因此结束）。
+  2. **孤儿锁**（进程被 kill / 崩溃遗留，无 git 进程持有）：写操作持续失败，直到删除该文件。
+- 孤儿锁判据（单一条件，不以任务状态作条件）：`pgrep -x git` 退出码为 1（全机无存活 git 进程 → 无存活持锁方；`ps | grep git` 会匹配到 grep 自身，不可用）。删除动作本身仍受上表白名单约束：只有 executor / dev 有 git 写权限。
+- 共享工作区（多 agent 同仓）不以 `git stash` / `checkout` 做版本对比：两者改写工作区文件，此间对端读到的是另一个版本。基线对比用独立副本：`git worktree add /tmp/<name> HEAD` → 在副本跑 → `git worktree remove /tmp/<name>`。
+- 处置顺序：① 按「孤儿锁判据」判定 → ② 非孤儿：等持锁方完成，不删除 → ③ 孤儿：由写方（executor / dev）在任务工具边界（§3 边界字段）覆盖该仓库时删除 → ④ 边界未覆盖（冷启动 / 无活跃任务）：写方不删除，由主编排槽位（coordinator / led）以 `coherd notify` 上报用户，或下发一条边界含 `.git/index.lock` 的单次解锁任务。
 
 ## CLI 集成（数据契约 + 滑坡护栏）
 
