@@ -107,6 +107,81 @@ class StdinTest(BodySourceTest):
         self.assertEqual(self._events(), [])
 
 
+class SimplePeerDefaultCliTest(BodySourceTest):
+    """simple 模式（led↔dev）省略 peer：`-` / --body-file 传正文，对端自动补全。"""
+
+    def test_stdin_dash_without_peer_defaults_to_dev(self):
+        res = self._invoke(["feedback", "-", "--ws", "w2p", "--role", "led"], input_="分派 x\n")
+        self.assertEqual(res.exit_code, 0, res.output)
+        ev = self._events()
+        self.assertEqual(len(ev), 1)
+        self.assertEqual(ev[0]["to"], "dev")
+        self.assertEqual(ev[0]["body"], "分派 x")
+
+    def test_body_file_without_peer_defaults_to_led(self):
+        f = self.tmp / "m.md"
+        f.write_text("开工 ack", encoding="utf-8")
+        res = self._invoke(
+            ["notify", "--body-file", str(f), "--ws", "w2p", "--role", "dev"]
+        )
+        self.assertEqual(res.exit_code, 0, res.output)
+        ev = self._events()
+        self.assertEqual(len(ev), 1)
+        self.assertEqual(ev[0]["to"], "led")
+        self.assertEqual(ev[0]["type"], "notify")
+
+    def test_positional_body_without_peer_is_rejected_loudly(self):
+        """省略 peer 时身体占了 peer 位 → 明确报缺 body，不静默发错人。"""
+        res = self._invoke(["feedback", "分派 x", "--ws", "w2p", "--role", "led"])
+        self.assertEqual(res.exit_code, 1)
+        self.assertIn("缺 body", self._output(res))
+        self.assertEqual(self._events(), [])
+
+    def test_three_role_without_peer_rejected(self):
+        res = self._invoke(
+            ["feedback", "-", "--ws", "w2p", "--role", "coordinator"], input_="m\n"
+        )
+        self.assertEqual(res.exit_code, 1)
+        self.assertIn("缺 peer", self._output(res))
+        self.assertEqual(self._events(), [])
+
+    def test_dash_with_positional_body(self):
+        res = self._invoke(["feedback", "-", "分派 x", "--ws", "w2p", "--role", "led"])
+        self.assertEqual(res.exit_code, 0, res.output)
+        ev = self._events()
+        self.assertEqual(len(ev), 1)
+        self.assertEqual(ev[0]["to"], "dev")
+        self.assertEqual(ev[0]["body"], "分派 x")
+
+    def test_dash_with_body_file_routes_to_default_peer(self):
+        f = self.tmp / "body.md"
+        f.write_text("分派 from file", encoding="utf-8")
+        res = self._invoke(
+            ["feedback", "-", "--body-file", str(f), "--ws", "w2p", "--role", "led"]
+        )
+        self.assertEqual(res.exit_code, 0, res.output)
+        ev = self._events()
+        self.assertEqual(len(ev), 1)
+        self.assertEqual(ev[0]["to"], "dev")
+        self.assertEqual(ev[0]["body"], "分派 from file")
+
+    def test_dash_stdin_notify_without_peer(self):
+        res = self._invoke(["notify", "-", "--ws", "w2p", "--role", "dev"], input_="ack\n")
+        self.assertEqual(res.exit_code, 0, res.output)
+        ev = self._events()
+        self.assertEqual(len(ev), 1)
+        self.assertEqual(ev[0]["to"], "led")
+        self.assertEqual(ev[0]["body"], "ack")
+
+    def _output(self, res) -> str:
+        out = res.stdout or ""
+        try:
+            out += res.stderr or ""
+        except (AttributeError, ValueError):
+            pass
+        return out
+
+
 class BodyFileTest(BodySourceTest):
     def test_body_file_multiline_trailing_newline_stripped(self):
         f = self.tmp / "body.md"

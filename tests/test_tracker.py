@@ -230,6 +230,60 @@ class ConfigHomeParseTest(unittest.TestCase):
         self.assertEqual(got, Path("~/.config/coherd").expanduser())
 
 
+class TaskNewWsDefaultTest(SessionsDirMixin, unittest.TestCase):
+    """`coherd task new` 的 --ws 缺省取 HERDR_WORKSPACE_ID 小写（与 feedback/notify 一致）。"""
+
+    KEYS = ("HERDR_WORKSPACE_ID",)
+
+    def setUp(self):
+        super().setUp()
+        self._saved = {k: os.environ.get(k) for k in self.KEYS}
+        self.addCleanup(self._restore_env_keys)
+
+    def _restore_env_keys(self):
+        for k, v in self._saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def _new(self, args: list[str]):
+        from typer.testing import CliRunner
+
+        from coherd import cli
+
+        try:
+            runner = CliRunner(mix_stderr=False)
+        except TypeError:
+            runner = CliRunner()
+        return runner.invoke(cli.app, ["task", "new", *args])
+
+    def _base(self) -> list[str]:
+        return [
+            "--task-name", "t", "-o", "o", "-d", "d", "--output", "out.md",
+        ]
+
+    def test_ws_from_env_lowercased(self):
+        os.environ["HERDR_WORKSPACE_ID"] = "W37B"
+        res = self._new(self._base())
+        self.assertEqual(res.exit_code, 0, res.output)
+        created = sorted(self.sessions.glob("*/w37b-*.task.md"))
+        self.assertEqual(len(created), 1)
+        self.assertIn("ws: w37b", created[0].read_text(encoding="utf-8"))
+
+    def test_explicit_ws_wins_over_env(self):
+        os.environ["HERDR_WORKSPACE_ID"] = "W37B"
+        res = self._new([*self._base(), "--ws", "w2c"])
+        self.assertEqual(res.exit_code, 0, res.output)
+        self.assertEqual(len(sorted(self.sessions.glob("*/w2c-*.task.md"))), 1)
+
+    def test_no_ws_no_env_fails(self):
+        os.environ.pop("HERDR_WORKSPACE_ID", None)
+        res = self._new(self._base())
+        self.assertNotEqual(res.exit_code, 0)
+        self.assertEqual(list(self.sessions.glob("*/**/*.task.md")), [])
+
+
 class SessionDirTest(SessionsDirMixin, unittest.TestCase):
     """glob_session_dir: 目录名匹配 <ws>-* 即 session（放宽判定）/ 排除旧裸名目录。"""
 

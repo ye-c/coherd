@@ -46,7 +46,10 @@ def _read_body(msg: str | None, body_file: str | None) -> str:
     if msg is not None and body_file is not None:
         _fatal("body 源互斥：positional msg 与 --body-file 只能给一个（stdin 用 `-`）")
     if msg is None and body_file is None:
-        _fatal("缺 body：给 positional msg、`-`（stdin）或 --body-file <path>")
+        _fatal(
+            "缺 body：给 positional msg、`-`（stdin）或 --body-file <path>"
+            "（simple 模式省略 peer 时，正文只能用 `-` / --body-file，不要占用 peer 位）"
+        )
     if body_file is not None:
         if body_file == "-":
             raw = sys.stdin.read()
@@ -64,11 +67,29 @@ def _read_body(msg: str | None, body_file: str | None) -> str:
     return body
 
 
+_PEER_HELP = (
+    "对端 herdr agent 全名，如 w2p-reviewer；simple 模式（led↔dev 唯一对端）可省略，"
+    "此时正文只能走 `-`（stdin）或 --body-file"
+)
+
+
+def _split_peer(
+    peer_agent: str | None, msg: str | None, body_file: str | None
+) -> tuple[str | None, str | None]:
+    """peer 位为 `-` 时恒不视为 peer。
+
+    `-` 是 stdin 惯用形，不可能是 agent 名；正文源优先级 msg > body_file > stdin。
+    """
+    if peer_agent != "-":
+        return peer_agent, msg
+    if msg is not None or body_file is not None:
+        return None, msg
+    return None, "-"
+
+
 @app.command(name="feedback")
 def feedback(
-    peer_agent: str = typer.Argument(
-        ..., help="对端 herdr agent 全名，如 w2p-reviewer"
-    ),
+    peer_agent: str = typer.Argument(None, help=_PEER_HELP),
     msg: str = typer.Argument(None, help=_BODY_HELP),
     ws: str = typer.Option(
         None, "--ws", help="自身 ws 短号（缺省取 HERDR_WORKSPACE_ID 小写）"
@@ -85,6 +106,7 @@ def feedback(
     命令名即语义（=标记名），无缺省值陷阱；送达失败不丢审计行。
     body 可走 stdin / --body-file，避免 shell 求值吞正文。
     """
+    peer_agent, msg = _split_peer(peer_agent, msg, body_file)
     body = _read_body(msg, body_file)
     try:
         r = _push.run(peer_agent, body, ws=ws, role=role, msg_type="feedback")
@@ -105,9 +127,7 @@ def feedback(
 
 @app.command(name="notify")
 def notify(
-    peer_agent: str = typer.Argument(
-        ..., help="对端 herdr agent 全名，如 w2p-reviewer"
-    ),
+    peer_agent: str = typer.Argument(None, help=_PEER_HELP),
     msg: str = typer.Argument(None, help=_BODY_HELP),
     ws: str = typer.Option(
         None, "--ws", help="自身 ws 短号（缺省取 HERDR_WORKSPACE_ID 小写）"
@@ -124,6 +144,7 @@ def notify(
     命令名即语义；丢包自兜：accepted 假 → 非零退出提示转 feedback 重发。
     body 可走 stdin / --body-file，避免 shell 求值吞正文。
     """
+    peer_agent, msg = _split_peer(peer_agent, msg, body_file)
     body = _read_body(msg, body_file)
     try:
         r = _push.run(peer_agent, body, ws=ws, role=role, msg_type="notify")
@@ -156,7 +177,9 @@ def new(
         ..., "--output", "--output-path", help="产出物路径/结构"
     ),
     ws: str = typer.Option(
-        ..., "--ws", help="herdr workspace 短号（作 id 前缀 + frontmatter ws 字段）"
+        None,
+        "--ws",
+        help="herdr workspace 短号（作 id 前缀 + frontmatter ws 字段；缺省取 HERDR_WORKSPACE_ID 小写）",
     ),
     status: str = typer.Option("pending", "--status", help=f"初始状态（{T.STATUSES}）"),
     body: str = typer.Option("", "--body", help="可选 markdown 正文（缺省留空）"),
@@ -170,6 +193,9 @@ def new(
     """生成新 tracker 到 session 目录平铺 ~/.config/coherd/sessions/<session>/<id>.task.md（无 session 目录自动自建），打印路径。"""
     if status not in T.STATUSES:
         _fatal(f"status 非法: {status!r}（需 {T.STATUSES}）")
+    ws = ws or _push.ws_from_env()
+    if not ws:
+        _fatal("无法派生 ws：未提供 --ws 且 HERDR_WORKSPACE_ID 未设置")
     now = datetime.now(timezone.utc)
     try:
         task_id = next_id(ws, now)
