@@ -6,9 +6,16 @@
 set -euo pipefail
 
 BIN_DIR="${HOME}/.local/bin"
-# 配置目标目录: COHERD_CONFIG_HOME 优先 (取值优先级同源 src/coherd/tracker.py;
-# 差异: 不展开 ~、空串走缺省兜底), 缺省 ~/.config/coherd
-CFG_DIR="${COHERD_CONFIG_HOME:-${HOME}/.config/coherd}"
+# 配置目标目录: COHERD_CONFIG_HOME 优先, 语义同 src/coherd/tracker.py ——
+# 空串走缺省、开头 ~ / ~/ 展开为 $HOME; 差异: ~user 本脚本不展开(避免 eval 注入面), 缺省 ~/.config/coherd
+_cfg="${COHERD_CONFIG_HOME:-}"
+case "$_cfg" in
+  "")    CFG_DIR="${HOME}/.config/coherd" ;;
+  "~")   CFG_DIR="$HOME" ;;
+  "~/"*) CFG_DIR="$HOME/${_cfg#\~/}" ;;
+  *)     CFG_DIR="$_cfg" ;;
+esac
+unset _cfg
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 die() {

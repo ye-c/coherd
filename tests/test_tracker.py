@@ -174,6 +174,43 @@ class GateFieldTest(SessionsDirMixin, unittest.TestCase):
         self.assertEqual(data["status"], "active")
 
 
+class ConfigHomeParseTest(unittest.TestCase):
+    """COHERD_CONFIG_HOME 解析归一：空串走缺省、~ 展开为绝对路径（与 install.sh 同语义）。"""
+
+    def setUp(self):
+        self._prev = os.environ.get("COHERD_CONFIG_HOME")
+
+    def tearDown(self):
+        if self._prev is None:
+            os.environ.pop("COHERD_CONFIG_HOME", None)
+        else:
+            os.environ["COHERD_CONFIG_HOME"] = self._prev
+        importlib.reload(T)
+
+    def _reload(self, value: str | None) -> Path:
+        if value is None:
+            os.environ.pop("COHERD_CONFIG_HOME", None)
+        else:
+            os.environ["COHERD_CONFIG_HOME"] = value
+        importlib.reload(T)
+        return T.CONFIG_HOME
+
+    def test_empty_string_falls_back_to_default(self):
+        got = self._reload("")
+        self.assertEqual(got, Path("~/.config/coherd").expanduser())
+        self.assertTrue(got.is_absolute())
+        self.assertEqual(T.SESSIONS_DIR, got / "sessions")
+
+    def test_tilde_expands_to_absolute_home(self):
+        got = self._reload("~/cfg")
+        self.assertEqual(got, Path.home() / "cfg")
+        self.assertTrue(got.is_absolute())
+
+    def test_unset_uses_default(self):
+        got = self._reload(None)
+        self.assertEqual(got, Path("~/.config/coherd").expanduser())
+
+
 class SessionDirTest(SessionsDirMixin, unittest.TestCase):
     """glob_session_dir: 目录名匹配 <ws>-* 即 session（放宽判定）/ 排除旧裸名目录。"""
 

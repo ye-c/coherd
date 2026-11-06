@@ -15,9 +15,9 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-# 存储根（可用 COHERD_CONFIG_HOME 覆盖，测试隔离用）
+# 存储根（可用 COHERD_CONFIG_HOME 覆盖，测试隔离用；空串走缺省，与 install.sh 同语义）
 CONFIG_HOME = Path(
-    os.environ.get("COHERD_CONFIG_HOME", "~/.config/coherd")
+    os.environ.get("COHERD_CONFIG_HOME") or "~/.config/coherd"
 ).expanduser()
 SESSIONS_DIR = CONFIG_HOME / "sessions"
 
