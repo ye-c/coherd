@@ -53,10 +53,17 @@ def _split_blocks(text: str) -> tuple[list[str], str]:
     return lines[1:end], "\n".join(lines[end + 1 :])
 
 
+def _flush_field(key: str, buf: list[str], marker: bool) -> str:
+    """收口一个字段值。gate 的 '|' 标记后若无续行 = 值丢失，解析层直接报错。"""
+    if key == "gate" and marker and not buf:
+        raise ValueError("gate 非法: '|' 块标量无内容（单字标记或值丢失）")
+    return "\n".join(buf)
+
+
 def _parse_frontmatter(block: list[str]) -> dict[str, str]:
     """手写 frontmatter 解析：逐行 split(': ') 建 dict，支持 `|` 块标量（缩进续行拼接）。"""
     data: dict[str, str] = {}
-    key, buf = None, []
+    key, buf, marker = None, [], False
     for line in block:
         if key and (line.startswith(" ") or line.startswith("\t")):  # 块标量续行
             buf.append(line.strip())
@@ -68,11 +75,11 @@ def _parse_frontmatter(block: list[str]) -> dict[str, str]:
         if not k or not re.match(r"^[a-zA-Z_]+$", k):
             continue
         if key:
-            data[key] = "\n".join(buf)
-        key = k
-        buf = [] if v == "|" else [v]
+            data[key] = _flush_field(key, buf, marker)
+        key, marker = k, v == "|"
+        buf = [] if marker else [v]
     if key:
-        data[key] = "\n".join(buf)
+        data[key] = _flush_field(key, buf, marker)
     return data
 
 
@@ -85,7 +92,8 @@ def render_frontmatter(data: dict, body: str = "") -> str:
             v = "" if v is None else str(v)
         if "\n" in v:
             lines.append(f"{f}: |")
-            # 空行缩进 2 空格：解析端只把缩进行当续行，未缩进空行会被丢弃（值内空行丢失）
+            # 空行缩进 2 空格：解析端只把缩进行当续行，未缩进空行会被丢弃（值内空行丢失）。
+            # 行尾空白不可避免——strip-trailing-whitespace 会退回丢值 bug，勿对 tracker 跑该类 formatter。
             lines.extend("  " + ln if ln else "  " for ln in v.splitlines())
         else:
             lines.append(f"{f}: {v}")
@@ -118,6 +126,9 @@ def validate(data: dict) -> None:
         raise ValueError("gate 非法: 门禁命令须单行（禁换行）")
     if gate.strip() == "|":
         raise ValueError("gate 非法: 不得为单字符块标量标记 '|'")
+    parent_spec = str(data.get("parent_spec", ""))
+    if parent_spec and not ID_RE.match(parent_spec):
+        raise ValueError(f"parent_spec 含非法字符: {parent_spec!r}（需 [a-zA-Z0-9_-]）")
 
 
 def tracker_path(task_id: str) -> Path:

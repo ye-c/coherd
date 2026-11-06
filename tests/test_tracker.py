@@ -147,6 +147,25 @@ class GateFieldTest(SessionsDirMixin, unittest.TestCase):
             ),
         )
 
+    def test_gate_pipe_marker_in_file_raises_on_load(self):
+        """F2 回归：手改文件为 'gate: |'（无续行）→ load 报错，不静默丢值。"""
+        p = T.write_new(make_data(self.TID, gate="pytest -q"))
+        raw = p.read_text(encoding="utf-8")
+        p.write_text(raw.replace("gate: pytest -q\n", "gate: |\n", 1), encoding="utf-8")
+        with self.assertRaises(ValueError):
+            T.load(p)
+
+    def test_gate_empty_value_still_parses(self):
+        """合法空 gate（'gate: ' 无标记）不误伤。"""
+        p = T.write_new(make_data(self.TID))
+        self.assertEqual(T.load(p)["gate"], "")
+
+    def test_parent_spec_nonempty_validated(self):
+        with self.assertRaises(ValueError):
+            T.validate(make_data(self.TID) | {"parent_spec": "../evil"})
+        T.validate(make_data(self.TID) | {"parent_spec": ""})
+        T.validate(make_data(self.TID) | {"parent_spec": "w6c-20260101000000"})
+
     def test_set_status_preserves_single_line_gate(self):
         gate = "env -u HERDR_ENV -u HERDR_SOCKET_PATH uv run --with pytest pytest -q"
         T.write_new(make_data(self.TID, gate=gate))

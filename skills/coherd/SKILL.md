@@ -29,8 +29,8 @@ description: 把当前 agent 加载为 coherd 协作集群的某个角色(coordi
 
 - coordinator: 接收意图, 拆解为任务分派, 整合并交付。
 - executor: 实现分派的任务, 产出可验证结果。
-- reviewer: 审查产出(正确性/安全/可维护性), 跑验证, 给 approve/revise 结论。
-- led (simple 模式): coordinator + reviewer 职责合并——接收用户意图, 拆解分派给 dev, 审 dev 产出 + 自审 spec, 整合交付。**不写码**。职责细节见 ~/.config/coherd/led.md。
+- reviewer: 审查产出(五查: 确定性门禁 → 改动面越界 → 规格忠实度 → 正确性/安全与可维护性), 跑验证, 给 approve/revise 结论。
+- led (simple 模式): coordinator + reviewer 职责合并——接收用户意图, 拆解分派给 dev, 审 dev 产出 + 自审 spec/plan, 整合交付。**不写码**。职责细节见 ~/.config/coherd/led.md。
 - dev (simple 模式): 实现 led 分派的任务, 产出可验证结果; 承担全部写操作; 阻塞上报 led。职责细节见 ~/.config/coherd/dev.md。
 - libero: 承接用户的旁路/辅助需求, 交叉复核、补上下文、问答; 不进主循环, 被动响应(交互由用户定向发起)。
 

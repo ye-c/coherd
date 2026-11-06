@@ -235,7 +235,7 @@ def show(
     """打印完整 tracker（含 frontmatter 与正文 body）。"""
     try:
         data = T.find_tracker(task_id)
-    except FileNotFoundError as e:
+    except (FileNotFoundError, ValueError) as e:
         _fatal(str(e))
     else:
         typer.echo(T.render_frontmatter(data, data.get("_body", "")))

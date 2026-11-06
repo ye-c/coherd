@@ -16,7 +16,7 @@ coherd 把多个 AI agent 组织成一个小团队：一个规划、一个干活
 
 - **coordinator**（协调者）：接收你的意图，拆成带验收标准的任务。
 - **executor**（执行者）：实现任务，产出可验证结果。
-- **reviewer**（审查者）：跑验证 + 查正确性/安全/可维护性，给 `approve` 或 `revise`。
+- **reviewer**（审查者）：跑验证 + 五查（门禁 → 越界 → 忠实度 → 正确性、安全与可维护性），给 `approve` 或 `revise`。
 - **revise 上限 2 轮**，仍不通过则由 coordinator 仲裁（改判/拆任务/终止）。
 - 三角色是**槽位**：具体 agent CLI 可配置，不绑定任何特定实现（见 docs/configuration.md）。
 

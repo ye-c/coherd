@@ -18,7 +18,7 @@
 | 轮询 (polling) | sleep 循环 + 反复 pull 取消息；契约**禁止**的等待方式 | §7 |
 | 分派 (dispatch) | coordinator→executor 带 4 字段（objective/DoD/输出/边界）的任务消息 | §3 |
 | 回流 | 结论/状态消息上报 coordinator（approve/revise/阻塞） | §2 |
-| 审查 (review) | reviewer 对 executor 产出按固定顺序做五查（门禁 → 越界 → 忠实度 → 正确性/安全/可维护性），给 approve/revise 二选一结论 | §4 |
+| 审查 (review) | reviewer 对 executor 产出按固定顺序做五查（门禁 → 越界 → 忠实度 → 正确性、安全与可维护性），给 approve/revise 二选一结论 | §4 |
 | spec / 规格 | coordinator 产的 What 层权威工件，落平铺 `<id>.spec.md`：行为契约、领域模型、不变量、边界与非目标、决策清单（命名引用，如 D1）、验收标准；**不含文件路径、语言、库名**。与 plan 一一对应且共用同一标识；executor 实现与 reviewer 审查的共同事实源，tracker 以 `parent_spec` FK 追溯 | §3 |
 | plan / 方案 | spec 对应的唯一 How 层工件（1:1，共用同一标识，落平铺 `<id>.plan.md`）：现状差异分析、架构调整、**改动文件白名单**、迁移与回滚；executor 改动面的唯一权威 | §3 |
 | gate / 门禁 | 任务记录可携带的**单行**验证命令（非必填）；执行语义固定为仓库根 + `bash -lc` + 继承环境，只承诺本机可执行。reviewer 审查第一步先跑，非零退出按三类分流 | §3/§4 |
@@ -32,7 +32,7 @@
 | ------ | ------ | ------ |
 | coordinator | 协调者 | 接收用户意图，拆解为任务分派；可与 reviewer 讨论技术方案/审查结论；整合并交付 |
 | executor | 执行者 | 实现 coordinator 分派的任务，产出可验证结果；阻塞时向 coordinator 上报 |
-| reviewer | 审查者 | 审查 executor 的产出（正确性/安全/可维护性）并跑验证；可与 coordinator 讨论 |
+| reviewer | 审查者 | 按固定顺序五查 executor 的产出（门禁 → 越界 → 忠实度 → 正确性、安全与可维护性）并跑验证；可与 coordinator 讨论 |
 
 ## 2. 通信协议
 
@@ -84,7 +84,7 @@ coordinator→executor 每条任务**必须**包含以下 4 字段，缺失即�
 - **tracker 权威副本**：分派前 coordinator 把 4 字段落盘 session 目录平铺 `~/.config/coherd/sessions/<ws>-<TASK_TS>-$$/<id>.task.md`（session 目录由 bin/coherd 每启动创建并写死进 brief），executor 契约上不可写（运行时不强制，靠流程保障 + 事后核对，见 §5）。
 - **CLI 数据路径**：tracker 以 session 目录平铺 `~/.config/coherd/sessions/<ws>-<TASK_TS>-$$/`，tracker 入口 `<id>.task.md`、reviewer 结论 `<id>.<verdict>-<HHMMSS>.md` 同目录（id 前缀防平铺撞名）；session 目录由 bin/coherd 启动 `mkdir -p` 创建（standalone CLI 由 `session_dir_for(create=True)` 自建）；tracker 入口与 id 由 `coherd task new` 生成（`next_id` 生成 `<id>`）。
 - **spec 文件与 FK**：spec 落平铺 `<id>.spec.md`、plan 落 `<id>.plan.md`（与 `<id>.task.md` 同目录共存，`task list` glob `*.task.md` 不误抓）；`coherd task new --parent-spec <id>` 写 frontmatter `parent_spec`（FK 追溯，值 = spec id，缺省空串）。
-- **门禁字段（gate）**：tracker 可选 `gate`（单行字符串，**非必填**，历史记录缺省合法）；`coherd task new --gate '<命令>'` 写入。执行语义固定：**仓库根 + `bash -lc` + 继承环境**，需净化环境的命令自带 `env -u VAR ...` 前缀，不依赖审查者侧处理；只承诺本机可执行，**不承诺跨机一致**。工具层只校验格式（拒换行、拒单字 `|`），不判断命令含义、不决定跑不跑。
+- **门禁字段（gate）**：tracker 可选 `gate`（单行字符串，**非必填**，历史记录缺省合法）；`coherd task new --gate '<命令>'` 写入。执行语义固定：**仓库根 + `bash -lc` + 继承环境**，需净化环境的命令自带 `env -u VAR ...` 前缀，不依赖审查者侧处理；只承诺本机可执行，**不承诺跨机一致**。工具层只校验格式（拒换行、拒单字 `|`），不判断命令含义、不决定跑不跑。**tracker `gate` 是执行权威**；plan「门禁与验证」里的命令只是初稿，二者不一致时以 tracker 为准（改 tracker 归 coordinator）。
 - **依赖留正文**：任务间依赖以任务正文手记表达，不进记录结构、不进 CLI 参数——工具层不做拓扑编排或阻塞判定（CLI 不做编排，守滑坡护栏）。
 - executor **先读 tracker + spec/plan 再动工**；产出写 tracker「输出」字段指定路径，改动限 plan 白名单。
 
@@ -106,7 +106,7 @@ reviewer **最小审查集**（每次审查必做，顺序固定 = 五查）：
 2. **门禁定义错误**（命令引用的路径不存在、测试目标拼错、命令本身不可执行）→ `coherd notify` 上报 coordinator 修订门禁，**不计返工轮次**。
 3. **代码性失败**（命令可跑、语义正确、产出不满足）→ 判 `revise`，标准输出与错误输出落盘为证据。
 
-**门禁执行边界**：工作目录固定为仓库根；reviewer 发现门禁与交审声明不一致时拒跑并上报。含管道、分号、重定向、命令替换的**复合命令拒绝执行**。**诚实条款**：拒绝复合命令只挡明显的链式注入，**不构成沙箱**——目标仓库代码与其测试夹具本身即任意代码执行面，报工单即信任 coordinator。此句随条款生效，不得被下游误读为「已安全」。
+**门禁执行边界**：工作目录固定为仓库根；reviewer 发现门禁与交审声明不一致时拒跑并上报。**字符串级判据**：命令含 `|`、`;`、`&`、`>`、`<`、`$(` 或反引号任一 → 判为复合命令，拒跑并上报（不靠肉眼判断）。**诚实条款**：拒绝复合命令只挡明显的链式注入，**不构成沙箱**——目标仓库代码与其测试夹具本身即任意代码执行面，报工单即信任 coordinator。此句随条款生效，不得被下游误读为「已安全」。
 
 **越界判定以行为为准**：改动超出白名单但无行为变更（纯新增测试文件、机械性 import 修正等）且已在交审消息中声明者，放行；仅在改动改变行为时判返工。
 
