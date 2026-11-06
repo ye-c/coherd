@@ -6,7 +6,6 @@
 set -euo pipefail
 
 BIN_DIR="${HOME}/.local/bin"
-CFG_DIR="${HOME}/.config/coherd"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 die() {
@@ -14,6 +13,19 @@ die() {
   exit 1
 }
 info() { echo "install.sh: $*"; }
+
+# 配置目标目录: COHERD_CONFIG_HOME 优先, 语义同 src/coherd/tracker.py ——
+# 空串走缺省、开头 ~ / ~/ 展开为 $HOME; 差异: ~user 本脚本不展开(避免 eval 注入面), 缺省 ~/.config/coherd
+_cfg="${COHERD_CONFIG_HOME:-}"
+case "$_cfg" in
+  "")    CFG_DIR="${HOME}/.config/coherd" ;;
+  # 裸 '~' 展开成 $HOME 会把它当配置根, 后续 rm -rf $HOME/templates.bak 风险过高 → 直接拒装
+  "~")   die "COHERD_CONFIG_HOME='~' 会以 \$HOME 为配置根, 拒绝安装; 请写具体子目录 (如 '~/cfg') 或留空用缺省" ;;
+  "~/"*) CFG_DIR="$HOME/${_cfg#\~/}" ;;
+  *)     CFG_DIR="$_cfg" ;;
+esac
+unset _cfg
+info "配置目录: $CFG_DIR"
 
 # ── 前置依赖检查 (硬阻断: 缺则 die + 安装指引, 不自动装不碰 brew) ──
 command -v herdr >/dev/null || die "未找到 herdr — coherd 的运行时依赖。安装: brew install herdr (或见 herdr.dev); 配置见 docs/configuration.md"
@@ -55,6 +67,20 @@ for _rd in "${ROLE_DOCS[@]}"; do
   _install_doc "$_rd.md"
 done
 unset _rd _install_doc ROLE_DOCS
+
+# ── 安装工件模板 (roles/templates/ → $CFG_DIR/templates/) ──
+#   整目录替换: 先清旧 .bak → 现目录 mv 为 .bak（移走后目标不存在, cp -R 才不会嵌一层）→ cp -R 源目录
+if [ -d "$HERE/roles/templates" ]; then
+  rm -rf "$CFG_DIR/templates.bak" # 覆盖式: 只保留最新一份
+  if [ -e "$CFG_DIR/templates" ]; then
+    mv "$CFG_DIR/templates" "$CFG_DIR/templates.bak"
+    info "已备份原有 $CFG_DIR/templates → templates.bak"
+  fi
+  cp -R "$HERE/roles/templates" "$CFG_DIR/templates"
+  info "已安装 $CFG_DIR/templates"
+else
+  info "无 roles/templates/, 跳过模板安装"
+fi
 
 # ── 安装 role skills 到共享目录 + Claude Code 软链 ──
 #   源: skills/<name>/SKILL.md → ~/.agents/skills/<name>/(pi 等从此读)

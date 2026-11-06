@@ -1,6 +1,6 @@
 """tracker — coherd 任务 tracker 的读写与 YAML frontmatter 手写解析（不依赖 pyyaml）。
 
-body 标准化约定：frontmatter 是权威 schema（10 固定字段，程序读写），frontmatter 之外的
+body 标准化约定：frontmatter 是权威 schema（11 固定字段，程序读写），frontmatter 之外的
 markdown body 为自由上下文（agent 补充），解析器不校验 body。
 
 解析器核心（_parse_frontmatter）≤15 行：按行寻 frontmatter 边界（行首精确 '---'），
@@ -15,9 +15,9 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-# 存储根（可用 COHERD_CONFIG_HOME 覆盖，测试隔离用）
+# 存储根（可用 COHERD_CONFIG_HOME 覆盖，测试隔离用；空串走缺省，与 install.sh 同语义）
 CONFIG_HOME = Path(
-    os.environ.get("COHERD_CONFIG_HOME", "~/.config/coherd")
+    os.environ.get("COHERD_CONFIG_HOME") or "~/.config/coherd"
 ).expanduser()
 SESSIONS_DIR = CONFIG_HOME / "sessions"
 
@@ -33,6 +33,7 @@ FIELDS = (
     "objective",
     "dod",
     "output_path",
+    "gate",
 )
 STATUSES = ("pending", "active", "done")
 
@@ -52,10 +53,17 @@ def _split_blocks(text: str) -> tuple[list[str], str]:
     return lines[1:end], "\n".join(lines[end + 1 :])
 
 
+def _flush_field(key: str, buf: list[str], marker: bool) -> str:
+    """收口一个字段值。gate 的 '|' 标记后若无续行 = 值丢失，解析层直接报错。"""
+    if key == "gate" and marker and not buf:
+        raise ValueError("gate 非法: '|' 块标量无内容（单字标记或值丢失）")
+    return "\n".join(buf)
+
+
 def _parse_frontmatter(block: list[str]) -> dict[str, str]:
     """手写 frontmatter 解析：逐行 split(': ') 建 dict，支持 `|` 块标量（缩进续行拼接）。"""
     data: dict[str, str] = {}
-    key, buf = None, []
+    key, buf, marker = None, [], False
     for line in block:
         if key and (line.startswith(" ") or line.startswith("\t")):  # 块标量续行
             buf.append(line.strip())
@@ -67,11 +75,11 @@ def _parse_frontmatter(block: list[str]) -> dict[str, str]:
         if not k or not re.match(r"^[a-zA-Z_]+$", k):
             continue
         if key:
-            data[key] = "\n".join(buf)
-        key = k
-        buf = [] if v == "|" else [v]
+            data[key] = _flush_field(key, buf, marker)
+        key, marker = k, v == "|"
+        buf = [] if marker else [v]
     if key:
-        data[key] = "\n".join(buf)
+        data[key] = _flush_field(key, buf, marker)
     return data
 
 
@@ -84,7 +92,9 @@ def render_frontmatter(data: dict, body: str = "") -> str:
             v = "" if v is None else str(v)
         if "\n" in v:
             lines.append(f"{f}: |")
-            lines.extend("  " + ln if ln else "" for ln in v.splitlines())
+            # 空行缩进 2 空格：解析端只把缩进行当续行，未缩进空行会被丢弃（值内空行丢失）。
+            # 行尾空白不可避免——strip-trailing-whitespace 会退回丢值 bug，勿对 tracker 跑该类 formatter。
+            lines.extend("  " + ln if ln else "  " for ln in v.splitlines())
         else:
             lines.append(f"{f}: {v}")
     lines.append("---")
@@ -111,6 +121,14 @@ def validate(data: dict) -> None:
         raise ValueError(f"status 非法: {data.get('status')!r}（需 {STATUSES}）")
     if not ID_RE.match(str(data.get("id", ""))):
         raise ValueError(f"id 含非法字符: {data.get('id')!r}（需 [a-zA-Z0-9_-]）")
+    gate = str(data.get("gate", ""))
+    if "\n" in gate:
+        raise ValueError("gate 非法: 门禁命令须单行（禁换行）")
+    if gate.strip() == "|":
+        raise ValueError("gate 非法: 不得为单字符块标量标记 '|'")
+    parent_spec = str(data.get("parent_spec", ""))
+    if parent_spec and not ID_RE.match(parent_spec):
+        raise ValueError(f"parent_spec 含非法字符: {parent_spec!r}（需 [a-zA-Z0-9_-]）")
 
 
 def tracker_path(task_id: str) -> Path:
