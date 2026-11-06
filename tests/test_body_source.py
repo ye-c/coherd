@@ -145,6 +145,23 @@ class SimplePeerDefaultCliTest(BodySourceTest):
         self.assertIn("缺 peer", self._output(res))
         self.assertEqual(self._events(), [])
 
+    def test_dash_with_positional_body(self):
+        res = self._invoke(["feedback", "-", "分派 x", "--ws", "w2p", "--role", "led"])
+        self.assertEqual(res.exit_code, 0, res.output)
+        ev = self._events()
+        self.assertEqual(len(ev), 1)
+        self.assertEqual(ev[0]["to"], "dev")
+        self.assertEqual(ev[0]["body"], "分派 x")
+        self.assertNotEqual(ev[0]["to"], "-")
+
+    def test_dash_stdin_notify_without_peer(self):
+        res = self._invoke(["notify", "-", "--ws", "w2p", "--role", "dev"], input_="ack\n")
+        self.assertEqual(res.exit_code, 0, res.output)
+        ev = self._events()
+        self.assertEqual(len(ev), 1)
+        self.assertEqual(ev[0]["to"], "led")
+        self.assertEqual(ev[0]["body"], "ack")
+
     def _output(self, res) -> str:
         out = res.stdout or ""
         try:

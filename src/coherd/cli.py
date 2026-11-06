@@ -76,13 +76,14 @@ _PEER_HELP = (
 def _split_peer(
     peer_agent: str | None, msg: str | None, body_file: str | None
 ) -> tuple[str | None, str | None]:
-    """省略 peer 后唯一的坑：`coherd feedback -` 会把 `-` 绑到 peer 位。
+    """peer 位为 `-` 时恒不视为 peer。
 
-    `-` 是 stdin 惯用形，绝不可能是 agent 名，故把它交还给 body 位。
+    `-` 是 stdin 惯用形，不可能是 agent 名；正文源优先级 msg > body_file > stdin。
     """
-    if peer_agent == "-" and msg is None and body_file is None:
-        return None, "-"
-    return peer_agent, msg
+    if peer_agent != "-":
+        return peer_agent, msg
+    # `-` 是 stdin 惯用形，不可能是 agent 名；正文源优先级 msg > body_file > stdin
+    return None, msg if (msg is not None or body_file is not None) else "-"
 
 
 @app.command(name="feedback")

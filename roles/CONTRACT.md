@@ -156,11 +156,11 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 - 写操作（`add` / `commit` / `stash` / `checkout` / `reset`）取 `$GIT_DIR/index.lock`；取不到即报 `fatal: Unable to create '<gitdir>/index.lock': File exists.` 并中止。
 - 冲突方向是从只读方到写方：`git status` 在刷新 index 时也取该锁。git 2.50.1 两次独立复现各 120 轮：`git status` 与 `git commit` 并发时，commit 因 `index.lock` 失败 64 轮与 69 轮；同条件改跑 `GIT_OPTIONAL_LOCKS=0 git status` → 两次均 0 轮失败。
 - 反向不成立：`index.lock` 已被占用时，只读命令（`git status` / `git diff` / `git log`）静默跳过 index 刷新，退出码 0，不报错。
-- `GIT_OPTIONAL_LOCKS=0`（git ≥ 2.15）使只读命令不执行需要加锁的可选子操作。变量必须覆盖子进程（`export` 或置于调用前缀）——单条命令前的临时赋值不影响脚本内部的 git 调用。git 文档对该变量的用途原文即「后台进程避免与其他操作产生锁争用」。
+- `GIT_OPTIONAL_LOCKS=0`（git ≥ 2.15）使只读命令不执行需要加锁的可选子操作。变量必须覆盖实际执行 git 的进程：`VAR=0 ./script.sh` 的前缀赋值会进入该命令环境并被其子进程继承（同 `export VAR=0`）；两种写法均覆盖脚本内部的 git 调用。git 文档对该变量的用途原文即「后台进程避免与其他操作产生锁争用」。
 - 锁文件两种状态，处置不同：
   1. **有存活持锁方**（另有 git 进程在跑，或对端 agent 的写任务未完成）：等其完成（删除锁文件不终止持锁进程，冲突不因此结束）。
   2. **孤儿锁**（进程被 kill / 崩溃遗留，无 git 进程持有）：写操作持续失败，直到删除该文件。
-- 孤儿锁判据（单一条件，不以任务状态作条件）：`pgrep -x git` 退出码为 1（全机无存活 git 进程 → 无存活持锁方；`ps | grep git` 会匹配到 grep 自身，不可用）。删除动作本身仍受上表白名单约束：只有 executor / dev 有 git 写权限。
+- 孤儿锁判据（单一条件，不以任务状态作条件）：`pgrep -x git` 退出码为 1（本机同 uid 可见范围内无 comm 为 `git` 的进程 → 无存活持锁方；跨用户 / 容器内进程不可见，无法判定时走处置顺序 ④；`ps | grep git` 会匹配到 grep 自身，不可用）。删除动作本身仍受上表白名单约束：只有 executor / dev 有 git 写权限。
 - 共享工作区（多 agent 同仓）不以 `git stash` / `checkout` 做版本对比：两者改写工作区文件，此间对端读到的是另一个版本。基线对比用独立副本：`git worktree add /tmp/<name> HEAD` → 在副本跑 → `git worktree remove /tmp/<name>`。
 - 处置顺序：① 按「孤儿锁判据」判定 → ② 非孤儿：等持锁方完成，不删除 → ③ 孤儿：由写方（executor / dev）在任务工具边界（§3 边界字段）覆盖该仓库时删除 → ④ 边界未覆盖（冷启动 / 无活跃任务）：写方不删除，由主编排槽位（coordinator / led）以 `coherd notify` 上报用户，或下发一条边界含 `.git/index.lock` 的单次解锁任务。
 
