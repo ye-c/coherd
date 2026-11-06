@@ -82,8 +82,9 @@ def _split_peer(
     """
     if peer_agent != "-":
         return peer_agent, msg
-    # `-` 是 stdin 惯用形，不可能是 agent 名；正文源优先级 msg > body_file > stdin
-    return None, msg if (msg is not None or body_file is not None) else "-"
+    if msg is not None or body_file is not None:
+        return None, msg
+    return None, "-"
 
 
 @app.command(name="feedback")

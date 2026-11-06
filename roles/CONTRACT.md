@@ -154,7 +154,7 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 ### git 锁争用（`index.lock`）
 
 - 写操作（`add` / `commit` / `stash` / `checkout` / `reset`）取 `$GIT_DIR/index.lock`；取不到即报 `fatal: Unable to create '<gitdir>/index.lock': File exists.` 并中止。
-- 冲突方向是从只读方到写方：`git status` 在刷新 index 时也取该锁。git 2.50.1 两次独立复现各 120 轮：`git status` 与 `git commit` 并发时，commit 因 `index.lock` 失败 64 轮与 69 轮；同条件改跑 `GIT_OPTIONAL_LOCKS=0 git status` → 两次均 0 轮失败。
+- 冲突方向是从只读方到写方：`git status` 在刷新 index 时也取该锁。git 2.50.1 两次独立复现各 120 轮：`git status` 与 `git commit` 并发时，commit 因 `index.lock` 失败 64 轮与 69 轮；同条件改跑 `GIT_OPTIONAL_LOCKS=0 git status` → 两次均 0 轮失败（两次均本机实测，绝对值随机器与负载浮动，取方向不取量级）。
 - 反向不成立：`index.lock` 已被占用时，只读命令（`git status` / `git diff` / `git log`）静默跳过 index 刷新，退出码 0，不报错。
 - `GIT_OPTIONAL_LOCKS=0`（git ≥ 2.15）使只读命令不执行需要加锁的可选子操作。变量必须覆盖实际执行 git 的进程：`VAR=0 ./script.sh` 的前缀赋值会进入该命令环境并被其子进程继承（同 `export VAR=0`）；两种写法均覆盖脚本内部的 git 调用。git 文档对该变量的用途原文即「后台进程避免与其他操作产生锁争用」。
 - 锁文件两种状态，处置不同：

@@ -152,7 +152,18 @@ class SimplePeerDefaultCliTest(BodySourceTest):
         self.assertEqual(len(ev), 1)
         self.assertEqual(ev[0]["to"], "dev")
         self.assertEqual(ev[0]["body"], "分派 x")
-        self.assertNotEqual(ev[0]["to"], "-")
+
+    def test_dash_with_body_file_routes_to_default_peer(self):
+        f = self.tmp / "body.md"
+        f.write_text("分派 from file", encoding="utf-8")
+        res = self._invoke(
+            ["feedback", "-", "--body-file", str(f), "--ws", "w2p", "--role", "led"]
+        )
+        self.assertEqual(res.exit_code, 0, res.output)
+        ev = self._events()
+        self.assertEqual(len(ev), 1)
+        self.assertEqual(ev[0]["to"], "dev")
+        self.assertEqual(ev[0]["body"], "分派 from file")
 
     def test_dash_stdin_notify_without_peer(self):
         res = self._invoke(["notify", "-", "--ws", "w2p", "--role", "dev"], input_="ack\n")
