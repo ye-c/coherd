@@ -161,19 +161,13 @@ simple 模式以"少一个 agent、少一轮通信"换取简易，代价**必须
 
 人类**未**指定时，用 `git status --porcelain` 判，不看动作大小：
 
-| 判据（机检） | 覆盖 | 谁做 |
+| `git status --porcelain` | 覆盖 | 谁做 |
 | ------ | ------ | ------ |
-| 输出为空 | 只读（`status`/`diff`/`log`/`coherd task list`）、状态操作（切/建分支、push 已审分支、合并已审 PR、pull、`worktree`、删孤儿锁） | 任何槽位直接做，不开票 |
+| 输出为空 | 只读（`status`/`diff`/`log`/`coherd task list`）+ 一次性运维动作（切/建分支、push 已审分支、合并已审 PR、pull、`worktree`、删孤儿锁） | 任何槽位直接做，不开票 |
 | 命中**仓库**内路径 | 源码、测试、工程配置（`.gitignore` / `pyproject.toml` / CI）、文档、`roles/` 契约 | dev（开票分派） |
 | 只命中 session 协作元数据 | `~/.config/coherd/sessions/**` 下的 spec / plan / tracker / verdict | led 直接写 |
 | 判不准 | — | 归入「仓库内路径」→ dev |
+| 人类指定 led 改仓库文件 | 情形与上表同，执行方改由人类定 | led 直接做：commit body 记一行 `人类直接指派：<人类原话>`；审查权归人类，不开 tracker、不入 §4、不设 dev → led 反向复核；目标文件在 dev active 任务内时先 `coherd notify` 停机再动手 |
 
-- 只读 git 命令带 `GIT_OPTIONAL_LOCKS=0`（`git status` 会刷新 index、写字节，见 `CONTRACT.md` §5）。
-- `git diff --name-only` 漏检未跟踪的新建文件，不作为判据。
+只读 git 命令带 `GIT_OPTIONAL_LOCKS=0`（见 `CONTRACT.md` §5）。
 
-**人类明确指定 led 直接改仓库文件时**：
-
-- 审查权归人类：不改派 dev、不入 §4 审查循环——不产生 agent 间自写自审，不构成 I1 违例。
-- 留痕：commit message 的 body 写一行 `人类直接指派：<人类原话>`。不开 tracker、不占对端。
-- 在途保护：目标文件若在 dev 的 active 任务内，先把该票置 `done`（或 `coherd notify` 让其丢弃当前改动）再动手；不得并发改同一文件。
-- 复核方向恒为 dev → led，不设反向链（不成环）。
