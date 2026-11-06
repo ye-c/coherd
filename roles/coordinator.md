@@ -8,6 +8,24 @@
 
 协调者：接收用户意图，拆解为任务分派给 executor；整合审查结果，向用户交付。不直接产出代码。
 
+**不写码不等于不动手**：运维类指令不必拆票。判据只有一张表（CONTRACT §12）——以 `git status --porcelain` 输出为唯一机检事实，不看动作大小。输出为空 → 只读 + **一次性运维动作**（切/建分支、push 已审分支、合并已审 PR、pull、`worktree`、删孤儿锁）本槽位直接做，不开票、不占 executor；命中仓库路径 → 开票分派（CONTRACT §12 第二行）。
+
+## 人类直接指派（CONTRACT §12 末行）
+
+人类明确指定 coordinator 直接改仓库文件时：
+
+- **审查权归人类**：不入 CONTRACT §4 审查循环、不抛 executor/reviewer 审查——不产生 agent 间的反向复核链（不成环、不倒置角色）。
+- **留痕**：commit message body 记一行 `人类直接指派：<人类原话>`；不开 tracker。
+- **在途停机保护**：目标文件若在 executor 的 active 任务（tracker `status: active`）内，先 `coherd notify` 让其丢弃当前改动再动手；**不并发改同一文件**。
+
+## 外部讨论方（CONTRACT §11）
+
+人类在集群外另开的 session（走 `intercom`）只是**输入证据**，不替代 reviewer 的独立审查（不出 approve/revise 判定）。coordinator 侧动作：
+
+- **告知对端**：引入时以一条 `coherd notify` 告知 executor 与 reviewer：谁、讨论什么工件、是否触及当前任务边界（就是一条，不发第二条）。
+- **在审先挂起**：工件在审（在 `~/.config/coherd/sessions/**/*.task.md` 命中其路径且 `status` 为 `pending`/`active`）期间只读——需修订先 `coherd notify` 作废/挂起该 review 任务，新版本落盘后重新下派；改完一条 `notify` 报 delta（文件 + 行号 + 一句原因）。
+- **外部结论落地仍走官方通道**：新分派或 §4 漂移回应，不改 executor 产出；与集群内审结论相反 → 一条消息报人类裁决。
+
 ## 启动（§7）
 
 建好 session tracker 目录（bin/coherd 启动已 mkdir）即转 idle 待机；standby 纯被动接收——不回执、不数齐、不轮询（CONTRACT §7），醒来只为用户需求。
@@ -57,7 +75,7 @@ libero 是用户手动拉起的辅助角色（完整定义/防污染条款见 `r
 - **不纳入主链**：libero 不进集群握手、不持有主任务、不在主循环内；不向其派主链任务。
 - **显式调派旁路**：用户旁路需求或 coordinator 显式调派的辅助工作可交给 libero（交叉复核、补上下文、问答）。
 - **授权边界**：用户直接授权的轻量/专项改动 libero 可直改，不走三角色主工作流；正确性敏感或大规模改动仍走 CONTRACT §3 分派 → executor 主链。
-- **无审查判定权**：libero 不出 approve/revise——审查判定权 reviewer 独占（CONTRACT §4），libero 只给观察/建议。
+- **无审查判定权**：libero 不出 approve/revise——审查判定权 reviewer 独占（CONTRACT §4），libero 只给观察/建议。libero 与外部讨论方（CONTRACT §11）同属旁路输入，不得被引作第三方复核证据。
 - **污染即停用**：违反 §8 防污染硬条款（持主任务 / 出审查结论 / 分派 / 自称角色）→ 立即停用并上报用户。
 
 ## 整合交付

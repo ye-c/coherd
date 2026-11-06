@@ -145,9 +145,9 @@ reviewer **最小审查集**（每次审查必做，顺序固定 = 五查）：
 
 | 槽位 | 允许 | 禁止 |
 | ------ | ------ | ------ |
-| coordinator | 只读/检索类工具（拆解、分派、讨论、整合所需）；只读 git 命令（带 `GIT_OPTIONAL_LOCKS=0`） | 直接编辑代码/写文件（除非明确授权）；git 写操作（`add`/`commit`/`stash`/`checkout`/`reset`）与删除锁文件 |
+| coordinator | 只读/检索类工具（拆解、分派、讨论、整合所需）；只读 git 命令（带 `GIT_OPTIONAL_LOCKS=0`）；写 session 协作元数据（spec / plan / tracker）；**一次性运维动作**（`git status --porcelain` 输出为空时，清单见 §12） | 直接编辑代码/写仓库文件（人类明确指派除外，见 §12）；未在 §12 放开的仓库级 git 写操作 |
 | executor | 完整代码编辑与运行工具；独占 git 写操作与 `index.lock` 治理 | 越出任务工具边界的写操作；改动配置/秘密文件 |
-| reviewer | 只读审查 + 跑验证；只读 git 命令（带 `GIT_OPTIONAL_LOCKS=0`） | 直接修改被审产出（须退回 executor）；越过自己工具边界的操作；git 写操作与删除锁文件 |
+| reviewer | 只读审查 + 跑验证；只读 git 命令（带 `GIT_OPTIONAL_LOCKS=0`）；写审查结论（verdict）；**一次性运维动作**（`git status --porcelain` 输出为空时，清单见 §12） | 直接修改被审产出（须退回 executor）；越过自己工具边界的操作；编辑仓库代码与改动配置；未在 §12 放开的仓库级 git 写操作 |
 
 executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限收紧由用户 CLI 配置负责（同 reviewer 见 roles/reviewer.md）。
 
@@ -160,9 +160,9 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 - 锁文件两种状态，处置不同：
   1. **有存活持锁方**（另有 git 进程在跑，或对端 agent 的写任务未完成）：等其完成（删除锁文件不终止持锁进程，冲突不因此结束）。
   2. **孤儿锁**（进程被 kill / 崩溃遗留，无 git 进程持有）：写操作持续失败，直到删除该文件。
-- 孤儿锁判据（单一条件，不以任务状态作条件）：`pgrep -x git` 退出码为 1（本机同 uid 可见范围内无 comm 为 `git` 的进程 → 无存活持锁方；跨用户 / 容器内进程不可见，无法判定时走处置顺序 ④；`ps | grep git` 会匹配到 grep 自身，不可用）。删除动作本身仍受上表白名单约束：只有 executor / dev 有 git 写权限。
+- 孤儿锁判据（单一条件，不以任务状态作条件）：`pgrep -x git` 退出码为 1（本机同 uid 可见范围内无 comm 为 `git` 的进程 → 无存活持锁方；跨用户 / 容器内进程不可见，无法判定时走处置顺序 ④；`ps | grep git` 会匹配到 grep 自身，不可用）。删除动作本身仍受上表白名单约束：常规由写方（executor / dev）执行；仅当 `git status --porcelain` 输出为空时，删除孤儿锁属 §12「一次性运维动作」，任一槽位可直接做。
 - 共享工作区（多 agent 同仓）不以 `git stash` / `checkout` 做版本对比：两者改写工作区文件，此间对端读到的是另一个版本。基线对比用独立副本：`git worktree add /tmp/<name> HEAD` → 在副本跑 → `git worktree remove /tmp/<name>`。
-- 处置顺序：① 按「孤儿锁判据」判定 → ② 非孤儿：等持锁方完成，不删除 → ③ 孤儿：由写方（executor / dev）在任务工具边界（§3 边界字段）覆盖该仓库时删除 → ④ 边界未覆盖（冷启动 / 无活跃任务）：写方不删除，由主编排槽位（coordinator / led）以 `coherd notify` 上报用户，或下发一条边界含 `.git/index.lock` 的单次解锁任务。
+- 处置顺序：① 按「孤儿锁判据」判定 → ② 非孤儿：等持锁方完成，不删除 → ③ 孤儿：由写方（executor / dev）在任务工具边界（§3 边界字段）覆盖该仓库时删除 → ④ 边界未覆盖（冷启动 / 无活跃任务）：由主编排槽位（coordinator / led）先以 `git status --porcelain` 判是否有在途改动——输出为空则按 §12 一次性运维动作**直接删除孤儿锁**；输出非空（存在在途改动，删除后写方仍会重取锁）则不下手，改为下发一条边界含 `.git/index.lock` 的单次解锁任务，或 `coherd notify` 上报用户。
 
 ## CLI 集成（数据契约 + 滑坡护栏）
 
@@ -220,3 +220,28 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 - **审查验收**：审查清单含「镜像一致校验」——diff `roles/` vs `~/.config/coherd/` 五文档 + `templates/` 目录逐文件应为空。
 - **brief 不重述**：启动 brief（`bin/coherd` `_brief`）只引 CONTRACT §7 D10（唯一权威映射），不重述环节→命令归组。
 - **tracker 边界**：分派 tracker「边界」字段写 `roles/<doc>.md`，不写 `~/.config/coherd/<doc>.md`。
+
+## 11. 外部讨论方（人类临时开的外部 session）
+
+- **定义**：人类在集群外另开的 session，与集群无角色关系：无 `[<role>|<type>]:` 标记、无 tracker、不在 §1 槽位表内。人类决定它是否存在、与谁对话。
+- **通道**：`intercom`（§2 通道作用域表第二行）；不注入 coherd 标记、不写 `events.log`。
+- **结论性质**：外部结论是**输入证据**，不构成 §4 的 `approve` / `revise` 判定，也不替代 reviewer 的独立审查——三角色模式下审查判定权仍由 reviewer 独占（本条不构成 §4 的先例）。
+- **对端感知**：引入外部讨论方时，coordinator 以**一条** `coherd notify` 告知 executor 与 reviewer：谁、讨论什么工件、是否触及当前任务边界。外部结论影响后续动作时走既有通道（新分派或 §4 漂移回应），**不直接改 executor 产出**。
+- **版本冻结（机检判据）**：某工件「在审中」= 在 `~/.config/coherd/sessions/**/*.task.md` 中搜该工件路径，命中文件的 frontmatter `status` 为 `pending` 或 `active`。在审期间该工件只读：coordinator 若需修订，先 `coherd notify` 作废/挂起该 review 任务，落盘新版本后重新下派，**禁止就地并发篡改**；改动后以一条 `notify` 报 delta（文件 + 行号 + 一句原因）。
+- **冲突处置**：外部结论与集群内审结论相反时，不自行取舍，一条消息报人类裁决。
+
+## 12. 操作分类（coordinator 自判）
+
+人类**未**指定时，用 `git status --porcelain` 判，不看动作大小：
+
+| `git status --porcelain` | 覆盖 | 谁做 |
+| ------ | ------ | ------ |
+| 输出为空 | 只读（`status`/`diff`/`log`/`coherd task list`）+ **一次性运维动作**（切/建分支、push 已审分支、合并已审 PR、pull、`worktree`、删孤儿锁） | 任何槽位直接做，不开票 |
+| 命中**仓库**内路径 | 源码、测试、工程配置（`.gitignore` / `pyproject.toml` / CI）、文档、`roles/` 契约 | executor（开票分派） |
+| 只命中 session 协作元数据 | `~/.config/coherd/sessions/**` 下的 spec / plan / tracker / verdict | coordinator / reviewer 直接写 |
+| 判不准 | — | 归入「仓库内路径」→ executor |
+| 人类指定 coordinator 改仓库文件 | 情形与上表同，执行方改由人类定 | coordinator 直接做：commit body 记一行 `人类直接指派：<人类原话>`；审查权归人类，不开 tracker、不入 §4、**不设反向复核**；目标文件在 executor active 任务内时先 `coherd notify` 停机再动手 |
+
+- 只读 git 命令带 `GIT_OPTIONAL_LOCKS=0`（§5 锁争用）。
+- **一次性运维动作的界碑**：不产生工作区内容差异。产生了 diff 的动作（改文件、改配置）不属于本类，回到上表按路径归属判。
+- **人类明确指派时不构成角色分离违例**：coordinator 直改仓库文件由人类担审查，但**不产生 executor/reviewer → coordinator 的反向复核链**（防止循环与角色颠倒）；目标文件若在 executor 的 active 任务内，须先停机（`coherd notify` 让其丢弃当前改动）再动手，**不得并发改同一文件**。
