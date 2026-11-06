@@ -1,6 +1,6 @@
 """tracker — coherd 任务 tracker 的读写与 YAML frontmatter 手写解析（不依赖 pyyaml）。
 
-body 标准化约定：frontmatter 是权威 schema（10 固定字段，程序读写），frontmatter 之外的
+body 标准化约定：frontmatter 是权威 schema（11 固定字段，程序读写），frontmatter 之外的
 markdown body 为自由上下文（agent 补充），解析器不校验 body。
 
 解析器核心（_parse_frontmatter）≤15 行：按行寻 frontmatter 边界（行首精确 '---'），
@@ -33,6 +33,7 @@ FIELDS = (
     "objective",
     "dod",
     "output_path",
+    "gate",
 )
 STATUSES = ("pending", "active", "done")
 
@@ -84,7 +85,8 @@ def render_frontmatter(data: dict, body: str = "") -> str:
             v = "" if v is None else str(v)
         if "\n" in v:
             lines.append(f"{f}: |")
-            lines.extend("  " + ln if ln else "" for ln in v.splitlines())
+            # 空行缩进 2 空格：解析端只把缩进行当续行，未缩进空行会被丢弃（值内空行丢失）
+            lines.extend("  " + ln if ln else "  " for ln in v.splitlines())
         else:
             lines.append(f"{f}: {v}")
     lines.append("---")
@@ -111,6 +113,11 @@ def validate(data: dict) -> None:
         raise ValueError(f"status 非法: {data.get('status')!r}（需 {STATUSES}）")
     if not ID_RE.match(str(data.get("id", ""))):
         raise ValueError(f"id 含非法字符: {data.get('id')!r}（需 [a-zA-Z0-9_-]）")
+    gate = str(data.get("gate", ""))
+    if "\n" in gate:
+        raise ValueError("gate 非法: 门禁命令须单行（禁换行）")
+    if gate.strip() == "|":
+        raise ValueError("gate 非法: 不得为单字符块标量标记 '|'")
 
 
 def tracker_path(task_id: str) -> Path:

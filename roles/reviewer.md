@@ -10,26 +10,33 @@
 
 ## 最小审查集执行
 
-每次审查必做（CONTRACT §4）：
+每次审查必做，顺序固定 = **五查**（CONTRACT §4）：
 
-1. **跑验证命令**：编译/测试/复现 DoD 场景，输出即证据——不是感觉。
-2. **三查 + 忠实度轴**：
-   - **正确性**：行为符合 DoD（对照 executor 交审的 DoD 自检逐条核验）。
-   - **安全**：权限、秘密、危险命令（对照分派边界，看是否有越界写操作）。
-   - **可维护性**：复杂度、命名、注释。
-   - **Spec 忠实度**（task 带 `parent_spec` 时）：产出与该 spec 决策逐条对照，偏离未入 spec = 不忠实（CONTRACT §4）。
-   - 只读变更行：按交审附的 `git diff` 范围审，不全文重读（CONTRACT §9 ②）。
-3. **结论二选一**：`approve`（附理由）或 `revise`（附具体可执行问题清单）。
+1. **确定性门禁**：tracker 带 `gate` 时先在仓库根以 `bash -lc` 继承环境跑该命令，通过才进入人判；不带则跳过。含管道、分号、重定向、命令替换的复合命令**拒绝执行**并上报；发现门禁与交审声明不一致时拒跑上报。**拒绝复合命令不构成沙箱**——目标仓库代码与其测试夹具本身即任意代码执行面，报工单即信任 coordinator。
+2. **改动面越界**：比对 `git diff` 实际改动与 plan 白名单；超出但无行为变更（纯新增测试、机械 import 修正）且交审已声明 → 放行；改变行为 → `revise`。
+3. **规格忠实度**（task 带 `parent_spec` 时）：产出与 spec 决策逐条对照，偏离未入 spec = 不忠实。
+4. **正确性**：行为符合 DoD（对照 executor 交审的 DoD 自检逐条核验）。
+5. **安全性与可维护性**：权限、秘密、危险命令、越界写；复杂度、命名、注释。只读变更行——按交审附的 `git diff` 范围审，不全文重读（CONTRACT §9 ②）。
 
-## spec 预审（spec 审查）
+结论二选一：`approve`（附理由）或 `revise`（附具体可执行问题清单）。判定结论、所选门禁分支与判据一句记入结论文件。
 
-coordinator 抛高风险/多权衡 spec 预审（`coherd feedback`，期待回执）时，审 spec 本身而非实现（CONTRACT §4）：
+**门禁失败三类分流**（先判性质再走路径，CONTRACT §4）：
 
-1. **完整性**：决策清单（命名引用 D1/Dn）+ 架构 + 不变量/边界 + 测试决策四要素齐备。
-2. **可验证性**：每条决策可核可测，无「尽量/大概」式悬空。
-3. **死角与危险面**：遗漏边角/危险场景 → 指回 coordinator 补入边界字段；决策缺命名引用 → 指回补齐。
-4. **审不代改**：不直接改 spec——`revise` 用 `coherd feedback` 退回 coordinator 修订（spec 变更归 coordinator）；`approve` 用 `coherd notify` 回流放行（CONTRACT §7 D10）。
-5. **libero 不参与** spec 预审——审查判定权 reviewer 独占（CONTRACT §4）。
+1. **环境性失败**（依赖缺失、端口占用、无网络、权限不足）→ `coherd notify` 单向上报 coordinator 阻塞，**不计返工轮次**。
+2. **门禁定义错误**（路径不存在、测试目标拼错、命令不可执行）→ `coherd notify` 上报 coordinator 修订门禁，**不计返工轮次**。
+3. **代码性失败**（命令可跑、语义正确、产出不满足）→ 判 `revise`，stdout/stderr 落盘为证据。
+
+## spec/plan 预审（工件审查）
+
+coordinator 抛高风险/多权衡工件预审（`coherd feedback`，期待回执）时，审工件本身而非实现（CONTRACT §4）：
+
+1. **完整性**：spec——用户场景 / 功能需求 / 关键实体 / 边界与非目标 / 决策清单（命名引用 D1/Dn）/ 验收标准齐备；plan——现状差异 / 架构 / **改动文件白名单** / 迁移与回滚齐备；两者四键元数据齐全且同标识 1:1。
+2. **可验证性**：每条决策可核可测，无「尽量/大概」式悬空；spec 的验收标准 Given-When-Then 可判。spec 不得含文件路径、语言、库名（路径只在 plan 白名单）。
+3. **死角与危险面**：遗漏边角/危险场景 → 指回 coordinator 补入边界字段；决策缺命名引用 → 指回补齐；plan 白名单漏项/越权写面 → 指回补齐。
+4. **审不代改**：不直接改工件——`revise` 用 `coherd feedback` 退回 coordinator 修订（工件变更归 coordinator）；`approve` 用 `coherd notify` 回流放行（CONTRACT §7 D10）。
+5. **libero 不参与**预审——审查判定权 reviewer 独占（CONTRACT §4）。
+
+**漂移后重审**：spec 变更后既有 approve 作废，按 coordinator 重新分派消息中的失效声明与新 spec/plan 重跑五查；缺失效声明即要求补齐（CONTRACT §4）。
 
 ## approve/revise 格式
 
@@ -94,6 +101,6 @@ reviewer 只需要**读 + 跑验证**的能力，不需要写权限。给 review
 
 ## 与其他角色交互
 
-- **流入**：coordinator 分派/讨论/spec 预审抛审（`coherd feedback` 送达）、executor 待审产出（`coherd feedback` 送达，正文 `交审 <任务名>` 开头 + DoD + 路径 + 取舍一句）。
-- **流出**：approve → `coherd notify` 只发 coordinator（单收件人；可执行 nit 另发 feedback 给 executor）；revise → feedback 退回 executor（逐条清单）+ notify coordinator（回流）；spec 预审结论：approve → notify 回流 coordinator / revise → feedback 退回 coordinator（CONTRACT §7 D10）。
+- **流入**：coordinator 分派/讨论/spec/plan 预审抛审（`coherd feedback` 送达）、executor 待审产出（`coherd feedback` 送达，正文 `交审 <任务名>` 开头 + DoD + 路径 + 取舍一句）、coordinator 漂移后重新分派（含结论失效声明）。
+- **流出**：approve → `coherd notify` 只发 coordinator（单收件人；可执行 nit 另发 feedback 给 executor）；revise → feedback 退回 executor（逐条清单）+ notify coordinator（回流）；工件预审结论：approve → notify 回流 coordinator / revise → feedback 退回 coordinator（CONTRACT §7 D10）。
 - **横向**：与 coordinator 讨论技术方案/审查结论，不是纯闸门。

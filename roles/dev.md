@@ -15,7 +15,8 @@
 - 收到 `coherd feedback` 分派消息（正文 `分派 <任务名>` 开头），校验 4 字段齐备：**objective / DoD / 输出 / 边界**（`CONTRACT-simple.md` §3）。
 - **缺任一字段 → 先向 led 补齐再动工**，模糊不干活（不猜、不自行补全后开工）。
 - 边界明确读写范围：只动分派允许的路径，不越界改配置/秘密文件。
-- **读 tracker + spec**：先读 `<id>.task.md`（4 字段权威副本）；带 `parent_spec` 时先读 `<id>.spec.md`（上游权威）——照 spec 决策实现，发现 spec 缺陷**不自行修改**，上报 led（spec 变更归 led）。
+- **读 tracker + spec + plan**：先读 `<id>.task.md`（4 字段权威副本）；带 `parent_spec` 时先读 `<id>.spec.md` 与同标识 `<id>.plan.md`（上游权威）——照 spec 决策实现，改动严格限于 plan §「改动文件白名单」；发现工件缺陷或假设不成立**不自行修改**，按「漂移回流」上报 led（工件变更归 led）。
+- **改动面**：只改 plan 白名单内文件；白名单外的无行为变更（纯新增测试、机械 import 修正）须在交审消息中显式声明才可能被放行（`CONTRACT-simple.md` §4）。
 - **开工 ack（可选，推荐）**：`coherd notify` led 一声开工（单向，不回执）。**不属交审**，不受 H1 约束。
 - **产出写文件**：实现结果写入 tracker「输出」指定路径。
 
@@ -47,6 +48,11 @@ led 退回必须用信号区分两种意图，**dev 据信号分支**：
 
 阻塞 → `coherd notify` **led**（原因 + 已尝试手段），让 led 可直接决策。**唯一上报路径**，无第二条。executor.md 的"上报 coordinator"即此处"上报 led"。
 
+**但与规约漂移分流**（同 `CONTRACT.md` §4）：
+
+- **环境/依赖类阻塞**（缺依赖、端口占用、无网络、权限不足；门禁命令本身不可执行）→ `coherd notify`（单向，不必回执）。
+- **规约漂移**（plan/spec 假设与现实不符，非环境问题）→ **停止改码**，`coherd feedback` 回传：受影响任务 + 现实阻碍 + 需修订的假设。led 会冻结任务、修订工件并三选一回应；收到新 spec/plan 后再动工。
+
 ## revise 处理
 
 逐条修订 → **重交 led 用 `coherd notify`**（`CONTRACT-simple.md` §2 映射：改完重交 = notify；仅**首次交审** = feedback）。附原 DoD + diff 范围。
@@ -72,5 +78,5 @@ led 退回必须用信号区分两种意图，**dev 据信号分支**：
 ## 与其他角色交互
 
 - **流入**：led 分派（`coherd feedback`，正文 `分派 <任务名>` 开头，4 字段）、led revise 退回（`coherd feedback`）、led 需求级变更新分派（`coherd feedback`）。
-- **流出**：交审 led（`coherd feedback`，唯一一条，H1）；修订重交（`coherd notify`）；阻塞上报（`coherd notify`，唯一路径，H3）。
+- **流出**：交审 led（`coherd feedback`，唯一一条，H1）；修订重交（`coherd notify`）；环境阻塞上报（`coherd notify`，H3）；规约漂移回流（`coherd feedback`，需回执）。
 - 无 reviewer、无 coordinator——**所有交互对象只有 led 一个**（H1/H3 的由来）。

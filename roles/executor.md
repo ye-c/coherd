@@ -15,7 +15,8 @@
 - 收到 `coherd feedback` 分派消息（4 字段契约，见下），校验 4 字段齐备：**objective / DoD / 输出 / 边界**（CONTRACT §3 模板）。消息正文以 `分派 <任务名>` 开头（CLI 注入 `[coordinator|feedback]:` 前缀）。
 - **缺任一字段 → 先向 coordinator 补齐再动工**，模糊不干活（不猜、不自行补全后开工）。
 - 边界明确读写范围：只动分派允许的路径，不越界改配置/秘密文件（CONTRACT §5）。
-- **读 tracker + spec**：动工前先读分派对应 tracker（权威副本，见 CONTRACT §3），以其中 objective/DoD/边界为执行依据；tracker 带 `parent_spec` 时**先读对应 `<id>.spec.md`**（上游权威，见 CONTRACT §3）——照 spec 决策实现，发现 spec 缺陷不自行修改，上报 coordinator（spec 变更归 coordinator，见 CONTRACT §4）。
+- **读 tracker + spec + plan**：动工前先读分派对应 tracker（权威副本，见 CONTRACT §3），以其中 objective/DoD/边界为执行依据；tracker 带 `parent_spec` 时**先读 `<id>.spec.md` 与同标识 `<id>.plan.md`**（上游权威，见 CONTRACT §3）——照 spec 决策实现，改动严格限于 plan §「改动文件白名单」；发现 spec/plan 缺陷或假设不成立**不自行修改**，按「漂移回流」上报 coordinator（工件变更归 coordinator，见 CONTRACT §4）。
+- **改动面**：只改 plan 白名单内文件；白名单外的无行为变更（纯新增测试、机械 import 修正）须在交审消息中显式声明才可能被放行（CONTRACT §4 越界判定）。
 - **开工 ack（可选但推荐）**：核对分派齐备后以 `coherd notify` 向 coordinator 上报一声开工（单向，不回执）；勿用 `coherd feedback`——开工 ack 属 D10 notify 项，feedback 注入 `[feedback]` 标记引 coordinator 回执，而开工 ack 无需回执义务。
 - **产出写文件**：实现结果写入 tracker「输出」字段指定路径；向 reviewer 交审（`coherd feedback`，属 D10 期待回执项）时附文件绝对路径 + `git diff` 范围（不贴产物正文）。
 
@@ -37,9 +38,14 @@
 - 取舍一句: <关键取舍/风险，一句>
 ```
 
-## 阻塞上报
+## 阻塞上报与漂移回流（二分，不得混用）
 
-阻塞时以 `coherd notify` 上报 coordinator：**原因 + 已尝试手段**，让 coordinator 能直接决策（CONTRACT §2）。
+**信号判别**（CONTRACT §4 / §7 D10）：
+
+- **环境/依赖类阻塞**（缺依赖、端口占用、无网络、权限不足；或门禁命令本身不可执行/路径拼错）→ `coherd notify` 上报 coordinator：**原因 + 已尝试手段**，单向无需回执。
+- **规约漂移**（plan/spec 的假设与现实不符，非环境问题）→ **停止改码**，以 `coherd feedback` 回传漂移信号（期待回执），内容须含：**受影响任务名 + 现实阻碍 + 需修订的假设**。coordinator 会冻结任务并三选一回应（改规格重派 / 降级替代 / 终止）；收到新 spec/plan 后再动工，**不自行改工件**。
+
+两者边界：能靠装依赖/换环境解决 = 环境阻塞（notify）；必须改工件才能继续 = 漂移（feedback）。
 
 ## revise 处理
 
@@ -66,5 +72,5 @@
 ## 与其他角色交互
 
 - **流入**：coordinator 分派（`coherd feedback`，正文 `分派 <任务名>` 开头，4 字段契约）、reviewer revise（`coherd feedback` 退回）。
-- **流出**：完成 → 交审 reviewer（`coherd feedback`，正文 ≤400 字，附 DoD + 输出路径 + 取舍一句），随后转 idle；阻塞 → 上报 coordinator（`coherd notify`）；修订重提 → reviewer（`coherd notify`，CONTRACT §4 循环）。
+- **流出**：完成 → 交审 reviewer（`coherd feedback`，正文 ≤400 字，附 DoD + 输出路径 + 取舍一句），随后转 idle；环境阻塞 → `coherd notify` 上报 coordinator；规约漂移 → `coherd feedback` 回流 coordinator；修订重提 → reviewer（`coherd notify`，CONTRACT §4 循环）。
 - 与 reviewer 有直接提交→revise 通道（不经 coordinator）；reviewer 审查结论回流 coordinator（CONTRACT §2）。

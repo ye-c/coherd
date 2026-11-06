@@ -95,7 +95,7 @@ coherd init ~/code/myapp            # 强制重建同 label 集群（已存在�
 - **led** = coordinator + reviewer 合一：拆解分派、跑验证审查、整合交付；**不写码**。
 - **dev** = executor：实现任务，交审只发一条消息给 led（led 兼任审方，无第二条上报）。
 - 写/审分离仍是两个独立 agent 实例——led 不写码，铁律守住。
-- ⚠️ **能力降级**：无独立 reviewer，即**没有独立第二意见**（spec 预审、产出审查都是 led 自审）。需要第三方复核时用默认三角色模式。
+- ⚠️ **能力降级**：无独立 reviewer，即**没有独立第二意见**（spec/plan 预审、产出审查都是 led 自审）。需要第三方复核时用默认三角色模式。
 - **revise 上限 2 轮**，超限由 led 自仲裁（改判/拆任务/终止）——简易模式无第三方可升级。
 
 契约见 `roles/CONTRACT-simple.md` + `roles/led.md` / `roles/dev.md`（安装到 `~/.config/coherd/`）。三角色模式的文档与行为**零改动**，两套模式以 `-s` 切换。
@@ -105,7 +105,7 @@ coherd init ~/code/myapp            # 强制重建同 label 集群（已存在�
 完整契约见 `roles/CONTRACT.md`（公共，安装到 `~/.config/coherd/CONTRACT.md`）+ 四份 per-role（`roles/{coordinator,executor,reviewer,libero}.md`），要点：
 
 - **分派契约**：coordinator→executor 每条任务必带 4 字段——objective / DoD 验收标准 / 输出格式 / 工具边界。字段缺了先补，模糊不干活。
-- **审查循环**：reviewer 每次必跑验证命令 + 三查（正确性/安全/可维护性）+ 给双向结论；revise 上限 2 轮。
+- **审查循环**：reviewer 每次必做五查——门禁（任务携带的单行验证命令）→ 改动面越界（对照方案白名单）→ 规格忠实度 → 正确性 → 安全性与可维护性；给双向结论，revise 上限 2 轮。
 - **工具白名单**：coordinator 只读/检索，executor 完整编辑，reviewer 只读审查；任务级边界与白名单取交集。
 - **规模缩放**：低风险小任务可省掉审查环节，高风险任务必走全链路。
 

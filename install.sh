@@ -56,6 +56,20 @@ for _rd in "${ROLE_DOCS[@]}"; do
 done
 unset _rd _install_doc ROLE_DOCS
 
+# ── 安装工件模板 (roles/templates/ → $CFG_DIR/templates/) ──
+#   整目录替换: 先清旧 .bak → 现目录移为 .bak → cp -R 源目录（复制目录本身, 幂等不生成 templates/templates 嵌套）
+if [ -d "$HERE/roles/templates" ]; then
+  rm -rf "$CFG_DIR/templates.bak" # 覆盖式: 只保留最新一份
+  if [ -e "$CFG_DIR/templates" ]; then
+    mv "$CFG_DIR/templates" "$CFG_DIR/templates.bak"
+    info "已备份原有 $CFG_DIR/templates → templates.bak"
+  fi
+  cp -R "$HERE/roles/templates" "$CFG_DIR/templates"
+  info "已安装 $CFG_DIR/templates"
+else
+  info "无 roles/templates/, 跳过模板安装"
+fi
+
 # ── 安装 role skills 到共享目录 + Claude Code 软链 ──
 #   源: skills/<name>/SKILL.md → ~/.agents/skills/<name>/(pi 等从此读)
 #   Claude Code 读 ~/.claude/skills/<name> → 软链到上面的共享目录 (对等 herdr 做法)

@@ -14,7 +14,7 @@
 | 交审 executor → reviewer | `dev` → `led` |
 | 审查结论回流 reviewer → coordinator/executor | **消息消失**——led 既审又交付，同一 pane 内两动作，无跨甲方通知 |
 | 整合交付 coordinator → 用户 | `led` → 用户 |
-| spec 预审 coordinator → reviewer | **led 内部自审**（能力降级，见 §7） |
+| spec/plan 预审 coordinator → reviewer | **led 内部自审（两者同批）**（能力降级，见 §7） |
 | libero 旁路管理（coordinator §8） | simple 模式无 libero 槽位；辅助角色不进本模式 |
 
 角色名沿用 `${WS_SLUG}-<role>` 约定：`<ws>-led` / `<ws>-dev`（非裸单词）。CLI 按 `${ws}-` 前缀派生 role，不硬编码角色名，故无需新映射表。
@@ -23,7 +23,7 @@
 
 | 槽位 | 角色 | 职责 |
 | ------ | ------ | ------ |
-| led | 检查者（用户主交互） | 接收用户意图 → 拆解为任务分派；审 dev 产出（跑验证 + 三查/四查）；自审 spec；整合交付。**不写码**（工具白名单见 §5） |
+| led | 检查者（用户主交互） | 接收用户意图 → 拆解为任务分派；审 dev 产出（跑验证 + 五查）；自审 spec/plan；整合交付。**不写码**（工具白名单见 §5） |
 | dev | 执行者 | 实现 led 分派的任务，产出可验证结果；阻塞上报 led。承担全部写操作 |
 
 **角色分离铁律（不变量 I1）**：led 与 dev **必须为两个独立 agent 实例**。同一实例兼任 = 同一推理路径既写码又自审，禁止（`CONTRACT.md` §1）。led 不写码，写/审分离由 led↔dev 两个实例保证——合并 coordinator 与 reviewer 不违背该铁律。
@@ -45,7 +45,7 @@
 | dev standby 握手 | `coherd notify` | 单向，一次性（§6） |
 | led 交付 → 用户 | `coherd notify` | 单向 |
 | 审查结论回流 | **不存在** | led 审完直接交付（差异总表） |
-| spec 预审 | **无跨角色消息** | led 自审（§7 D9） |
+| spec/plan 预审 | **无跨角色消息** | led 自审，spec 与 plan 同批（§7 D9） |
 
 read 用 `herdr agent read <name>`，仅用于核对状态/查证据，不作轮询等待（`CONTRACT.md` §2）。
 
@@ -72,16 +72,29 @@ led → dev 每条任务**必须**含以下 4 字段，缺失即任务未定义�
 
 - 字段缺失 → dev 先向 led 补齐再动工；模糊分派导致的重复/遗漏由分派方（led）负责。
 - 分派前 led 把 4 字段落盘 session 平铺 `<id>.task.md`（权威副本，路径与 schema 同 `CONTRACT.md` §3/CLI 数据契约），dev 契约上不可写。
-- 复杂任务（走全链路判据）分派前 led 产 `<id>.spec.md`（决策清单 D1… + 架构 + 不变量/边界 + 测试决策；不含文件路径），tracker `parent_spec` 记 FK。**spec 变更归 led**。
-- 分派消息指示 dev：完成后**直接交 led 审查**（一条 feedback，勿发第二条 notify）。
+- **工件四层**：意图澄清 → 规格（What，`<id>.spec.md`，无路径/语言/库名）→ 方案（How，`<id>.plan.md`，与 spec 同标识 1:1，含现状差异 / 架构 / **改动文件白名单** / 迁移回滚）→ 任务。无规格不做方案，无方案不拆票。四键元数据手写：`id` / `kind`（spec 或 plan）/ `created_at`（`%Y-%m-%dT%H:%M:%SZ`）/ `parent_spec`；模板取 `~/.config/coherd/templates/`。tracker `parent_spec` 记 FK。**工件变更归 led**。
+- **门禁字段**：tracker 可选 `gate`（单行命令，非必填）；`coherd task new --gate '<命令>'` 写入。执行语义同 `CONTRACT.md` §3：仓库根 + `bash -lc` + 继承环境，需净化环境自带 `env -u VAR ...`，不承诺跨机一致。工具层只校验格式。
+- 分派消息指示 dev：完成后**直接交 led 审查**（一条 feedback，勿发第二条 notify）；改动限 plan 白名单。
 
 ## 4. 审查循环（led 自审版）
 
-最小审查集（每次审查必做）：
+最小审查集（每次审查必做，顺序固定 = 五查）：
 
-1. 跑验证命令（编译/测试/复现 DoD 场景），输出即证据。
-2. 三查 + 忠实度轴（四查）：**正确性**（行为符合 DoD，对照 dev 的 DoD 自检逐条核）/ **安全**（权限、秘密、危险命令、越界写）/ **可维护性**（复杂度、命名、注释）/ **Spec 忠实度**（task 带 `parent_spec` 时：产出与 spec 决策逐条对照，偏离未入 spec = 不忠实）。
-3. 结论二选一：`approve`（附理由）或 `revise`（附具体可执行问题清单，每条：位置 + 问题 + 修法）。
+1. **确定性门禁**：tracker 带 `gate` 时先在仓库根以 `bash -lc` 继承环境跑该命令，通过才进入人判；不带则跳过。复合命令（管道、分号、重定向、命令替换）拒绝执行。**拒绝复合命令不构成沙箱**——门禁执行即信任 dev 提供的仓库代码。
+2. **改动面越界**：比对实际改动与 plan 白名单；超出但无行为变更（纯新增测试、机械 import 修正）且交审已声明 → 放行；改变行为 → revise。
+3. **规格忠实度**（task 带 `parent_spec` 时）：产出与 spec 决策逐条对照，偏离未入 spec = 不忠实。
+4. **正确性**：行为符合 DoD（对照 dev 的 DoD 自检逐条核）。
+5. **安全性与可维护性**：权限、秘密、危险命令、越界写；复杂度、命名、注释。
+
+结论二选一：`approve`（附理由）或 `revise`（附具体可执行问题清单，每条：位置 + 问题 + 修法）。结论文件记明所走门禁分支与判据一句。
+
+**门禁失败三类分流**（simple 模式无第三方，由 led 自行处置）：
+
+1. **环境性失败**（依赖缺失、端口占用、无网络、权限不足）→ 修环境/补齐依赖后重跑，**不计返工轮次**；无法解决则 `coherd notify` 告知用户。
+2. **门禁定义错误**（路径不存在、测试目标拼错、命令不可执行）→ led 修订 tracker 门禁后重跑，**不计返工轮次**。
+3. **代码性失败**（命令可跑、语义正确、产出不满足）→ 判 `revise`，stdout/stderr 落盘为证据。
+
+**自审豁免声明**：led 自审 spec/plan 与自审产出不违背「同一路径不得既写码又自评」——**led 不写码**，写方是 dev；故该自审属既有豁免，**不构成三角色模式的先例**。
 
 循环与终止：
 
@@ -90,6 +103,7 @@ led → dev 每条任务**必须**含以下 4 字段，缺失即任务未定义�
 - **revise 上限 2 轮**：仍不通过 → 三角色模式升级 coordinator 仲裁；**simple 模式无第三方可升级**，由 led 自仲裁（改判 / 拆任务 / 终止），并以 `coherd notify` 告知用户决策与理由。此为流程降级，显式声明。
 - **不代改**：问题一律退回 dev；led 改被审产出 = 自审自己的修改，破坏角色分离。
 - **DoD 语义变更归 led**：先更新 tracker，再以新分派明示 dev；**不得用 `revise:` 夹带需求变更**（H2 的信号级硬规则，见 `roles/dev.md`）。
+- **规约漂移**：dev 以 `coherd feedback` 回传（受影响任务 + 现实阻碍 + 待修订假设）→ led 冻结任务、修订 spec/plan，回应三选一（改规格重派 / 降级替代 / 终止），禁止只回「收到」；spec 变更后既有 approve 作废，重新分派须声明 `重审 <任务名>：旧 approve <结论文件绝对路径> 因规格 <标识> 变更作废` + 新工件路径。
 - 结论落盘 session 平铺 `<id>.<verdict>-<HHMMSS>.md`（verdict=approve/revise；秒戳到轮，与 `<id>.task.md` 同目录）——led 自审亦留证据链。
 
 ## 5. 工具白名单（行为级）
@@ -111,7 +125,7 @@ led → dev 每条任务**必须**含以下 4 字段，缺失即任务未定义�
 
 simple 模式以"少一个 agent、少一轮通信"换取简易，代价**必须显式**：
 
-- **R1 无独立第二意见**：无独立 reviewer —— spec 预审、产出审查均由 led 自审。**不存在第三方复核**。用户选 simple 即接受此项；需要独立第二意见时切回三角色模式。
+- **R1 无独立第二意见**：无独立 reviewer —— spec/plan 预审、产出审查均由 led 自审。**不存在第三方复核**。用户选 simple 即接受此项；需要独立第二意见时切回三角色模式。
 - **R2 分派与审查同源**：led 既定 DoD 又判 DoD → 自证风险。缓解：DoD 必须可测（§3 硬要求不变）；dev 交审须附 DoD 自检，led 逐条核验（非凭感觉）。**软缓解，非硬隔离**。
 - **R3 单点**：led pane 挂 = 集群挂（与三角色模式 coordinator 挂同理，非新增风险）。
 - **R4 用户误用**：用户可能把 led 当"全能 agent"直接让其写码。**led 不写码**（§5，沿 `CONTRACT.md` §5 coordinator 行）。
@@ -127,4 +141,4 @@ simple 模式以"少一个 agent、少一轮通信"换取简易，代价**必须
 
 ## 9. 事实源与同步
 
-本文件与 `roles/led.md`、`roles/dev.md` 的**唯一事实源是 repo `roles/`**；repo → `~/.config/coherd/` 单向覆盖分发，禁止只改 `~/.config` 副本（`CONTRACT.md` §10）。镜像一致校验需含本模式 3 个文档。
+本文件与 `roles/led.md`、`roles/dev.md` 的**唯一事实源是 repo `roles/`**；repo → `~/.config/coherd/` 单向覆盖分发，禁止只改 `~/.config` 副本（`CONTRACT.md` §10）。镜像一致校验需含本模式 3 个文档 + `templates/` 目录逐文件。

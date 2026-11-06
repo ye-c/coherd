@@ -163,6 +163,9 @@ def new(
     parent_spec: str = typer.Option(
         "", "--parent-spec", help="上游 spec id（FK 追溯，见 CONTRACT §3；缺省空串）"
     ),
+    gate: str = typer.Option(
+        "", "--gate", help="可选单行门禁命令（reviewer 先跑；缺省空串）"
+    ),
 ) -> None:
     """生成新 tracker 到 session 目录平铺 ~/.config/coherd/sessions/<session>/<id>.task.md（无 session 目录自动自建），打印路径。"""
     if status not in T.STATUSES:
@@ -181,6 +184,7 @@ def new(
             "objective": objective,
             "dod": dod,
             "output_path": output,
+            "gate": gate,
         }
         p = T.write_new(data, body)
     except (ValueError, FileExistsError) as e:

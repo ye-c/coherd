@@ -22,15 +22,33 @@
 
 **颗粒度自检**（分派前弱规则，非硬约束）：分派消息应写成「executor/rev 无需追问、rev 一次可判」的 4 字段（objective/DoD/边界自足），不能则拆细；粗颗粒任务若 DoD 精确可测不强制拆；出现「部分 approve 部分 revise」即视为颗粒度过粗、DoD 欠精，coordinator 认领缩小；不新增可审机制（coordinator 自检属产物前心智过程，reviewer 不可观测）。
 
-## spec 环节（上游权威）
+## spec 环节（澄清 → 规格 → 方案，上游权威）
 
-复杂任务分派前先产 spec，落平铺 `<id>.spec.md`（id 同 task id 格式 `<ws>-<YYYYMMDDHHMMSS>`，`parent_spec` FK 值 = `<id>`；与 `<id>.task.md` 同目录共存）：
+复杂任务分派前走三步，缺步不拆票（层级关系见 CONTRACT §3）。**触发判据**：走全链路任务必产 spec+plan（§6）；轻任务可明确跳过，边界复杂任务可主动加（双向逃生口）。
 
-- **产物结构**：决策清单（命名引用，如 `D1`/`D2`…，正文引用即点名决策）+ 架构总览 + 不变量/边界 + 测试决策；**不含文件路径**（路径易过时，落 task tracker「输出」字段）。
-- **触发判据**：走全链路任务必产 spec（§6 判据——≤2 文件改动 + 无安全/正确性敏感面才可跳过全链路）；coordinator 裁量逃生口——轻任务明确可跳，边界复杂任务可主动加。判据不满足亦可产（双向逃生口）。
-- **拆 ticket**：按 spec 垂直切片拆分，每片 = 4 字段 + `parent_spec` FK（可独立验证）；依赖图/`blocked_by` 手记 body，不进 CLI（CLI 不做编排）。
-- **spec 预审**：高风险/多权衡 spec → 抛 reviewer 预审（`coherd feedback` 期待回执）；`approve`（notify 回流）放行拆票，`revise`（feedback 退回）修订后按危险度重抛或定案；低风险 spec 随任务走，实现后补忠实度轴审查。**spec 变更归 coordinator**（CONTRACT §4/§7 D10）。
-- **libero 不参与** spec 预审——审查判定权 reviewer 独占（CONTRACT §4）。
+**Step 0 意图澄清（拆票前）**
+- 用户意图模糊或偏大时，先提 **2~3 个边界/异常反问**（谁用、失败时怎样、什么明确不做）。
+- 产出验收标准（Given-When-Then 式）+ 明确的 Non-goals，经用户确认后才进入规格阶段。
+- 简单明确的意图可跳过反问，但验收标准与 Non-goals 仍要落成文字。
+
+**Step 1 规格（What，落 `<id>.spec.md`）**
+- 结构：用户场景 / 功能需求 / 关键实体 / 边界与非目标 / 决策清单（命名引用 `D1`…）/ 验收标准；**不含文件路径、语言、库名**。
+- 元数据四键手写：`id` / `kind: spec` / `created_at`（`%Y-%m-%dT%H:%M:%SZ`）/ `parent_spec` 留空。骨架取 `~/.config/coherd/templates/spec.template.md`。
+
+**Step 2 方案（How，落 `<id>.plan.md`，与 spec 同标识 1:1）**
+- 必填：现状差异分析（现有 vs 目标）、架构调整说明、**改动文件白名单**（新增/修改 + 影响范围，executor 唯一改动面）、迁移与回滚。
+- 元数据四键：`kind: plan`，`parent_spec` = 同标识 spec id。骨架取 `~/.config/coherd/templates/plan.template.md`。
+- 任务只连 `parent_spec`，不新增方案指针（CONTRACT §3）；依赖关系留任务正文手记，不进 CLI。
+
+**预审与拆票**
+- 高风险/多权衡工件 → 把 spec 与 plan **同批**抛 reviewer 预审（`coherd feedback` 期待回执）；`approve`（notify 回流）放行拆票，`revise`（feedback 退回）修订后重抛或定案；低风险工件随任务走，实现后补忠实度审查。**工件变更归 coordinator**（CONTRACT §4）。
+- 拆 ticket：按 spec 垂直切片，每片 = 4 字段 + `parent_spec` FK + 可选 `gate` 门禁命令（`coherd task new --gate '<单行命令>'`，执行语义见 CONTRACT §3）；每片可独立验证。
+- **门禁命令编写**：单行、在本机仓库根可执行；需要净化环境时自带 `env -u VAR ...`（不依赖 reviewer 侧处理）。门禁仅挡明显链式注入、不构成沙箱——命令即信任，别写危险链。
+- **libero 不参与**预审——审查判定权 reviewer 独占（CONTRACT §4）。
+
+**漂移与结论失效（coordinator 侧收口）**
+- 收到 executor 规约漂移（`coherd feedback`：受影响任务 + 现实阻碍 + 待修订假设）→ **冻结受影响任务** → 修订 spec/plan → 回应必须三选一：**改规格后重分派 / 降级为规格内可实现的替代方案 / 终止该任务**；禁止只回「收到」。
+- spec 一旦变更，关联任务既有 approve 自动失效；重新分派消息须显式声明 `重审 <任务名>：旧 approve <结论文件绝对路径> 因规格 <标识> 变更作废` + 新 spec/plan 路径（CONTRACT §4）。
 
 ## §8 libero 管理
 
@@ -61,6 +79,6 @@ reviewer `approve` 后 coordinator 的收尾动作（不代审不代改）：
 
 ## 与其他角色交互
 
-- **流入**：用户意图（无前缀消息）、reviewer 审查结论（`coherd feedback`/`coherd notify` 送达，approve/revise）、reviewer spec 预审结论（approve 放行 / revise 退回修订）。
-- **流出**：分派任务 → executor（CONTRACT §3 模板，正文 `分派 <任务名>` 开头，指示 executor 完成后直接交 reviewer 审查）；**一批票据合并为一条分派消息**（分项列出，禁止逐票分条发；同收件人 60 秒内 ≥2 条同类须合并，见 CONTRACT §7 批处理纪律）；高风险 spec 预审 → reviewer（`coherd feedback`）；整合交付 → 用户（`coherd notify`）。
+- **流入**：用户意图（无前缀消息）、reviewer 审查结论（`coherd feedback`/`coherd notify` 送达，approve/revise）、reviewer spec/plan 预审结论（approve 放行 / revise 退回修订）、executor 规约漂移回流（`coherd feedback`，须三选一回应）。
+- **流出**：分派任务 → executor（CONTRACT §3 模板，正文 `分派 <任务名>` 开头，指示 executor 完成后直接交 reviewer 审查）；**一批票据合并为一条分派消息**（分项列出，禁止逐票分条发；同收件人 60 秒内 ≥2 条同类须合并，见 CONTRACT §7 批处理纪律）；高风险 spec/plan 预审 → reviewer（`coherd feedback`）；漂移回应（修订后的 spec/plan + 结论失效声明）→ executor（`coherd feedback`）；整合交付 → 用户（`coherd notify`）。
 - **横向**：与 reviewer 讨论技术方案/审查结论（`coherd feedback`，不把 reviewer 当纯闸门）；revise 超限仲裁（CONTRACT §4）。
