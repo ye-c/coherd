@@ -125,6 +125,8 @@ reviewer **最小审查集**（每次审查必做，顺序固定 = 五查）：
 
 **spec/plan 预审（工件审查）**：高风险/多权衡工件由 coordinator 抛 reviewer 预审（`coherd feedback`，期待回执）——查**完整性 / 可验证性 / 死角与危险面入边界字段 / 决策命名引用**（spec 另查无路径无库名；plan 另查白名单与迁移回滚齐备）；审不代改，`revise` 以 `coherd feedback` 退回 coordinator 修订（工件变更归 coordinator），`approve` 以 `coherd notify` 回流放行；libero 不参与预审（审查判定权 reviewer 独占）。
 
+**预审同样受 revise ≤ 2 轮约束**：第 2 轮 revise 后仍有分歧，升级 coordinator 仲裁（改规格定案 / 降级替代 / 终止分派），避免无休止推敲；仲裁结论即定案，不再继续抛审。
+
 **规约漂移与结论失效**：
 
 - executor 回传漂移（`coherd feedback`：受影响任务 + 现实阻碍 + 待修订假设）→ coordinator 冻结受影响任务并修订 spec/plan，回应必须三选一（改规格重派 / 降级替代 / 终止），**禁止只回「收到」**。

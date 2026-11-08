@@ -62,6 +62,7 @@
 - 高风险/多权衡工件 → 把 spec 与 plan **同批**抛 reviewer 预审（`coherd feedback` 期待回执）；`approve`（notify 回流）放行拆票，`revise`（feedback 退回）修订后重抛或定案；低风险工件随任务走，实现后补忠实度审查。**工件变更归 coordinator**（CONTRACT §4）。
 - 拆 ticket：按 spec 垂直切片，每片 = 4 字段 + `parent_spec` FK + 可选 `gate` 门禁命令（`coherd task new --gate '<单行命令>'`，执行语义见 CONTRACT §3）；每片可独立验证。
 - **门禁命令编写**：单行、在本机仓库根可执行；需要净化环境时自带 `env -u VAR ...`（不依赖 reviewer 侧处理）。门禁仅挡明显链式注入、不构成沙箱——命令即信任，别写危险链。
+- **预审仲裁定案**：预审 revise 满 2 轮仍不收敛 → coordinator 强制仲裁定案（改规格定案 / 降级替代 / 终止分派），不得继续抛审（CONTRACT §4 预审轮次上限）。
 - **libero 不参与**预审——审查判定权 reviewer 独占（CONTRACT §4）。
 
 **漂移与结论失效（coordinator 侧收口）**

@@ -35,6 +35,7 @@ coordinator 抛高风险/多权衡工件预审（`coherd feedback`，期待回�
 3. **死角与危险面**：遗漏边角/危险场景 → 指回 coordinator 补入边界字段；决策缺命名引用 → 指回补齐；plan 白名单漏项/越权写面 → 指回补齐。
 4. **审不代改**：不直接改工件——`revise` 用 `coherd feedback` 退回 coordinator 修订（工件变更归 coordinator）；`approve` 用 `coherd notify` 回流放行（CONTRACT §7 D10）。
 5. **libero 不参与**预审——审查判定权 reviewer 独占（CONTRACT §4）。
+6. **revise 轮次上限**：第 2 轮 revise 后仍不收敛 → 上报 coordinator 仲裁定案，不再自行改判（CONTRACT §4 预审轮次上限）。
 
 **漂移后重审**：spec 变更后既有 approve 作废，按 coordinator 重新分派消息中的失效声明与新 spec/plan 重跑五查；缺失效声明即要求补齐（CONTRACT §4）。
 
