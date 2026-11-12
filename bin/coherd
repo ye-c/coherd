@@ -364,6 +364,7 @@ start_roles() { # 无参; 用全局 ROLE_NAMES / ROLE_PANES / ROLE_CMDS (长度�
         if herdr pane run "${ROLE_PANES[$i]}" "${ROLE_CMDS[$i]}" >/dev/null 2>&1; then
           run_ok[$i]=1
           info "pane run ${ROLE_NAMES[$i]} 已发出"
+          sleep 0.5
         fi
       fi
     done
