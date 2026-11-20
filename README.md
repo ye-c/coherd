@@ -32,16 +32,21 @@ coherd 把多个 AI agent 组织成一个小团队：一个规划、一个干活
 
 ## 安装
 
+手工步骤与 `./install.sh` **二选一**，不要都跑（都跑会各留一份 `.bak`，徒增困惑）。
+
 ```bash
 # 手动安装（install.sh 亦可用）
 cp bin/coherd ~/.local/bin/                 # 或 /usr/local/bin，确保在 PATH
 mkdir -p ~/.config/coherd
 cp roles/CONTRACT.md roles/coordinator.md roles/executor.md roles/reviewer.md roles/libero.md ~/.config/coherd/
 cp roles/CONTRACT-simple.md roles/led.md roles/dev.md ~/.config/coherd/   # 双角色简易模式 (-s)
-cp -R roles/templates ~/.config/coherd/templates/                          # spec/plan 骨架（install.sh 同此行为）
+mkdir -p ~/.config/coherd/templates                                     # spec/plan 骨架
+cp -R roles/templates/. ~/.config/coherd/templates/                     # 同 spec/plan 骨架
 # 一键版:
 ./install.sh                                # 拷贝+备份+依赖提示
 ```
+
+> 模板那两行：源路径尾缀 `/.` 保证不嵌套——目标已存在时连跑两次仍单层（`cp -R roles/templates <已有目录>/` 会嵌成 `templates/templates/`）。`./install.sh` 的做法不同：先把旧目录 `mv` 成 `.bak` 再整目录拷，目标不存在故不嵌层（见 install.sh 注释）。
 
 ## 配置
 
@@ -98,7 +103,7 @@ coherd init ~/code/myapp            # 强制重建同 label 集群（已存在�
 tracker：
 
 ```bash
-coherd task new -t 任务名 -o "目标 + 为什么" -d "可验证完成定义" --output 产出路径
+coherd task new -t "任务名" -o "目标 + 为什么" -d "可验证完成定义" --output "产出路径"
 #   可选: --ws / --status pending|active|done / --body / --parent-spec <spec id> / --gate <单行命令>
 #   → 写 ~/.config/coherd/sessions/<session>/<id>.task.md 并打印路径
 coherd task list [--ws <ws>] [--status <状态>]   # 摘要：id / status / 建日 / task_name
