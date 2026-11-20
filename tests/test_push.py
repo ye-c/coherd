@@ -25,16 +25,43 @@ def _tmp_log() -> tuple[Path, object]:
     return Path(d.name) / "events.log", d.cleanup
 
 
+# 宿主 herdr 环境变量：测试不得继承（理由见 setUpModule）
+HERMETIC_KEYS = (
+    "HERDR_WORKSPACE_ID",
+    "COHERD_ROLE",
+    "HERDR_AGENT_NAME",
+    "HERDR_PANE_ID",
+    "HERDR_SOCKET_PATH",
+)
+
+_host_env: dict[str, str | None] = {}
+
+
+def setUpModule():
+    """测试密闭性：先摘掉宿主 herdr 环境，再跑任何用例。
+
+    在 herdr pane 内跑测试时 `HERDR_SOCKET_PATH` 是设着的，`push.run` 的 ② peer 名校验
+    会经 `known_peers()` 读到**真实** agent 名单（如 w2p-coordinator），于是测试里的合成名
+    （w2p-reviewer / w2p-peer*）被当成错拼全名拒发。摘掉 = 测试只依赖自己设置的 env；
+    需验 env 行为的用例自行设置（`EnvMixin` 负责逐例恢复）。
+    """
+    _host_env.update({k: os.environ.get(k) for k in HERMETIC_KEYS})
+    for k in HERMETIC_KEYS:
+        os.environ.pop(k, None)
+
+
+def tearDownModule():
+    for k, v in _host_env.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+
+
 class EnvMixin:
     """保存/恢复涉及的 env 变量。"""
 
-    KEYS = (
-        "HERDR_WORKSPACE_ID",
-        "COHERD_ROLE",
-        "HERDR_AGENT_NAME",
-        "HERDR_PANE_ID",
-        "HERDR_SOCKET_PATH",
-    )
+    KEYS = HERMETIC_KEYS
 
     def setUp(self):
         self._saved = {k: os.environ.get(k) for k in self.KEYS}
@@ -45,6 +72,36 @@ class EnvMixin:
                 os.environ.pop(k, None)
             else:
                 os.environ[k] = v
+
+
+class HermeticEnvTest(unittest.TestCase):
+    """DoD③: 把「测试不依赖宿主 herdr 环境/真实 agent 名单」钉住——摘掉 setUpModule 隔离就红。"""
+
+    def test_host_herdr_env_not_inherited(self):
+        leaked = [k for k in HERMETIC_KEYS if k in os.environ]
+        self.assertEqual([], leaked, "测试继承了宿主 herdr 环境: %s（setUpModule 应摘掉）" % leaked)
+
+    def test_synthetic_peer_allowed_with_unreachable_socket(self):
+        # 指向不存在的 socket：known_peers() 异常 → None → fail-open 放行合成 peer
+        # （钉住密闭性 + 不改产品侧 fail-open 语义）
+        prev = os.environ.get("HERDR_SOCKET_PATH")
+        self.addCleanup(
+            lambda: os.environ.__setitem__("HERDR_SOCKET_PATH", prev)
+            if prev is not None
+            else os.environ.pop("HERDR_SOCKET_PATH", None)
+        )
+        os.environ["HERDR_SOCKET_PATH"] = "/nonexistent/coherd-test.sock"
+        path, cleanup = _tmp_log()
+        self.addCleanup(cleanup)
+        r = P.run(
+            "w2p-reviewer",
+            "hi",
+            ws="w2p",
+            role="coordinator",
+            log_path=path,
+            sender=_delivered,
+        )
+        self.assertTrue(r["accepted"])
 
 
 class DerivationTest(EnvMixin, unittest.TestCase):
