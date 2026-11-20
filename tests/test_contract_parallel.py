@@ -170,5 +170,24 @@ class SingleExecutorExemptionTest(unittest.TestCase):
         self.assertNotIn("共享面冻结", text)
 
 
+class WhitelistSliceColumnTest(unittest.TestCase):
+    """守护: 方案白名单按执行者切片显式规范为表格「归属」列。"""
+
+    def test_contract_sec3_whitelist_slice_column(self):
+        sec3 = _section(CONTRACT, "## 3. ")
+        self.assertIn("归属", sec3)
+        self.assertIn("按执行者切片", sec3)
+        self.assertIn("N=1 免填", sec3)
+
+    def test_plan_template_whitelist_ownership_column(self):
+        sec3 = _section(PLAN_TEMPLATE, "## 3. ")
+        self.assertTrue(
+            any("归属" in ln and ln.startswith("|") for ln in sec3.splitlines()),
+            "plan.template.md 白名单表格表头缺「归属」列",
+        )
+        self.assertIn("exec-1", sec3)
+        self.assertIn("单执行者免填", sec3)
+
+
 if __name__ == "__main__":
     unittest.main()
