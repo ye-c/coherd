@@ -198,22 +198,31 @@ def new(
         _fatal("无法派生 ws：未提供 --ws 且 HERDR_WORKSPACE_ID 未设置")
     now = datetime.now(timezone.utc)
     try:
-        task_id = next_id(ws, now)
-        data = {
-            "id": task_id,
-            "ws": ws,
-            "created_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "task_name": task_name,
-            "status": status,
-            "parent_id": "",
-            "parent_spec": parent_spec,
-            "objective": objective,
-            "dod": dod,
-            "output_path": output,
-            "gate": gate,
-        }
-        p = T.write_new(data, body)
-    except (ValueError, FileExistsError) as e:
+        for seq in range(1, 21):
+            task_id = next_id(ws, now, seq)
+            if T.id_taken(task_id):
+                continue
+            data = {
+                "id": task_id,
+                "ws": ws,
+                "created_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "task_name": task_name,
+                "status": status,
+                "parent_id": "",
+                "parent_spec": parent_spec,
+                "objective": objective,
+                "dod": dod,
+                "output_path": output,
+                "gate": gate,
+            }
+            try:
+                p = T.write_new(data, body)
+                break
+            except FileExistsError:
+                continue
+        else:
+            _fatal("同秒序号耗尽（20 次）：请稍后重试")
+    except ValueError as e:
         _fatal(str(e))
     else:
         typer.echo(f"已创建 tracker: {p}")

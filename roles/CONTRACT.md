@@ -174,7 +174,7 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 
 | CLI 命令 | 文件操作 | 数据含义 |
 | ------ | ------ | ------ |
-| `coherd task new` | 建 session 目录平铺 sessions/<ws>-*/<id>.task.md（id = <ws>-<YYYYMMDDHHMMSS>，无 session 目录自建 <ws>-<本地ts>-<pid>，查重防注入） | 创建任务记录 |
+| `coherd task new` | 建 session 目录平铺 sessions/<ws>-*/<id>.task.md（id = <ws>-<YYYYMMDDHHMMSS>-<NN>，同秒多票递增序号，01–99，耗尽即失败；无 session 目录自建 <ws>-<本地ts>-<pid>，查重防注入） | 创建任务记录 |
 | `coherd task list` | 列 sessions/<ws>-*/<id>.task.md 摘要（glob session 平铺；--ws / --status 读 frontmatter 过滤，malformed 跳过告警） | 只读枚举 |
 | `coherd task show <ID>` | 打印 sessions/<session>/<id>.task.md 完整 tracker（frontmatter + body） | 只读查看 |
 | `coherd task status <ID> --set <s>` | 改 frontmatter 的 status 字段（非法值拒绝，ID 不存在报错） | 更新状态 |

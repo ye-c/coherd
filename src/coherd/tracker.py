@@ -131,6 +131,13 @@ def validate(data: dict) -> None:
         raise ValueError(f"parent_spec 含非法字符: {parent_spec!r}（需 [a-zA-Z0-9_-]）")
 
 
+def id_taken(task_id: str) -> bool:
+    """判定标识是否在工作区任一会话目录已被占用。"""
+    if not ID_RE.match(task_id):
+        raise ValueError(f"task id 含非法字符: {task_id!r}（需 [a-zA-Z0-9_-]）")
+    return any(SESSIONS_DIR.glob(f"*/{task_id}.task.md"))
+
+
 def tracker_path(task_id: str) -> Path:
     """tracker 文件路径：session 目录平铺 <id>.task.md，跨 session 目录搜索（同 ws 先后多 session 均可达）。
     id 走 ID_RE 防注入；找不到抛 FileNotFoundError。"""
