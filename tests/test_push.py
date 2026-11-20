@@ -583,10 +583,28 @@ class MultiInstanceTest(EnvMixin, unittest.TestCase):
         ev = json.loads(path.read_text(encoding="utf-8").splitlines()[0])
         self.assertEqual(ev["from_index"], 2)
 
+    def test_ac12_run_returns_display(self):
+        path, cleanup = _tmp_log()
+        self.addCleanup(cleanup)
+        os.environ["HERDR_AGENT_NAME"] = "w2p-executor-2"
+        os.environ.pop("COHERD_ROLE", None)
+        r = P.run(
+            "w2p-reviewer",
+            "msg",
+            ws="w2p",
+            role=None,
+            log_path=path,
+            sender=_delivered,
+        )
+        self.assertEqual(r["from_display"], "executor#2")
+        self.assertEqual(r["to_display"], "reviewer")
+
     def test_ac13_old_event_line_can_be_parsed(self):
-        # 即使旧记录没有 from_index, to_index, 我们也不应该报错
-        # 这通常是在读取查询端保证, 这里我们只验证 push 不会因为读取而在内部报错
-        pass
+        # 验证旧记录没有 from_index, to_index 时，json 解析后仍然包含既有 7 字段
+        old_line = '{"ws": "w2p", "from": "executor", "to": "reviewer", "type": "feedback", "msg_id": "1", "ts": "2026-11-20T00:00:00Z", "body": "hi"}'
+        ev = json.loads(old_line)
+        self.assertEqual(ev["from"], "executor")
+        self.assertEqual(ev.get("from_index", 1), 1)
 
 if __name__ == "__main__":
     unittest.main()
