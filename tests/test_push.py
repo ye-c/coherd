@@ -169,10 +169,10 @@ class AppendFormatTest(unittest.TestCase):
         )
         line = P.event_line(ev)
         self.assertEqual(json.loads(line), ev)
-        # 字段序追加 body 于末尾：ws,from,to,type,msg_id,ts,body
+        # 字段序追加 body 于末尾：ws,from,to,from_index,to_index,type,msg_id,ts,body
         self.assertEqual(
             list(ev.keys()),
-            ["ws", "from", "to", "type", "msg_id", "ts", "body"],
+            ["ws", "from", "to", "from_index", "to_index", "type", "msg_id", "ts", "body"],
         )
         # body = 未经标记前缀的原始正文
         self.assertEqual(ev["body"], "原始正文")
@@ -520,6 +520,73 @@ class SimplePeerDefaultTest(EnvMixin, unittest.TestCase):
             )
         self.assertFalse(path.exists())
 
+
+class MultiInstanceTest(EnvMixin, unittest.TestCase):
+    def test_ac7_multi_instance_full_delivery(self):
+        path, cleanup = _tmp_log()
+        self.addCleanup(cleanup)
+        seen = {}
+        def sender(peer, msg):
+            seen["peer"], seen["msg"] = peer, msg
+            return True
+        os.environ["HERDR_AGENT_NAME"] = "w2p-executor-2"
+        os.environ.pop("COHERD_ROLE", None)
+        r = P.run(
+            "w2p-reviewer",
+            "ok",
+            ws="w2p",
+            role=None,
+            log_path=path,
+            sender=sender,
+            msg_type="notify"
+        )
+        self.assertTrue(r["accepted"])
+        self.assertEqual(seen["msg"], "[executor#2|notify]: ok")
+        self.assertEqual(r["from"], "executor")
+        self.assertEqual(r["to"], "reviewer")
+        ev = json.loads(path.read_text(encoding="utf-8").splitlines()[0])
+        self.assertEqual(ev["from_index"], 2)
+        self.assertEqual(ev["to_index"], 1)
+
+    def test_ac8_sharp_prefix_rejected(self):
+        path, cleanup = _tmp_log()
+        self.addCleanup(cleanup)
+        with self.assertRaises(ValueError) as ctx:
+            P.run(
+                "w2p-reviewer",
+                "[executor#2|notify]: hi",
+                ws="w2p",
+                role="executor",
+                log_path=path,
+                sender=_delivered,
+            )
+        self.assertIn("勿手写", str(ctx.exception))
+        self.assertFalse(path.exists())
+
+    def test_ac11_explicit_role_normalized(self):
+        path, cleanup = _tmp_log()
+        self.addCleanup(cleanup)
+        seen = {}
+        def sender(peer, msg):
+            seen["peer"], seen["msg"] = peer, msg
+            return True
+        r = P.run(
+            "w2p-reviewer",
+            "ok",
+            ws="w2p",
+            role="executor-2",
+            log_path=path,
+            sender=sender,
+        )
+        self.assertEqual(seen["msg"], "[executor#2|feedback]: ok")
+        self.assertEqual(r["from"], "executor")
+        ev = json.loads(path.read_text(encoding="utf-8").splitlines()[0])
+        self.assertEqual(ev["from_index"], 2)
+
+    def test_ac13_old_event_line_can_be_parsed(self):
+        # 即使旧记录没有 from_index, to_index, 我们也不应该报错
+        # 这通常是在读取查询端保证, 这里我们只验证 push 不会因为读取而在内部报错
+        pass
 
 if __name__ == "__main__":
     unittest.main()

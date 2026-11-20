@@ -115,11 +115,11 @@ def feedback(
     else:
         if r["accepted"]:
             typer.echo(
-                f"[feedback] 已投递 {r['from']} -> {r['to']} ({r['msg_id']}) 记于 {r['log_path']}"
+                f"[feedback] 已投递 {r['from_display']} -> {r['to_display']} ({r['msg_id']}) 记于 {r['log_path']}"
             )
         else:
             typer.echo(
-                f"[feedback] 送达失败 {r['from']} -> {r['to']} ({r['msg_id']}) "
+                f"[feedback] 送达失败 {r['from_display']} -> {r['to_display']} ({r['msg_id']}) "
                 f"- 已写 events.log（type=feedback），请用 `coherd feedback` 重发",
                 err=True,
             )
@@ -153,11 +153,11 @@ def notify(
     else:
         if r["accepted"]:
             typer.echo(
-                f"[notify] 已投递 {r['from']} -> {r['to']} ({r['msg_id']}) 记于 {r['log_path']}"
+                f"[notify] 已投递 {r['from_display']} -> {r['to_display']} ({r['msg_id']}) 记于 {r['log_path']}"
             )
         else:
             typer.echo(
-                f"[notify] 送达失败 {r['from']} -> {r['to']} ({r['msg_id']}) "
+                f"[notify] 送达失败 {r['from_display']} -> {r['to_display']} ({r['msg_id']}) "
                 f"- 已写 events.log（type=notify）无回执义务，改用 `coherd feedback` 重发",
                 err=True,
             )
