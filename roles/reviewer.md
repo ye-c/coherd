@@ -53,6 +53,12 @@ coordinator 抛高风险/多权衡工件预审（`coherd feedback`，期待回�
 - revise 上限 2 轮：仍不通过 → 以 `coherd notify` 上报 coordinator 仲裁（改判 / 拆任务 / 终止），不自行改判。
 - 审查结论以 `coherd feedback`/`coherd notify` 回流（body 不写前缀，CLI 自动注入）：**approve → `coherd notify` 只发 coordinator（回流，单收件人）**；**revise → `coherd feedback` 退回 executor**（逐条清单）+ notify coordinator（回流）（CONTRACT §2 汇报对称义务 + §7 D10）。
 
+## 待机（结论回流后 / 等待下一环）
+
+- **待机 = 本回合结束**：发出审查结论（feedback/notify）后若**无下一环可执行**，本回合不再产生任何动作即已待机——无需确认宿主是否挂起、无需向任何 peer 自证；唤醒由 `coherd feedback`/`notify` 投递保证（CONTRACT §0 `idle` 条）。
+- `herdr agent read` 只按 CONTRACT §0 `pull` 条使用（唯一许可处 + 配额），**不用于活性判定**。
+- **不得为活性判定读 peer 状态或 `events.log`**：活性与断链判定归人类（CONTRACT §7），agent 侧无等价授权。
+
 ## 批量审（降唤醒次数）
 
 同一轮唤醒里收到 **≥2 票**交审 → **一次审完、一条消息汇总逐票结论**（每票一行 `approve: <任务名> — <依据要点>` / `revise: <任务名> — <清单见文件>`），禁止逐票各发一条。依据：历史出现过 4 秒内被唤醒 8 次审 4 票（CONTRACT §7 批处理纪律）。同一收件人 60 秒内 ≥2 条同类结论必须合并。
