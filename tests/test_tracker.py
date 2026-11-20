@@ -464,18 +464,49 @@ class SessionDirTest(SessionsDirMixin, unittest.TestCase):
 
     def test_ac5_cross_session_dir_taken(self):
         from unittest.mock import patch
+        # 造 A 会话目录 (包含 -01)
         sess_a = self.sessions / "w37-20260101000000-111"
         sess_a.mkdir(parents=True)
         (sess_a / "w37-20261120000000-01.task.md").write_text("dummy", encoding="utf-8")
+        
+        # 造一个更晚的 B 会话目录，作为 CLI 的写入目标
+        sess_b = self.sessions / "w37-20261120000000-222"
+        sess_b.mkdir(parents=True)
         
         runner, app = self._runner()
         with patch("coherd.cli.datetime") as mock_dt:
             from datetime import datetime, timezone
             mock_dt.now.return_value = datetime(2026, 11, 20, 0, 0, 0, tzinfo=timezone.utc)
+            # cli 的 `session_dir_for` 会挑最新的 B 作为写入目标。
+            # 但是 A 里已经有 -01 了。应该拿到 -02，而且要落在 B 里。
             res = runner.invoke(app, ["task", "new", "--task-name", "t", "--objective", "o", "--dod", "d", "--output", "out.md", "--ws", "w37"])
             self.assertEqual(res.exit_code, 0, res.stdout + res.stderr)
-            tracks = list(self.sessions.glob("*/w37-20261120000000-02.task.md"))
-            self.assertEqual(len(tracks), 1)
+            
+            # 确认落在 B 里，且为 -02
+            self.assertTrue((sess_b / "w37-20261120000000-02.task.md").exists())
+
+    def test_ac4_five_concurrent_creates(self):
+        from unittest.mock import patch
+        sess_b = self.sessions / "w37-20261120000000-222"
+        sess_b.mkdir(parents=True)
+
+        runner, app = self._runner()
+        with patch("coherd.cli.datetime") as mock_dt:
+            from datetime import datetime, timezone
+            mock_dt.now.return_value = datetime(2026, 11, 20, 0, 0, 0, tzinfo=timezone.utc)
+            
+            for _ in range(5):
+                res = runner.invoke(app, ["task", "new", "--task-name", "t", "--objective", "o", "--dod", "d", "--output", "out.md", "--ws", "w37"])
+                self.assertEqual(res.exit_code, 0, res.stdout + res.stderr)
+            
+            tracks = sorted([p.name for p in sess_b.glob("w37-20261120000000-*.task.md")])
+            self.assertEqual(tracks, [
+                "w37-20261120000000-01.task.md",
+                "w37-20261120000000-02.task.md",
+                "w37-20261120000000-03.task.md",
+                "w37-20261120000000-04.task.md",
+                "w37-20261120000000-05.task.md"
+            ])
 
     def test_ac6_exhaustion(self):
         from unittest.mock import patch

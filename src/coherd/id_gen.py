@@ -19,7 +19,7 @@ def next_id(ws: str, now: datetime | None = None, seq: int = 1) -> str:
     """生成新 id：<ws>-<UTC 秒时间戳 YYYYMMDDHHMMSS>-<NN>。"""
     if not ID_RE.match(ws):
         raise ValueError(f"ws 含非法字符: {ws!r}（需 [a-zA-Z0-9_-]）")
-    if not isinstance(seq, int) or not (1 <= seq <= 99):
+    if isinstance(seq, bool) or not isinstance(seq, int) or not (1 <= seq <= 99):
         raise ValueError(f"seq 非法: {seq!r}（需 1-99 整数）")
     now = now or datetime.now(timezone.utc)
     ts = now.strftime("%Y%m%d%H%M%S")
