@@ -84,8 +84,13 @@ class HermeticEnvTest(unittest.TestCase):
     def test_synthetic_peer_allowed_with_unreachable_socket(self):
         # 指向不存在的 socket：known_peers() 异常 → None → fail-open 放行合成 peer
         # （钉住密闭性 + 不改产品侧 fail-open 语义）
+        prev = os.environ.get("HERDR_SOCKET_PATH")
+        self.addCleanup(
+            lambda: os.environ.__setitem__("HERDR_SOCKET_PATH", prev)
+            if prev is not None
+            else os.environ.pop("HERDR_SOCKET_PATH", None)
+        )
         os.environ["HERDR_SOCKET_PATH"] = "/nonexistent/coherd-test.sock"
-        self.addCleanup(lambda: os.environ.pop("HERDR_SOCKET_PATH", None))
         path, cleanup = _tmp_log()
         self.addCleanup(cleanup)
         r = P.run(
