@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# coherd 双角色 simple 模式端到端冒烟 T2–T7 (spec w5f-20261010141636 §5)
+# coherd 双角色 simple 模式端到端冒烟 T2–T12 (spec w5f-20261010141636 §5)
 #
 #   · fake herdr / fake sleep 前置 PATH → 不依赖真 herdr 与真 agent CLI, 可 CI
 #   · HOME 指向临时目录 → 契约文档与 session 目录都落临时区, 不碰真实 ~/.config 与用户 session
@@ -252,7 +252,19 @@ case_t11() { # 前导零参数 (如 -e 08) 归一为十进制正常启动
   eq "-e 08: 启动 8 个 executor (共 10 agent)" "10" "$(wc -l <"$st/renames" | tr -d ' ')"
 }
 
-printf 'coherd simple 模式冒烟 T2–T11 (fake herdr, HOME 隔离, work=%s)\n' "$WORK"
+case_t12() { # 测试树类名直扫入口（不依赖 unittest 收集，故守护文件自身被遮蔽也能拦住）
+  printf '\n== T12: 测试树顶层类名唯一性直扫\n'
+  state t12; local st="$COHERD_SMOKE_STATE"
+  local out="$st/out-scan"
+  if python3 "$ROOT/tests/test_no_shadowed_classes.py" >"$out" 2>&1; then
+    ok "直扫入口 exit 0（无重名顶层类）"
+  else
+    bad "直扫入口 exit ≠0: $(cat "$out")"
+  fi
+  eq "直扫输出无 duplicate 行" "0" "$(grep -cF -- 'duplicate top-level class' "$out")"
+}
+
+printf 'coherd simple 模式冒烟 T2–T12 (fake herdr, HOME 隔离, work=%s)\n' "$WORK"
 case_t2
 case_t3
 case_t4
@@ -263,9 +275,10 @@ case_t8
 case_t9
 case_t10
 case_t11
+case_t12
 
 if [ "$FAILED" = 0 ]; then
-  printf '\nALL PASS (T2–T11)\n'
+  printf '\nALL PASS (T2–T12)\n'
 else
   printf '\nFAILED — 见上方 FAIL 行\n'
 fi
