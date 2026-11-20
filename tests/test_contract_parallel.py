@@ -78,7 +78,9 @@ class CoordinatorDutyTest(unittest.TestCase):
         self.text = _text(COORDINATOR)
 
     def test_ac2_parallel_judgement_and_ownership(self):
-        for word in ("并行判定", "扇出前", "定稿", "只读", "停扇出", "重新扇出"):
+        # AC2 原文只要求「扇出前定稿 / 窗口内只读 / 变更即停扇出」三项; 「重新扇出」属 §3 三动作
+        # （AC9 已收为纯引用），此处不守。
+        for word in ("并行判定", "扇出前", "定稿", "只读", "停扇出"):
             self.assertIn(word, self.text, "协调者侧缺编排动作: %s" % word)
 
     def test_ac2_default_value_repeated_for_decision_maker(self):

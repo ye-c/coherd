@@ -23,6 +23,7 @@
 | plan / 方案 | spec 对应的唯一 How 层工件（1:1，共用同一标识，落平铺 `<id>.plan.md`）：现状差异分析、架构调整、**改动文件白名单**、迁移与回滚；executor 改动面的唯一权威 | §3 |
 | gate / 门禁 | 任务记录可携带的**单行**验证命令（非必填）；执行语义固定为仓库根 + `bash -lc` + 继承环境，只承诺本机可执行。reviewer 审查第一步先跑，非零退出按三类分流 | §3/§4 |
 | drift / 规约漂移 | executor 发现 plan 的假设不成立（非环境问题）时回传的**需回执**信号（受影响任务 + 现实阻碍 + 待修订假设）；coordinator 必须三选一回应：改规格重派 / 降级替代 / 终止 | §4 |
+| 共享面 / 并行判定 | 见 §3「共享面与并行判定」——本行仅索引，定义与判据正文只在该处 | §3 |
 
 ## 1. 角色职责表
 
@@ -130,7 +131,7 @@ reviewer **最小审查集**（每次审查必做，顺序固定 = 五查）：
 
 **越界判定以行为为准**：改动超出白名单但无行为变更（纯新增测试文件、机械性 import 修正等）且已在交审消息中声明者，放行；仅在改动改变行为时判返工。
 
-**spec/plan 预审（工件审查）**：高风险/多权衡工件由 coordinator 抛 reviewer 预审（`coherd feedback`，期待回执）——查**完整性 / 可验证性 / 死角与危险面入边界字段 / 决策命名引用**（spec 另查无路径无库名；plan 另查白名单与迁移回滚齐备）；审不代改，`revise` 以 `coherd feedback` 退回 coordinator 修订（工件变更归 coordinator），`approve` 以 `coherd notify` 回流放行；libero 不参与预审（审查判定权 reviewer 独占）。
+**spec/plan 预审（工件审查）**：高风险/多权衡工件由 coordinator 抛 reviewer 预审（`coherd feedback`，期待回执）——查**完整性 / 可验证性 / 死角与危险面入边界字段 / 决策命名引用**（spec 另查无路径无库名；plan 另查白名单与迁移回滚齐备；多执行者（N≥2）另查共享面冻结清单齐备）**N≥2 的方案必抛预审（不得跳过）**；审不代改，`revise` 以 `coherd feedback` 退回 coordinator 修订（工件变更归 coordinator），`approve` 以 `coherd notify` 回流放行；libero 不参与预审（审查判定权 reviewer 独占）。
 
 **预审同样受 revise ≤ 2 轮约束**：第 2 轮 revise 后仍有分歧，升级 coordinator 仲裁（改规格定案 / 降级替代 / 终止分派），避免无休止推敲；仲裁结论即定案，不再继续抛审。
 
