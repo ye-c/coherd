@@ -133,6 +133,29 @@ class WindowChangeRoutingTest(unittest.TestCase):
             )
 
 
+class NewCheckpointGuardTest(unittest.TestCase):
+    """AC7/AC8/AC10/AC11: 每条新增可机检约束各自带牙（一条约束一个断言，锚点用短语）。"""
+
+    def test_ac8_prescreen_checkpoints_guarded(self):
+        sec4 = _section(CONTRACT, "## 4. ")
+        self.assertIn("共享面冻结清单齐备", sec4)
+        self.assertIn("必抛预审，不得跳过", sec4)
+
+    def test_ac7_glossary_index_guarded(self):
+        self.assertIn("共享面 / 并行判定", _section(CONTRACT, "## 0. "))
+
+    def test_ac10_multi_executor_must_plan(self):
+        self.assertIn("一律产方案", _section(CONTRACT, "## 3. "))
+        self.assertIn("N≥2 除外", _text(COORDINATOR))
+
+    def test_ac11_notation_variant_absent(self):
+        paths = sorted(list(ROLES.glob("*.md")) + list(ROLES.glob("templates/*.md")))
+        for path in paths:
+            self.assertNotIn(
+                "N ≥ 2", path.read_text(encoding="utf-8"), "%s 用了变体写法" % path.name
+            )
+
+
 class SingleExecutorExemptionTest(unittest.TestCase):
     """AC5: 三处改动点均明示 N=1 无负担; 执行者文档不被加重。"""
 
