@@ -196,6 +196,11 @@ case_t8() { # 多执行者 -e 3 全链路
   eq "-e 3: rename 含 exec-2" "1" "$(grep -cF -- '|wsm21-executor-2' "$st/renames")"
   eq "-e 3: rename 含 exec-3" "1" "$(grep -cF -- '|wsm21-executor-3' "$st/renames")"
   eq "-e 3: tab rename 含 coord" "coord|tab-1" "$(cat "$st/tab_renames")"
+  eq "-e 3: tab 标签顺序" "rev|pane-tab-1
+exec-1|pane-tab-2
+exec-2|pane-tab-3
+exec-3|pane-tab-4
+libero|pane-tab-5" "$(cat "$st/tab_labels")"
   # brief 指路: 角色恒 executor, 名字带序号
   contains "-e 3: exec-1 brief 角色未被污染" "你是 executor · agent 名 wsm21-executor-1" "$st/brief_wsm21-executor-1"
   contains "-e 3: exec-2 brief 角色未被污染" "你是 executor · agent 名 wsm21-executor-2" "$st/brief_wsm21-executor-2"
@@ -240,7 +245,14 @@ case_t10() { # 参数非法早退且工作区计数不增
   eq "-s -e 3: 未 create workspace" "0" "$(cnt x "$st/createcnt")"
 }
 
-printf 'coherd simple 模式冒烟 T2–T10 (fake herdr, HOME 隔离, work=%s)\n' "$WORK"
+case_t11() { # 前导零参数 (如 -e 08) 归一为十进制正常启动
+  state t11; local st="$COHERD_SMOKE_STATE"
+  run_coherd e08 -e 08 "$WORK/repo" sm25 \
+    || { bad "-e 08 启动非 0: $(cat "$st/out-e08")"; return; }
+  eq "-e 08: 启动 8 个 executor (共 10 agent)" "10" "$(wc -l <"$st/renames" | tr -d ' ')"
+}
+
+printf 'coherd simple 模式冒烟 T2–T11 (fake herdr, HOME 隔离, work=%s)\n' "$WORK"
 case_t2
 case_t3
 case_t4
@@ -250,9 +262,10 @@ case_t7
 case_t8
 case_t9
 case_t10
+case_t11
 
 if [ "$FAILED" = 0 ]; then
-  printf '\nALL PASS (T2–T10)\n'
+  printf '\nALL PASS (T2–T11)\n'
 else
   printf '\nFAILED — 见上方 FAIL 行\n'
 fi

@@ -103,6 +103,7 @@ case "$EXECUTORS" in
       echo "coherd: -e/--executors 超出范围: '$EXECUTORS' (需 1–8 的整数)" >&2
       exit 1
     fi
+    EXECUTORS=$((10#$EXECUTORS))
     ;;
 esac
 # simple 模式与多执行者互斥
