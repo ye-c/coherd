@@ -171,11 +171,15 @@ class SingleExecutorExemptionTest(unittest.TestCase):
 
 
 class WhitelistSliceColumnTest(unittest.TestCase):
-    """守护: 方案白名单按执行者切片显式规范为表格「归属」列。"""
+    """守护: 方案白名单按执行者切片显式规范为表格「归属」列。
+
+    锤点必须带列特征: 旧版 §3 已有「按文件归属切片」「方案白名单按执行者切片」,
+    模板 §3 末尾冻结清单行也已有「单执行者免填」——用宽短语会命中旧文本而无牙。
+    """
 
     def test_contract_sec3_whitelist_slice_column(self):
         sec3 = _section(CONTRACT, "## 3. ")
-        self.assertIn("归属", sec3)
+        self.assertIn("「归属」列", sec3)
         self.assertIn("按执行者切片", sec3)
         self.assertIn("N=1 免填", sec3)
 
@@ -185,8 +189,10 @@ class WhitelistSliceColumnTest(unittest.TestCase):
             any("归属" in ln and ln.startswith("|") for ln in sec3.splitlines()),
             "plan.template.md 白名单表格表头缺「归属」列",
         )
-        self.assertIn("exec-1", sec3)
-        self.assertIn("单执行者免填", sec3)
+        hint = [ln for ln in sec3.splitlines() if "「归属」列" in ln and not ln.startswith("|")]
+        self.assertTrue(hint, "白名单说明行缺「归属」列填报提示")
+        self.assertIn("exec-1", hint[0])
+        self.assertIn("单执行者免填", hint[0])
 
 
 if __name__ == "__main__":
