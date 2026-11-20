@@ -86,6 +86,11 @@ class CoordinatorDutyTest(unittest.TestCase):
     def test_ac2_default_value_repeated_for_decision_maker(self):
         self.assertIn("判串行", self.text)
 
+    def test_ac9_three_actions_not_restated(self):
+        # AC9: 三动作序列已收为纯引用, 协调者侧不得再写出步骤名
+        for word in ("重新定稿", "重新扇出"):
+            self.assertNotIn(word, self.text, "协调者文档复述了 §3 三动作: %s" % word)
+
 
 class FreezeListCarrierTest(unittest.TestCase):
     """AC3: 契约硬要求列冻结清单; 模板只有一行提示、无独立小节。"""
