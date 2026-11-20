@@ -52,7 +52,7 @@ description: 把当前 agent 加载为 coherd 协作集群的某个角色(coordi
    - 自身 agent 已为目标名 → 跳过(幂等)。
    - 否则 `herdr agent rename "$HERDR_PANE_ID" "<目标名>"`; 报 agent_name_taken(槽位已有实例 / bin/coherd 已拉起该槽位)→ 报错停止加载, 不顶替——各角色须独立实例(CONTRACT §1)。
 1. read 公共契约 + 自身角色 per-role 文档: 三角色/libero 读 ~/.config/coherd/CONTRACT.md + {coordinator,executor,reviewer,libero}.md; **led/dev 读 ~/.config/coherd/CONTRACT-simple.md + {led,dev}.md**——simple 模式的交审/revise/上报三段语义与三角色不同, 读 CONTRACT.md 会致错行为(dev.md 开篇有此警告)。
-2. 按自身契约 §1 明确自己角色; 消息前缀依自身契约 §2(三角色/libero `[<role>]:`; simple 固定用 `coherd feedback/notify`, 由 CLI 注入 `[<role>|<type>]:`，可选 `#<n>`, 接收端只匹配 role)。
+2. 按自身契约 §1 明确自己角色; 消息前缀依自身契约 §2(三角色/libero `[<role>]:` 可选带 `#n`; simple 固定用 `coherd feedback/notify`, 由 CLI 注入 `[<role>|<type>]:` 可选带 `#n`)。
 3. 按自身契约的分派/审查契约运作, peer 名取 args。(libero 除外——不进分派/审查循环; led 审完直接交付, 无跨甲方结论回流)
 4. 按 §2 用 `coherd feedback <peer> "<body>"` / `coherd notify <peer> "<body>"` 通信——CLI 注入标记并送达(内部调 herdr agent prompt, 自动唤醒 idle 待机者)。**禁手写首前缀**(CLI 会拒收), **禁裸用 herdr agent prompt**(无标记 = 对端当用户消息处理, 且 CLI 无法派生自身 role)。
 

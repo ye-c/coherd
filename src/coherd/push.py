@@ -208,8 +208,8 @@ def run(
     # 自造前缀，拒绝并交还调用方（防重复如 `[x|feedback]: [x|feedback]: ...`）。
     import re as _re
 
-    if _re.match(r"^\s*\[[\w#]+(?:\|\w+)?\]:", msg):
-        stripped = _re.sub(r"^\s*\[[\w#]+(?:\|\w+)?\]:\s*", "", msg, count=1)
+    if _re.match(r"^\s*\[[\w#]+(?:\|[\w#]+)?\]:", msg):
+        stripped = _re.sub(r"^\s*\[[\w#]+(?:\|[\w#]+)?\]:\s*", "", msg, count=1)
         raise ValueError(
             "消息正文应以 body 开头，勿手写 `[<role>|<type>]: ` 前缀（CLI 自动注入）。"
             f" 已剥离前缀后的正文：{stripped!r}"

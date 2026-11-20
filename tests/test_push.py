@@ -408,6 +408,76 @@ class LogPathTest(unittest.TestCase):
         self.assertEqual(before, after)
 
 
+
+class MultiInstanceTest(unittest.TestCase):
+    def test_multi_instance_delivery(self):
+        # AC7: 发送方为 <ws>-executor-2
+        path, cleanup = _tmp_log()
+        self.addCleanup(cleanup)
+        seen = {}
+        def sender(peer, msg):
+            seen["peer"], seen["msg"] = peer, msg
+            return True
+            
+        r = P.run(
+            "w2p-reviewer",
+            "ok",
+            ws="w2p",
+            role="executor-2",
+            log_path=path,
+            sender=sender,
+        )
+        self.assertTrue(r["accepted"])
+        # 注入标记包含 display
+        self.assertTrue(seen["msg"].startswith("[executor#2|feedback]: "))
+        
+        # 事件行
+        lines = [l for l in path.read_text(encoding="utf-8").splitlines() if l]
+        ev = json.loads(lines[0])
+        self.assertEqual(ev["from"], "executor")
+        self.assertEqual(ev["to"], "reviewer")
+        self.assertEqual(ev["from_index"], 2)
+        self.assertEqual(ev["to_index"], 1)
+
+    def test_explicit_role_normalized(self):
+        # AC11: COHERD_ROLE=executor-2 归一
+        path, cleanup = _tmp_log()
+        self.addCleanup(cleanup)
+        seen = {}
+        def sender(peer, msg):
+            seen["peer"], seen["msg"] = peer, msg
+            return True
+            
+        import os
+        os.environ["COHERD_ROLE"] = "executor-2"
+        self.addCleanup(lambda: os.environ.pop("COHERD_ROLE", None))
+        
+        r = P.run(
+            "w2p-reviewer",
+            "ok",
+            ws="w2p",
+            role=None,
+            log_path=path,
+            sender=sender,
+        )
+        self.assertTrue(r["accepted"])
+        self.assertTrue(seen["msg"].startswith("[executor#2|feedback]: "))
+        self.assertEqual(r["from"], "executor")
+        self.assertEqual(r["from_display"], "executor#2")
+
+    def test_old_event_line_can_be_parsed(self):
+        # AC13: 旧事件行无新字段仍可解析
+        path, cleanup = _tmp_log()
+        self.addCleanup(cleanup)
+        # 写入旧的 event line
+        old_line = '{"ws": "w2p", "from": "executor", "to": "reviewer", "type": "feedback", "msg_id": "123", "ts": "2026", "body": "hi"}'
+        P.append_event(path, old_line)
+        
+        lines = [l for l in path.read_text(encoding="utf-8").splitlines() if l]
+        ev = json.loads(lines[0])
+        self.assertEqual(ev["from"], "executor")
+        self.assertEqual(ev.get("from_index"), None)  # JSON parsing handles it safely
+
 class PrefixGuardTest(EnvMixin, unittest.TestCase):
     """契约防线：正文自造前缀必须被拒，agent 只写 body。
 
@@ -432,6 +502,13 @@ class PrefixGuardTest(EnvMixin, unittest.TestCase):
         except ValueError as e:
             errs.append(str(e))
         return errs
+
+
+    def test_rejects_hash_prefix(self):
+        # AC8: 拒绝带 # 的前缀
+        errs = self._run("[executor#2|notify]: 正文")
+        self.assertEqual(len(errs), 1)
+        self.assertIn("勿手写", errs[0])
 
     def test_rejects_coordinator_role_prefix(self):
         errs = self._run("[coordinator]: 分派 x")
