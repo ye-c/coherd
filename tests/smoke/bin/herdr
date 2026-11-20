@@ -72,11 +72,20 @@ case "${1:-} ${2:-}" in
     echo '{"result":{"workspace":{"active_tab_id":"tab-1"}}}' ;;
 
   "tab create")
+    lbl=""
+    args=("$@")
+    for (( i=0; i<${#args[@]}; i++ )); do
+      if [ "${args[$i]}" = "--label" ]; then
+        lbl="${args[$((i+1))]}"
+      fi
+    done
     n="$(incr tabcnt)"
+    [ -n "$lbl" ] && printf '%s|pane-tab-%s\n' "$lbl" "$n" >>"$S/tab_labels"
     printf '%s\n' "$n" >>"$S/tabs"
     echo "{\"result\":{\"root_pane\":{\"pane_id\":\"pane-tab-$n\"}}}" ;;
 
   "tab rename")
+    printf '%s|%s\n' "${4:-}" "${3:-}" >>"$S/tab_renames"
     exit 0 ;;
 
   "pane split")

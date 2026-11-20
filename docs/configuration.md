@@ -31,7 +31,7 @@ coherd 的配置面很小：各槽位的启动命令 + 布局。所有配置走 
 
 同一槽位的最终启动命令按以下优先级解析（高 → 低），与 `bin/coherd` 实现一致：
 
-1. **`--agent role=cmd[,...]`**（命令行）——per-run 一次性覆盖，如 `coherd -s --agent led=codex,dev=opencode`；不写 conf、不改环境变量，只影响本次启动列出的角色。
+1. **`--agent role=cmd[,...]`**（命令行）——per-run 一次性覆盖，如 `coherd -s --agent led=codex,dev=opencode`；不写 conf、不改环境变量，只影响本次启动列出的角色。多执行者模式下，按角色的启动命令覆盖对全部该角色实例生效。
 2. **`COHERD_*_CMD`** 环境变量 / `~/.config/coherd/coherd.conf`（见上两节）。
 3. **PATH 回退**，按回退表查找 `pi` / `omp`（见表）。
 4. 仍缺失 → die，并指向本文件。
@@ -75,6 +75,8 @@ COHERD_DEV_CMD=~/bin/my-dev
 | 变量 | 默认 | 说明 |
 |------|------|------|
 | `COHERD_CONF` | `~/.config/coherd/coherd.conf` | conf 路径；可在运行前覆盖 |
+
+注：多执行者模式下（`-e N`），按角色的启动命令配置与覆盖（`COHERD_EXECUTOR_CMD` 或 `--agent executor=...`）对全部该角色实例生效。
 
 ## FAQ：coherd 报"未找到 xx 的启动命令"
 

@@ -115,11 +115,11 @@ def feedback(
     else:
         if r["accepted"]:
             typer.echo(
-                f"[feedback] 已投递 {r['from']} -> {r['to']} ({r['msg_id']}) 记于 {r['log_path']}"
+                f"[feedback] 已投递 {r['from_display']} -> {r['to_display']} ({r['msg_id']}) 记于 {r['log_path']}"
             )
         else:
             typer.echo(
-                f"[feedback] 送达失败 {r['from']} -> {r['to']} ({r['msg_id']}) "
+                f"[feedback] 送达失败 {r['from_display']} -> {r['to_display']} ({r['msg_id']}) "
                 f"- 已写 events.log（type=feedback），请用 `coherd feedback` 重发",
                 err=True,
             )
@@ -153,11 +153,11 @@ def notify(
     else:
         if r["accepted"]:
             typer.echo(
-                f"[notify] 已投递 {r['from']} -> {r['to']} ({r['msg_id']}) 记于 {r['log_path']}"
+                f"[notify] 已投递 {r['from_display']} -> {r['to_display']} ({r['msg_id']}) 记于 {r['log_path']}"
             )
         else:
             typer.echo(
-                f"[notify] 送达失败 {r['from']} -> {r['to']} ({r['msg_id']}) "
+                f"[notify] 送达失败 {r['from_display']} -> {r['to_display']} ({r['msg_id']}) "
                 f"- 已写 events.log（type=notify）无回执义务，改用 `coherd feedback` 重发",
                 err=True,
             )
@@ -198,22 +198,31 @@ def new(
         _fatal("无法派生 ws：未提供 --ws 且 HERDR_WORKSPACE_ID 未设置")
     now = datetime.now(timezone.utc)
     try:
-        task_id = next_id(ws, now)
-        data = {
-            "id": task_id,
-            "ws": ws,
-            "created_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "task_name": task_name,
-            "status": status,
-            "parent_id": "",
-            "parent_spec": parent_spec,
-            "objective": objective,
-            "dod": dod,
-            "output_path": output,
-            "gate": gate,
-        }
-        p = T.write_new(data, body)
-    except (ValueError, FileExistsError) as e:
+        for seq in range(1, 21):
+            task_id = next_id(ws, now, seq)
+            if T.id_taken(task_id):
+                continue
+            data = {
+                "id": task_id,
+                "ws": ws,
+                "created_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "task_name": task_name,
+                "status": status,
+                "parent_id": "",
+                "parent_spec": parent_spec,
+                "objective": objective,
+                "dod": dod,
+                "output_path": output,
+                "gate": gate,
+            }
+            try:
+                p = T.write_new(data, body)
+                break
+            except FileExistsError:
+                continue
+        else:
+            _fatal("同秒序号耗尽（20 次）：请稍后重试")
+    except ValueError as e:
         _fatal(str(e))
     else:
         typer.echo(f"已创建 tracker: {p}")

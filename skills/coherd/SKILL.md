@@ -35,7 +35,7 @@ description: 把当前 agent 加载为 coherd 协作集群的某个角色(coordi
 - libero: 承接用户的旁路/辅助需求, 交叉复核、补上下文、问答; 不进主循环, 被动响应(交互由用户定向发起)。
 
 - **standalone 通用身份上线(rename, 新磁盘角色均适用)**: 仅角色名加载 = standalone 模式, 无 peer 通信协议。当前 pane 是否 HERDR 集群 pane (HERDR_ENV=1) 决定 rename, 不看 standalone/cluster 标签。HERDR_ENV=1 时互寻址依赖 agent 名 = `${WS_SLUG}-<role>`(CONTRACT §2 名规则), 名字不带该前缀就无法被 peer 寻址。coord/exec/reviewer/led/dev standalone 在集群 pane 内**同样须 rename** 建立寻址名:
-  1. `herdr agent rename "$HERDR_PANE_ID" "<slug>-<自身角色>"`, slug 取本 pane workspace 短号小写(如 HERDR_WORKSPACE_ID=wB → wb-coordinator / wb-executor / wb-reviewer; led/dev 同规则 → wb-led / wb-dev——该前缀同时是 `coherd feedback/notify` 派生自身 role 的依据, 不可省略或改名, 见「手动配对」)
+  1. `herdr agent rename "$HERDR_PANE_ID" "<slug>-<自身角色>"` (多实例命名 `<slug>-<角色>-<n>`, n ≥ 1, n=1 可省), slug 取本 pane workspace 短号小写(如 HERDR_WORKSPACE_ID=wB → wb-coordinator / wb-executor / wb-reviewer; led/dev 同规则 → wb-led / wb-dev——该前缀同时是 `coherd feedback/notify` 派生自身 role 的依据, 不可省略或改名, 见「手动配对」)
   2. 自身 agent 已为目标名 → 跳过(幂等); 报 agent_name_taken(槽位已有实例 / bin/coherd 已拉起该槽位)→ 报错停止加载, 不顶替——各角色须独立实例(CONTRACT §1; simple 仅 led/dev 两实例)
   3. 非 herdr 环境(HERDR_ENV 未设)则跳过 rename
 
@@ -52,7 +52,7 @@ description: 把当前 agent 加载为 coherd 协作集群的某个角色(coordi
    - 自身 agent 已为目标名 → 跳过(幂等)。
    - 否则 `herdr agent rename "$HERDR_PANE_ID" "<目标名>"`; 报 agent_name_taken(槽位已有实例 / bin/coherd 已拉起该槽位)→ 报错停止加载, 不顶替——各角色须独立实例(CONTRACT §1)。
 1. read 公共契约 + 自身角色 per-role 文档: 三角色/libero 读 ~/.config/coherd/CONTRACT.md + {coordinator,executor,reviewer,libero}.md; **led/dev 读 ~/.config/coherd/CONTRACT-simple.md + {led,dev}.md**——simple 模式的交审/revise/上报三段语义与三角色不同, 读 CONTRACT.md 会致错行为(dev.md 开篇有此警告)。
-2. 按自身契约 §1 明确自己角色; 消息前缀依自身契约 §2(三角色/libero `[<role>]:`; simple 固定用 `coherd feedback/notify`, 由 CLI 注入 `[<role>|<type>]:`)。
+2. 按自身契约 §1 明确自己角色; 消息前缀依自身契约 §2(三角色/libero `[<role>]:` 可选带 `#n`; simple 固定用 `coherd feedback/notify`, 由 CLI 注入 `[<role>|<type>]:` 可选带 `#n`)。
 3. 按自身契约的分派/审查契约运作, peer 名取 args。(libero 除外——不进分派/审查循环; led 审完直接交付, 无跨甲方结论回流)
 4. 按 §2 用 `coherd feedback <peer> "<body>"` / `coherd notify <peer> "<body>"` 通信——CLI 注入标记并送达(内部调 herdr agent prompt, 自动唤醒 idle 待机者)。**禁手写首前缀**(CLI 会拒收), **禁裸用 herdr agent prompt**(无标记 = 对端当用户消息处理, 且 CLI 无法派生自身 role)。
 
@@ -61,10 +61,10 @@ description: 把当前 agent 加载为 coherd 协作集群的某个角色(coordi
 目的: 手动在任意 herdr pane 起任意 agent CLI 充当 led/dev 并配对——试其他 agent CLI 用, 不走 bin/coherd。
 **配对不需要 rendezvous 文件或守护进程**: 命名约定 + 一次握手就够, 协议层零新增 (CLI 也不为此改——发现/配对属角色决策, 不入 CLI 护栏)。
 
-1. **自身命名**: 各 pane 内 rename 自己为 `<slug>-<角色>`, slug = `HERDR_WORKSPACE_ID` 小写 (wB → `wb-led` / `wb-dev`)。
+1. **自身命名**: 各 pane 内 rename 自己为 `<slug>-<角色>` (多实例命名 `<slug>-<角色>-<n>`, n ≥ 1, n=1 可省), slug = `HERDR_WORKSPACE_ID` 小写 (wB → `wb-led` / `wb-dev`)。
 2. **role 派生**: `coherd feedback/notify` 从 `HERDR_WORKSPACE_ID` 派生 ws、从自身 agent 名剥 `<slug>-` 前缀派生 role (`src/coherd/push.py`)。前缀是协议硬要求, 两种偏离后果不同:
    - **无 agent 名**(未 rename, 且无 `COHERD_ROLE` / `HERDR_AGENT_NAME`) → 三段来源全缺 → CLI 报 `无法派生 role`, **响亮失败**;
-   - **名不含 `<slug>-` 前缀**(如改名成 `foo`) → **不报错**, 但注入的标记变成 `[foo|notify]:`——**身份静默错标**, peer 无法按 role 归属 (derive_role 对无前缀名原样返回, 实测 `derive_role("led", "w5w") == "led"`)。
+   - **名不含 `<slug>-` 前缀**(如改名成 `foo`) → **不报错**, 但注入的标记变成 `[foo|notify]:`（可选 `#<n>`, 接收端只匹配 role）——**身份静默错标**, peer 无法按 role 归属 (derive_role 对无前缀名原样返回, 实测 `derive_role("led", "w5w") == "led"`)。
 3. **peer 由约定推出**: 同 slug、角色对位 → led 的 peer 是 `<slug>-dev`, dev 的 peer 是 `<slug>-led`。不用手输, 也无需发现对方。
 
 谁先起都行: `herdr agent prompt` 自动唤醒 idle 待机者, 后起方发一条握手即可(无轮询)。simple 握手: **dev 发一条** `coherd notify <slug>-led "standby"`, led 被动接收不回执(CONTRACT-simple §6)。

@@ -17,7 +17,7 @@ SESSION=~/.config/coherd/sessions/$(ls -t ~/.config/coherd/sessions | head -1)
 
 ## 1. 时间线：最近 20 条消息
 
-事件行 schema：`{ws,from,to,type,msg_id,ts,body}`（`ts` 为 UTC ISO8601，`body` 为未带标记前缀的原始正文）。
+事件行 schema：`{ws,from,to,from_index,to_index,type,msg_id,ts,body}`（`ts` 为 UTC ISO8601，`body` 为未带标记前缀的原始正文；历史行缺 `from_index`/`to_index` 属正常，查询不得假设存在）。
 
 ```bash
 jq -r '"\(.ts[11:19]) \(.from)→\(.to) [\(.type)] \(.body[0:50])"' "$SESSION/events.log" | tail -20

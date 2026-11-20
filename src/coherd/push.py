@@ -21,9 +21,11 @@ import os
 import subprocess
 import time
 import uuid
+import re
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import NamedTuple
 
 from .client import agent_list
 from .tracker import CONFIG_HOME, glob_session_dir
@@ -38,6 +40,31 @@ Sender = Callable[[str, str], bool]
 PeerListFn = Callable[[], list[str] | None]
 
 
+# 契约角色词表
+CONTRACT_ROLES = {"coordinator", "executor", "reviewer", "libero", "led", "dev"}
+
+class Identity(NamedTuple):
+    role: str
+    index: int
+    explicit_index: bool
+
+    @property
+    def display(self) -> str:
+        return f"{self.role}#{self.index}" if self.explicit_index else self.role
+
+def parse_agent_name(name: str, ws: str) -> Identity:
+    """单一身份解析点：解析 role、index、display。"""
+    prefix = f"{ws}-"
+    base_name = name.removeprefix(prefix) if name.startswith(prefix) else name
+
+    m = re.match(r"^(.*?)-([1-9][0-9]*)$", base_name)
+    if m:
+        role_part, idx_part = m.groups()
+        if role_part in CONTRACT_ROLES:
+            return Identity(role=role_part, index=int(idx_part), explicit_index=True)
+
+    return Identity(role=base_name, index=1, explicit_index=False)
+
 # simple 模式（led/dev 双角色）唯一对端映射：省略 peer 时按自身 role 反推，
 # 免去每次手敲 `${ws}-dev`。三角色模式对端多义（coordinator 对 exec/reviewer/libero），
 # 绝不猜——仍须显式传 peer 全名。
@@ -51,9 +78,8 @@ def ws_from_env() -> str | None:
 
 
 def derive_role(agent_name: str, ws: str) -> str:
-    """agent 名去 `${ws}-` 前缀取 role；无前缀则原样（libero/standalone 兜底）。"""
-    prefix = f"{ws}-"
-    return agent_name.removeprefix(prefix)
+    """薄包装：兼容既有断言的 role 派生。"""
+    return parse_agent_name(agent_name, ws).role
 
 
 def _self_role_from_pane_list() -> str | None:
@@ -101,15 +127,19 @@ def make_event(
     from_: str,
     to: str,
     msg_id: str,
+    from_index: int = 1,
+    to_index: int = 1,
     ts: str | None = None,
     msg_type: str = "feedback",
     body: str = "",
 ) -> dict:
-    """事件日志条目 dict（字段序 ws,from,to,type,msg_id,ts,body，type=feedback/notify）。"""
+    """事件日志条目 dict（字段序 ws,from,to,from_index,to_index,type,msg_id,ts,body，type=feedback/notify）。"""
     return {
         "ws": ws,
         "from": from_,
         "to": to,
+        "from_index": from_index,
+        "to_index": to_index,
         "type": msg_type,  # feedback(待回执) / notify(单向)，命令名即标记名
         "msg_id": msg_id,
         "ts": ts or datetime.now(timezone.utc).isoformat(),
@@ -178,8 +208,8 @@ def run(
     # 自造前缀，拒绝并交还调用方（防重复如 `[x|feedback]: [x|feedback]: ...`）。
     import re as _re
 
-    if _re.match(r"^\s*\[\w+(?:\|\w+)?\]:", msg):
-        stripped = _re.sub(r"^\s*\[\w+(?:\|\w+)?\]:\s*", "", msg, count=1)
+    if _re.match(r"^\s*\[[\w#]+(?:\|[\w#]+)?\]:", msg):
+        stripped = _re.sub(r"^\s*\[[\w#]+(?:\|[\w#]+)?\]:\s*", "", msg, count=1)
         raise ValueError(
             "消息正文应以 body 开头，勿手写 `[<role>|<type>]: ` 前缀（CLI 自动注入）。"
             f" 已剥离前缀后的正文：{stripped!r}"
@@ -190,19 +220,22 @@ def run(
     if not resolved_ws:
         raise ValueError("无法派生 ws：未提供 --ws 且 HERDR_WORKSPACE_ID 未设置")
 
-    resolved_role = role or os.environ.get("COHERD_ROLE")
-    if not resolved_role:
+    raw_role = role or os.environ.get("COHERD_ROLE")
+    if not raw_role:
         owner = os.environ.get("HERDR_AGENT_NAME")
         if owner:
-            resolved_role = derive_role(owner, resolved_ws)
-    if not resolved_role:
+            raw_role = owner
+    if not raw_role:
         name = (self_role_fn or _self_role_from_pane_list)()
         if name:
-            resolved_role = derive_role(name, resolved_ws)
-    if not resolved_role:
+            raw_role = name
+    if not raw_role:
         raise ValueError(
             "无法派生 role：未提供 --role，且 COHERD_ROLE / HERDR_AGENT_NAME / agent.list 均缺"
         )
+
+    self_id = parse_agent_name(raw_role, resolved_ws)
+    resolved_role = self_id.role
 
     # ①b peer 补全：simple 模式唯一对端按 role 反推；其余 role 无唯一对端，报错不猜
     if not peer_agent:
@@ -214,7 +247,8 @@ def run(
             )
         peer_agent = f"{resolved_ws}-{other}"
 
-    peer_role = derive_role(peer_agent, resolved_ws)
+    peer_id = parse_agent_name(peer_agent, resolved_ws)
+    peer_role = peer_id.role
 
     # ② peer 名校验（fail-open）：发往错拼全名的消息会被 `herdr agent prompt` 静默失败
     # （sender 只把失败折成 False），消息只落进日志里。校验范围与命名空间同构：集群内
@@ -233,8 +267,8 @@ def run(
             f" 仅 `{resolved_ws}-` 前缀的 agent 全名会被校验；裸名视为 standalone/交付收件人放行"
         )
 
-    # ③ 注入 `[<role>|<type>]: ` 标记前缀（类型=feedback/notify，命令名即标记名）
-    signed_msg = f"[{resolved_role}|{msg_type}]: {msg}"
+    # ③ 注入 `[<display>|<type>]: ` 标记前缀（类型=feedback/notify，命令名即标记名）
+    signed_msg = f"[{self_id.display}|{msg_type}]: {msg}"
 
     # ④ 精简审计（O_APPEND，日志先行：type 标识消息类型，无后台待回执登记）
     event = make_event(
@@ -242,6 +276,8 @@ def run(
         resolved_role,
         peer_role,
         make_msg_id(),
+        from_index=self_id.index,
+        to_index=peer_id.index,
         msg_type=msg_type,
         body=msg,
     )
@@ -259,6 +295,8 @@ def run(
         "ws": resolved_ws,
         "from": resolved_role,
         "to": peer_role,
+        "from_display": self_id.display,
+        "to_display": peer_id.display,
         "type": msg_type,
         "peer_agent": peer_agent,
         "msg_id": event["msg_id"],

@@ -462,6 +462,76 @@ class SessionDirTest(SessionsDirMixin, unittest.TestCase):
         )
         self.assertNotEqual(res.exit_code, 0)
 
+    def test_ac5_cross_session_dir_taken(self):
+        from unittest.mock import patch
+        # 造 A 会话目录 (包含 -01)
+        sess_a = self.sessions / "w37-20260101000000-111"
+        sess_a.mkdir(parents=True)
+        (sess_a / "w37-20261120000000-01.task.md").write_text("dummy", encoding="utf-8")
+        
+        # 造一个更晚的 B 会话目录，作为 CLI 的写入目标
+        sess_b = self.sessions / "w37-20261120000000-222"
+        sess_b.mkdir(parents=True)
+        
+        runner, app = self._runner()
+        with patch("coherd.cli.datetime") as mock_dt:
+            from datetime import datetime, timezone
+            mock_dt.now.return_value = datetime(2026, 11, 20, 0, 0, 0, tzinfo=timezone.utc)
+            # cli 的 `session_dir_for` 会挑最新的 B 作为写入目标。
+            # 但是 A 里已经有 -01 了。应该拿到 -02，而且要落在 B 里。
+            res = runner.invoke(app, ["task", "new", "--task-name", "t", "--objective", "o", "--dod", "d", "--output", "out.md", "--ws", "w37"])
+            self.assertEqual(res.exit_code, 0, res.stdout + res.stderr)
+            
+            # 确认落在 B 里，且为 -02
+            self.assertTrue((sess_b / "w37-20261120000000-02.task.md").exists())
+
+    def test_ac4_five_concurrent_creates(self):
+        from unittest.mock import patch
+        sess_b = self.sessions / "w37-20261120000000-222"
+        sess_b.mkdir(parents=True)
+
+        runner, app = self._runner()
+        with patch("coherd.cli.datetime") as mock_dt:
+            from datetime import datetime, timezone
+            mock_dt.now.return_value = datetime(2026, 11, 20, 0, 0, 0, tzinfo=timezone.utc)
+            
+            for _ in range(5):
+                res = runner.invoke(app, ["task", "new", "--task-name", "t", "--objective", "o", "--dod", "d", "--output", "out.md", "--ws", "w37"])
+                self.assertEqual(res.exit_code, 0, res.stdout + res.stderr)
+            
+            tracks = sorted([p.name for p in sess_b.glob("w37-20261120000000-*.task.md")])
+            self.assertEqual(tracks, [
+                "w37-20261120000000-01.task.md",
+                "w37-20261120000000-02.task.md",
+                "w37-20261120000000-03.task.md",
+                "w37-20261120000000-04.task.md",
+                "w37-20261120000000-05.task.md"
+            ])
+
+    def test_ac6_exhaustion(self):
+        from unittest.mock import patch
+        sess_a = self.sessions / "w37-20260101000000-111"
+        sess_a.mkdir(parents=True)
+        for i in range(1, 21):
+            (sess_a / f"w37-20261120000000-{i:02d}.task.md").write_text("dummy", encoding="utf-8")
+        
+        runner, app = self._runner()
+        with patch("coherd.cli.datetime") as mock_dt:
+            from datetime import datetime, timezone
+            mock_dt.now.return_value = datetime(2026, 11, 20, 0, 0, 0, tzinfo=timezone.utc)
+            res = runner.invoke(app, ["task", "new", "--task-name", "t", "--objective", "o", "--dod", "d", "--output", "out.md", "--ws", "w37"])
+            self.assertNotEqual(res.exit_code, 0)
+            self.assertIn("同秒序号耗尽（20 次）", res.stdout + res.stderr)
+            all_tracks = list(self.sessions.glob("*/w37-20261120000000-*.task.md"))
+            self.assertEqual(len(all_tracks), 20)
+
+    def test_ac9_task_list_alignment(self):
+        T.write_new(make_data("was-20261120003153-01", ws="was", status="pending"))
+        runner, app = self._runner()
+        res = runner.invoke(app, ["task", "list", "--ws", "was"])
+        self.assertEqual(res.exit_code, 0)
+        self.assertRegex(res.stdout, r"was-20261120003153-01\s+pending\s+2026")
+
 
 if __name__ == "__main__":
     unittest.main()
