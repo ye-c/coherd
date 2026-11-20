@@ -38,6 +38,7 @@ cp bin/coherd ~/.local/bin/                 # 或 /usr/local/bin，确保在 PAT
 mkdir -p ~/.config/coherd
 cp roles/CONTRACT.md roles/coordinator.md roles/executor.md roles/reviewer.md roles/libero.md ~/.config/coherd/
 cp roles/CONTRACT-simple.md roles/led.md roles/dev.md ~/.config/coherd/   # 双角色简易模式 (-s)
+cp -R roles/templates ~/.config/coherd/templates/                          # spec/plan 骨架（install.sh 同此行为）
 # 一键版:
 ./install.sh                                # 拷贝+备份+依赖提示
 ```
@@ -74,6 +75,9 @@ coherd [init] [-s|--simple] [-p|--portrait] [-t|--tabs] [-e|--executors N] [--ag
 - tabs：`-t` / `--tabs` 触发 — 每角色独立 tab（1 coord / 2 rev / 3 exec），另备 4-libero 自由 tab 供手动加载
 - 多执行者：`-e N`（N≥2，上限 8）触发 — 强制 tabs 布局（1 coord / 2 rev / 3..N+2 exec-1..N / N+3 libero）
 - simple（`-s`）恒两个 tab：1 led / 2 dev（无需 `-t`）
+- agent 命名：`-e 1`（或默认）为 `${ws}-coordinator` / `${ws}-executor` / `${ws}-reviewer`；`-e N`（N≥2）时执行者带序号 `${ws}-executor-<n>`（n = 1..N），coordinator / reviewer 名不变
+- 消息标记：agent 间 `coherd feedback` / `coherd notify` 由 CLI 注入 `[<role>|feedback]:` / `[<role>|notify]:` 前缀；多执行者时带实例序号，如 `[executor#2|notify]:`（接收端只匹配 role，序号仅供展示）
+- **并行扇出前先冻结共享面**：`-e N` 拆票前需判定能否并行、扇出前定稿共享面。定义、判据与三动作见 `CONTRACT.md` §3——本处只给指针，不复述条款
 
 ```bash
 coherd                              # 在当前目录起集群（横屏）
@@ -86,6 +90,36 @@ coherd init ~/code/myapp            # 强制重建同 label 集群（已存在�
 ```
 
 重复运行同一 label 不会重建：已存在则聚焦打开（`init` 子命令除外，它会先关闭再重建）。任一路径不通（缺 jq、缺命令行配置）会直接报错退出。
+
+## 任务记录与消息 CLI
+
+`coherd` 子命令可单独调用，不必先起集群（`task` 做 tracker CRUD，`feedback` / `notify` 发 agent 间消息；CLI 只做存取，不做角色决策）。
+
+tracker：
+
+```bash
+coherd task new -t 任务名 -o "目标 + 为什么" -d "可验证完成定义" --output 产出路径
+#   可选: --ws / --status pending|active|done / --body / --parent-spec <spec id> / --gate <单行命令>
+#   → 写 ~/.config/coherd/sessions/<session>/<id>.task.md 并打印路径
+coherd task list [--ws <ws>] [--status <状态>]   # 摘要：id / status / 建日 / task_name
+coherd task show <ID>                            # 完整 tracker（frontmatter + 正文）
+coherd task status <ID> --set pending|active|done
+```
+
+tracker ID 格式 `<ws>-<14位秒时间戳>-<2位序号>`（UTC `YYYYMMDDHHMMSS` + `01`–`99`；同 ws 同秒重复创建时序号递增），如 `wr1-20261120055148-01`。
+
+消息（两者都写 session `events.log` 审计，正文只写 body——`[` 开头的自造前缀会被 CLI 拒绝）：
+
+```bash
+coherd feedback <peer_agent> "<正文>"   # 期待回执：收方应回一条（分派 / 交审 / revise / 讨论）
+coherd notify   <peer_agent> "<正文>"   # 单向知会：无需回执（ack / 上报 / 回流 / 握手）
+```
+
+- 命令名即语义（=注入的标记名），无缺省值陷阱；单向上报用 `notify`，需要对方回应才用 `feedback`。
+- 自身 `ws` / `role` 缺省取 `HERDR_WORKSPACE_ID` / `COHERD_ROLE`（或从 agent 名派生）；不在集群 pane 内调时显式给 `--ws` / `--role`。
+- 正文可走 `-`（stdin）或 `--body-file`，避开 shell 求值。
+- simple 模式（`-s`）对端唯一（led↔dev），可省略 peer 位。
+- `notify` 送达失败会非零退出并提示改用 `feedback` 重发；`feedback` 送达失败不丢审计行。
 
 ## 双角色简易模式（`-s`）
 
@@ -111,6 +145,7 @@ coherd init ~/code/myapp            # 强制重建同 label 集群（已存在�
 - **审查循环**：reviewer 每次必做五查——门禁（任务携带的单行验证命令）→ 改动面越界（对照方案白名单）→ 规格忠实度 → 正确性 → 安全性与可维护性；给双向结论，revise 上限 2 轮。
 - **工具白名单**：coordinator 只读/检索，executor 完整编辑，reviewer 只读审查；任务级边界与白名单取交集。
 - **规模缩放**：低风险小任务可省掉审查环节，高风险任务必走全链路。
+- **共享面与并行判定**：多执行者并行时，`N≥2` 一律产 plan（不得按轻任务跳步）+ 方案必抛预审，扇出前冻结共享面；判据与三动作见 `CONTRACT.md` §3（此处只给指针，不复述条款）。
 
 ## 安全
 
