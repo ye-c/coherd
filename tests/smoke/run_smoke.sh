@@ -183,16 +183,76 @@ case_t7() {
   done
 }
 
-printf 'coherd simple 模式冒烟 T2–T7 (fake herdr, HOME 隔离, work=%s)\n' "$WORK"
+case_t8() { # 多执行者 -e 3 全链路
+  state t8; local st="$COHERD_SMOKE_STATE"
+  run_coherd e3 -e 3 "$WORK/repo" sm21 \
+    || { bad "-e 3 启动非 0: $(cat "$st/out-e3")"; return; }
+  eq "-e 3: tab create 恰好 5 次 (rev + 3 exec + libero)" "5" "$(cnt x "$st/tabcnt")"
+  eq "-e 3: pane run 恰好 5 条 (coord + rev + 3 exec)" "5" "$(wc -l <"$st/runs" | tr -d ' ')"
+  eq "-e 3: renames 恰好 5 条" "5" "$(wc -l <"$st/renames" | tr -d ' ')"
+  eq "-e 3: rename 含 coord" "1" "$(grep -cF -- '|wsm21-coordinator' "$st/renames")"
+  eq "-e 3: rename 含 rev" "1" "$(grep -cF -- '|wsm21-reviewer' "$st/renames")"
+  eq "-e 3: rename 含 exec-1" "1" "$(grep -cF -- '|wsm21-executor-1' "$st/renames")"
+  eq "-e 3: rename 含 exec-2" "1" "$(grep -cF -- '|wsm21-executor-2' "$st/renames")"
+  eq "-e 3: rename 含 exec-3" "1" "$(grep -cF -- '|wsm21-executor-3' "$st/renames")"
+  eq "-e 3: tab rename 含 coord" "coord|tab-1" "$(cat "$st/tab_renames")"
+  # brief 指路: 角色恒 executor, 名字带序号
+  contains "-e 3: exec-1 brief 角色未被污染" "你是 executor · agent 名 wsm21-executor-1" "$st/brief_wsm21-executor-1"
+  contains "-e 3: exec-2 brief 角色未被污染" "你是 executor · agent 名 wsm21-executor-2" "$st/brief_wsm21-executor-2"
+  contains "-e 3: exec-3 brief 角色未被污染" "你是 executor · agent 名 wsm21-executor-3" "$st/brief_wsm21-executor-3"
+  contains "-e 3: standby 指向 coordinator" "coherd notify wsm21-coordinator \"standby\"" "$st/brief_wsm21-executor-2"
+}
+
+case_t9() { # -e 1 与不带参数等价
+  state t9; local st="$COHERD_SMOKE_STATE"
+  run_coherd e1 -e 1 "$WORK/repo" sm22 \
+    || { bad "-e 1 启动非 0: $(cat "$st/out-e1")"; return; }
+  eq "-e 1: 走默认横屏 splits=2" "2" "$(cnt x "$st/splitcnt")"
+  eq "-e 1: tab create 为 0" "0" "$(cnt x "$st/tabcnt")"
+  eq "-e 1: pane run 恰好 3 条" "3" "$(wc -l <"$st/runs" | tr -d ' ')"
+  eq "-e 1: renames 恰好 3 条" "3" "$(wc -l <"$st/renames" | tr -d ' ')"
+  eq "-e 1: executor 名无序号后缀" "1" "$(grep -cF -- '|wsm22-executor' "$st/renames")"
+}
+
+case_t10() { # 参数非法早退且工作区计数不增
+  local i=0 case_spec arg needle tag
+  for case_spec in "0|超出范围" "9|超出范围" "x|参数非法"; do
+    i=$((i+1)); tag="bad-e-$i"
+    arg="${case_spec%%|*}"; needle="${case_spec##*|}"
+    state "t10-$tag"; local st="$COHERD_SMOKE_STATE"
+    if run_coherd "$tag" -e "$arg" "$WORK/repo" sm23; then
+      bad "-e '$arg' 应报错退出"
+    else
+      ok "-e '$arg' 报错退出 (exit≠0)"
+    fi
+    contains "-e '$arg' 报错含 '$needle'" "$needle" "$st/out-$tag"
+    eq "-e '$arg': 未 create workspace" "0" "$(cnt x "$st/createcnt")"
+  done
+
+  # -e 3 -s 冲突早退
+  state "t10-conflict"; local st="$COHERD_SMOKE_STATE"
+  if run_coherd conflict -s -e 3 "$WORK/repo" sm24; then
+    bad "-s -e 3 应报错退出"
+  else
+    ok "-s -e 3 报错退出 (exit≠0)"
+  fi
+  contains "-s -e 3 报错含互斥提示" "不支持多执行者" "$st/out-conflict"
+  eq "-s -e 3: 未 create workspace" "0" "$(cnt x "$st/createcnt")"
+}
+
+printf 'coherd simple 模式冒烟 T2–T10 (fake herdr, HOME 隔离, work=%s)\n' "$WORK"
 case_t2
 case_t3
 case_t4
 case_t5
 case_t6
 case_t7
+case_t8
+case_t9
+case_t10
 
 if [ "$FAILED" = 0 ]; then
-  printf '\nALL PASS (T2–T7)\n'
+  printf '\nALL PASS (T2–T10)\n'
 else
   printf '\nFAILED — 见上方 FAIL 行\n'
 fi

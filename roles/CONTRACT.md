@@ -90,7 +90,7 @@ coordinator→executor 每条任务**必须**包含以下 4 字段，缺失即�
 
 - **spec 内容红线**：规格只讲行为契约、领域模型、不变量、边界与非目标、决策清单、验收标准；**不得出现具体文件路径、编程语言、第三方库名**。路径唯一归属方案的白名单。
 
-- **plan 必填改动面**：现状差异分析（现有 vs 目标）、架构调整说明、**改动文件白名单**（新增/修改 + 影响范围）、迁移与回滚。executor 只改白名单内文件，越界按 §4 以行为判定。
+- **plan 必填改动面**：现状差异分析（现有 vs 目标）、架构调整说明、**改动文件白名单**（新增/修改 + 影响范围）、迁移与回滚。多 executor 时方案白名单按执行者切片，共享文件须指定唯一归属者。executor 只改白名单内文件，越界按 §4 以行为判定。
 
 - **工件元数据四键**：spec 与 plan 文件头固定四键——`id` / `kind`（`spec` 或 `plan`）/ `created_at`（`%Y-%m-%dT%H:%M:%SZ`）/ `parent_spec`（plan 填同标识 spec id，spec 留空串）。由 coordinator 手写遵守，**工具层不解析不校验**。
 
@@ -190,12 +190,12 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 
 - 基于 herdr idle/done 事件交接：上一环完成 → 下一环主动拉取（`herdr agent read`）。
 - **待机动作界外声明**：任一环执行完毕、无下一环时（如 executor 交审且 reviewer approve 后、coordinator 交付后），直接 **转 idle 待机**；`herdr agent prompt` 会自动唤醒 idle 待机者，peer 无需 sleep 阻塞或轮询消息。`herdr agent read` 仅用于核对状态/查证据，**不作轮询等待**（详见 executor.md「待机」节）。
-- executor/reviewer 启动后读 CONTRACT.md 确认身份, 以 `coherd notify` 向 coordinator 发一次 `standby` 上报（§0 standby/握手, notify 单向不回; 环节映射见 §7 D10）, 随即**转 idle 待机**（herdr 层 pane 挂起; 非 agent CLI 层 hub-wait 等机制, 见 §0 idle）; coordinator 收到两份上报后判集群起步就绪, 自身转 idle 待机后开始按用户意图分派, 之后全程事件驱动(§7 下条)。**此握手单向、一次性、不触发 §2 回复义务**——coordinator 不回"收到", exec/rev 不等回复。coordinator 不轮询(§0)、不检测 exec/rev 状态; 未收到上报也不追究、不重发——沉默即故障信号, 用户自然察觉。
+- executor/reviewer 启动后读 CONTRACT.md 确认身份, 以 `coherd notify` 向 coordinator 发一次 `standby` 上报（§0 standby/握手, notify 单向不回; 环节映射见 §7 D10）, 随即**转 idle 待机**（herdr 层 pane 挂起; 非 agent CLI 层 hub-wait 等机制, 见 §0 idle）; coordinator 收到对应数量上报（N 个 executor + 1 个 reviewer，共 N+1 份）后判集群起步就绪, 自身转 idle 待机后开始按用户意图分派, 之后全程事件驱动(§7 下条)。**此握手单向、一次性、不触发 §2 回复义务**——coordinator 不回"收到", exec/rev 不等回复。coordinator 不轮询(§0)、不检测 exec/rev 状态; 未收到上报也不追究、不重发——沉默即故障信号, 用户自然察觉。
 - executor 完成 → 直接提交 reviewer 审查（reviewer 读产物 / `herdr agent read` 验证），结论 approve/revise 回流 coordinator；环境/依赖类阻塞 → `coherd notify` 上报 coordinator（原因 + 已尝试手段）；规约漂移 → `coherd feedback` 回流 coordinator（见 §4）；revise 循环 rev→exe→rev 不经 coordinator，超 §4 上限（2 轮）才介入仲裁。
 - feedback/notify 遵循 §2 三铁律（见 §2）；pane 输出退化为辅助。
 - **环节→命令映射（D10，唯一权威）**：命令名即语义（=标记名）——`coherd feedback` 注入 `[<role>|feedback]:` 标记（收方据标记需回执）、`coherd notify` 注入 `[<role>|notify]:` 标记（单向不回）；两者均写 session `events.log` 精简审计（`type` 字段标识类型，`body` 字段记原始正文，**无后台待回执登记/判定**；无 session 目录的冷启动回退全局 `events.log` 兜底）。环节映射表是唯一权威（coordinator 分派 / 讨论 / exec→rev 交审 / rev revise 退回 / coordinator→reviewer spec/plan 预审抛审 / 预审 revise 退回 coordinator 修订 / **executor 规约漂移回流** = `feedback`；approve 回流 coordinator（单收件人；含可执行 nit 才另发 executor）/ spec/plan 预审 approve 回流放行 / 改完重交 / 开工 ack / standby 握手 / **环境、依赖、门禁定义类阻塞上报** / 纯通知 = `notify`）。**阻塞语义二分**：环境/依赖/门禁定义类阻塞走 `notify`（无需回执）；规格假设失效走 `feedback` 漂移回流（需回执），两者不得混用。一句话：任务交互看映射表定 feedback/notify，命令名即标记名，接收方据标记判断是否回执——无人值守兜底靠"沉默即故障"人工察觉。
 - **批处理纪律（降唤醒次数）**：每条消息 = 一次 `herdr agent prompt` = 对端一次完整 agent turn（重载 system prompt + 契约）。故一次唤醒尽量只装一件事：
-  1. **一批票据 = 一条分派消息**：分项列出（每票一行：任务名 + tracker 路径 + objective 一句），**禁止逐票分条发**。
+  1. **一批票据 = 一条分派消息**：分项列出（每票一行：任务名 + tracker 路径 + objective 一句），**禁止逐票分条发**。一条分派消息只发给一个执行者；同一执行者多票合并，不同执行者分别发。
   2. **批量审**：reviewer 在同一轮唤醒里收到 ≥2 票交审 → **一次审完、一条消息汇总逐票结论**（每票一行 `approve:` / `revise:`），禁止逐票各发一条。
   3. **合并阈值（可核）**：同一收件人 **60 秒内需要发 ≥2 条同类消息 → 必须合并为一条**。分派 / 回流 / 结论各类分别适用；跨类型（如交审 feedback + 阻塞 notify）不合并。
      合并发生在**发送前规划**（一件事想清楚、一次写完再发），**不是 sleep 攒批**：禁止为了凑批而等待或轮询；若单条即刻可发就立刻发，不得为凑批延迟。合并的对象是「本来就该在同一轮发出的多条」，不是「还没发生的未来消息」。

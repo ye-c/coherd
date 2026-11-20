@@ -77,6 +77,7 @@ case "${1:-} ${2:-}" in
     echo "{\"result\":{\"root_pane\":{\"pane_id\":\"pane-tab-$n\"}}}" ;;
 
   "tab rename")
+    printf '%s|%s\n' "${4:-}" "${3:-}" >>"$S/tab_renames"
     exit 0 ;;
 
   "pane split")
