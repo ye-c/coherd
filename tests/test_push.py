@@ -665,11 +665,24 @@ class MultiInstanceTest(EnvMixin, unittest.TestCase):
         self.assertEqual(r["to_display"], "reviewer")
 
     def test_ac13_old_event_line_can_be_parsed(self):
-        # 验证旧记录没有 from_index, to_index 时，json 解析后仍然包含既有 7 字段
+        # 旧行（无 from_index / to_index）真写进 log 再读回：写读闭环，不是字符串解析
+        path, cleanup = _tmp_log()
+        self.addCleanup(cleanup)
         old_line = '{"ws": "w2p", "from": "executor", "to": "reviewer", "type": "feedback", "msg_id": "1", "ts": "2026-11-20T00:00:00Z", "body": "hi"}'
-        ev = json.loads(old_line)
+        P.append_event(path, old_line)
+        lines = [ln for ln in path.read_text(encoding="utf-8").splitlines() if ln]
+        self.assertEqual(len(lines), 1)
+        ev = json.loads(lines[0])
+        # 既有 7 字段原样读出
+        self.assertEqual(
+            sorted(ev),
+            ["body", "from", "msg_id", "to", "ts", "type", "ws"],
+        )
         self.assertEqual(ev["from"], "executor")
-        self.assertEqual(ev.get("from_index", 1), 1)
+        self.assertEqual(ev["ts"], "2026-11-20T00:00:00Z")
+        # 新字段缺失：.get 得缺省，不抛 KeyError
+        self.assertIsNone(ev.get("from_index"))
+        self.assertIsNone(ev.get("to_index"))
 
 if __name__ == "__main__":
     unittest.main()
