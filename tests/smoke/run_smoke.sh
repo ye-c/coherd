@@ -19,6 +19,9 @@ export PATH="$HERE/bin:$PATH"            # fake herdr + fake sleep 前置
 export COHERD_CONF=/dev/null             # 不吃用户 coherd.conf
 export COHERD_COORDINATOR_CMD=coord-cli COHERD_EXECUTOR_CMD=exec-cli COHERD_REVIEWER_CMD=rev-cli
 export COHERD_LED_CMD=led-cli COHERD_DEV_CMD=dev-cli
+# 隔离: 不继承富主 herdr socket。否则 push.known_peers() 读到真实 agent 名单,
+# T5 的合成名 (wsm5-dev) 会被前缀校验拒发。CI 无此变量, 只有 pane 内跑才会绊。
+unset HERDR_SOCKET_PATH
 mkdir -p "$HOME/.config/coherd" "$WORK/repo"
 cp "$ROOT"/roles/*.md "$HOME/.config/coherd/"   # coherd 启动会检查契约文件存在
 
