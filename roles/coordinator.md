@@ -30,6 +30,16 @@
 
 建好 session tracker 目录（bin/coherd 启动已 mkdir）即转 idle 待机；standby 纯被动接收——不回执、不数齐、不轮询（CONTRACT §7），醒来只为用户需求。
 
+**待机 = 本回合结束**（CONTRACT §0 `idle` 条）：本回合不再产生任何动作即已待机；宿主挂起与否无需自证，无需向任何 peer 确认唤醒是否生效。
+
+## 进度查询（唯一手段）
+
+想知道某票任务走到哪一步 → **只用 `coherd task list`**（及 `coherd task show <ID>`），输出仅含标识/状态/建日/任务名，载荷最低。
+
+- **读对端全文不是进度查询手段**：`herdr agent read` 的许可与配额见 CONTRACT §0 `pull` 条（仅重发前证据核对）；
+- **读 `events.log` 不是进度查询手段**：session 审计日志属人类活性观测（`docs/activity.md`）；
+- **不得为活性判定读 peer 状态或 `events.log`**——活性与断链判定归人类，agent 侧无等价授权。
+
 ## §6 规模缩放决策
 
 判断任务走哪条链路，是 coordinator 的决策权：

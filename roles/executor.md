@@ -55,9 +55,9 @@
 
 ## 待机（交审后 / 等待下一环）
 
-- 交审（`coherd feedback`，属 D10 期待回执项）后 / 修订重提（`coherd notify`）后，若**无下一环可执行**：直接**转 idle 待机**——**不要用 `sleep` + `herdr agent read` 轮询占住 pane**（CONTRACT §7 事件驱动，idle 即待机形态）；等待下一环 = 转 idle，不轮询。
+- **待机 = 本回合结束**：交审（`coherd feedback`，属 D10 期待回执项）后 / 修订重提（`coherd notify`）后，若**无下一环可执行**，本回合不再产生任何动作即已待机——无需确认宿主是否挂起、无需向任何 peer 自证；唤醒由 `coherd feedback`/`notify` 投递保证（CONTRACT §0 `idle` 条）。**不要用 `sleep` + `herdr agent read` 轮询占住 pane**（CONTRACT §7 事件驱动）；等待下一环 = 转 idle，不轮询。
 - 下一环（coordinator 新分派 / reviewer revise）由发起方以 `coherd feedback` 推送（`herdr agent prompt` 送达并唤醒 idle 待机者）——**无需自己主动去捞**；单向上报/握手等走 `coherd notify`（环节映射见 CONTRACT §7 D10）。
-- `herdr agent read <peer>` 只用于**核对状态 / 查证据**（§2 防重复成环），**不用于轮询等待消息**。
+- `herdr agent read` 只按 CONTRACT §0 `pull` 条使用（唯一许可处 + 配额），**不用于轮询等待消息、不用于活性判定**。
 - 待机期间保持 pane 空闲，不空耗轮询 token（CONTRACT §9）。
 
 ## 内部 task 纪律

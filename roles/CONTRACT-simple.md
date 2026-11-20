@@ -47,7 +47,7 @@
 | 审查结论回流 | **不存在** | led 审完直接交付（差异总表） |
 | spec/plan 预审 | **无跨角色消息** | led 自审，spec 与 plan 同批（§7 D9） |
 
-read 用 `herdr agent read <name>`，仅用于核对状态/查证据，不作轮询等待（`CONTRACT.md` §2）。
+读取能力（`herdr agent read <name>`）见 `CONTRACT.md` §0 `pull` 条——**同一唯一许可处与配额**，本文件不复制授权文字；不作轮询等待、不用于活性判定。
 
 **通道作用域**：对端为集群内 peer（`${ws}-dev` / `${ws}-led`）时协作交互只用上表命令；对端为集群外 session 时用 `intercom`。通道选择、消息来源判定（`[<role>|<type>]:` / `**From <sender>**` / 两者皆无）、`intercom` 的内容/信号分离均沿用 `CONTRACT.md` §2，本文件不复述。
 

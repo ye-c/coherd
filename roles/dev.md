@@ -62,9 +62,9 @@ led 退回必须用信号区分两种意图，**dev 据信号分支**：
 
 ## 待机
 
-- 交审（feedback）后 / 修订重交（notify）后，若**无下一环可执行**：直接**转 idle 待机**——不要用 `sleep` + `herdr agent read` 轮询占住 pane。
+- 交审（feedback）后 / 修订重交（notify）后，若**无下一环可执行**：**待机 = 本回合结束**（`CONTRACT.md` §0 `idle` 条）——本回合不再产生任何动作即已待机，无需自证；不要用 `sleep` + `herdr agent read` 轮询占住 pane。
 - 下一环（led 新分派 / revise 退回）由 led 以 `coherd feedback` 推送（自动唤醒 idle 待机者）——**无需自己主动去捞**；单向上报/握手走 `coherd notify`。
-- `herdr agent read <peer>` 只用于核对状态/查证据，不用于轮询等待消息。
+- `herdr agent read` 只按 `CONTRACT.md` §0 `pull` 条使用（唯一许可处 + 配额），不用于轮询等待消息。
 
 ## 内部 task 纪律
 
