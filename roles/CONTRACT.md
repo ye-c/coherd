@@ -73,7 +73,7 @@ coordinator→executor 每条任务**必须**包含以下 4 字段，缺失即�
 | objective | 目标：做什么 + 为什么 | “写个文档” |
 | DoD 验收标准 | 可验证的完成定义（可测、可查） | “尽量做好” |
 | 输出格式 | 产出物路径/结构/上报内容 | “完成后告诉我” |
-| 工具边界 | 允许读/写哪些路径、禁用什么 | “随便弄” |
+| 工具边界 | 允许读/写哪些路径、禁用什么；需外部事实时加 `允许检索:<主题>` | “随便弄” |
 
 分派消息模板：
 
@@ -82,10 +82,12 @@ coordinator→executor 每条任务**必须**包含以下 4 字段，缺失即�
 - objective: <目标与理由>
 - DoD: <可验证标准，逐条>
 - 输出: <文件路径/消息结构>
-- 边界: <允许读/写路径；禁止操作>
+- 边界: <允许读/写路径；禁止操作；按需 `允许检索:<主题>`>
 ```
 
 约定：字段缺失 → executor 先向 coordinator 补齐再动工；模糊分派导致的重复/遗漏由分派方负责。
+
+- **外部事实检索授权（本处是与 `CONTRACT.md` §5 executor 行配套的授权入口定义处）**：边界字段的默认值是**不查**；分派确需外部事实（官方文档、协议/格式规范、生僻 API 行为、报错诊断）时，在「边界」内显式写 `允许检索:<主题>`（可多条，主题写具体对象而非「随便查」）。**未写=默认禁查**，executor 不得擅自发散检索。executor 缺事实且未获授权时不自查也不猜——按 `executor.md`「阻塞上报与漂移回流」走 `notify` 请 coordinator 代查或追加授权后重派。哪些场景值得查，定义处见 `coordinator.md` Step 0 与 `reviewer.md` 五查第 5 条，本处不复述。
 
 - **工件四层与上游权威**：意图澄清 → 规格（What）→ 方案（How）→ 任务（Action），层层有门禁：无规格不做方案，无方案不拆票，无票据不写码。规格与方案**一一对应且共用同一标识**，落平铺 `<id>.spec.md` / `<id>.plan.md`（id 同 task id 格式）；任务只持 `parent_spec` 一个上游指针，不新增方案指针。spec/plan 是 executor 实现与 reviewer 审查的共同事实源；ticket = 4 字段垂直切片（可独立验证），与 spec/plan 冲突或超出处**以 spec 为准**（工件变更归 coordinator，见 §4）。触发判据与产物结构见 coordinator.md「spec 环节」。
 
@@ -157,7 +159,7 @@ reviewer **最小审查集**（每次审查必做，顺序固定 = 五查）：
 | 槽位 | 允许 | 禁止 |
 | ------ | ------ | ------ |
 | coordinator | 只读/检索类工具（含 web_search 调研开源先例与权威文档；拆解、分派、讨论、整合所需）；只读 git 命令（带 `GIT_OPTIONAL_LOCKS=0`）；写 session 协作元数据（spec / plan / tracker）；**一次性运维动作**（`git status --porcelain` 输出为空时，清单见 §12） | 直接编辑代码/写仓库文件（人类明确指派除外，见 §12）；未在 §12 放开的仓库级 git 写操作 |
-| executor | 完整代码编辑与运行工具；独占 git 写操作与 `index.lock` 治理（网络搜索仅限分派明确要求的专项调研，常规编码禁发散检索） | 越出任务工具边界的写操作；改动配置/秘密文件 |
+| executor | 完整代码编辑与运行工具；独占 git 写操作与 `index.lock` 治理；网络检索**仅按 §3 分派边界显式授权**（授权形态与默认值见 §3；哪些场景值得查的定义处见 `coordinator.md` Step 0，本处不复述） | 越出任务工具边界的写操作；改动配置/秘密文件；常规编码禁发散检索（显式授权除外） |
 | reviewer | 只读审查 + 跑验证；只读/检索类工具（含 web_search 独立核验外部规范、先例死角与漏洞风险）；只读 git 命令（带 `GIT_OPTIONAL_LOCKS=0`）；写审查结论（verdict）；**一次性运维动作**（`git status --porcelain` 输出为空时，清单见 §12） | 直接修改被审产出（须退回 executor）；越过自己工具边界的操作；编辑仓库代码与改动配置；未在 §12 放开的仓库级 git 写操作 |
 
 executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限收紧由用户 CLI 配置负责（同 reviewer 见 roles/reviewer.md）。
@@ -202,7 +204,7 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 - executor/reviewer 启动后读 CONTRACT.md 确认身份, 以 `coherd notify` 向 coordinator 发一次 `standby` 上报（§0 standby/握手, notify 单向不回; 环节映射见 §7 D10）, 随即**转 idle 待机**（herdr 层 pane 挂起; 非 agent CLI 层 hub-wait 等机制, 见 §0 idle）; coordinator 收到对应数量上报（N 个 executor + 1 个 reviewer，共 N+1 份）后判集群起步就绪, 自身转 idle 待机后开始按用户意图分派, 之后全程事件驱动(§7 下条)。**此握手单向、一次性、不触发 §2 回复义务**——coordinator 不回"收到", exec/rev 不等回复。coordinator 不轮询(§0)、不检测 exec/rev 状态; 未收到上报也不追究、不重发——沉默即故障信号, 用户自然察觉。
 - executor 完成 → 直接提交 reviewer 审查（reviewer 读产物验证），结论 approve/revise 回流 coordinator；环境/依赖类阻塞 → `coherd notify` 上报 coordinator（原因 + 已尝试手段）；规约漂移 → `coherd feedback` 回流 coordinator（见 §4）；revise 循环 rev→exe→rev 不经 coordinator，超 §4 上限（2 轮）才介入仲裁。
 - feedback/notify 遵循 §2 三铁律（见 §2）；pane 输出退化为辅助。
-- **环节→命令映射（D10，唯一权威）**：命令名即语义（=标记名）——`coherd feedback` 注入 `[<role>|feedback]:` 标记（收方据标记需回执）、`coherd notify` 注入 `[<role>|notify]:` 标记（单向不回）；两者均写 session `events.log` 精简审计（`type` 字段标识类型，`body` 字段记原始正文，**无后台待回执登记/判定**；无 session 目录的冷启动回退全局 `events.log` 兜底）。环节映射表是唯一权威（coordinator 分派 / 讨论 / exec→rev 交审 / rev revise 退回 / coordinator→reviewer spec/plan 预审抛审 / 预审 revise 退回 coordinator 修订 / **executor 规约漂移回流** = `feedback`；approve 回流 coordinator（单收件人；含可执行 nit 才另发 executor）/ spec/plan 预审 approve 回流放行 / 改完重交 / 开工 ack / standby 握手 / **环境、依赖、门禁定义类阻塞上报** / 纯通知 = `notify`）。**阻塞语义二分**：环境/依赖/门禁定义类阻塞走 `notify`（无需回执）；规格假设失效走 `feedback` 漂移回流（需回执），两者不得混用。一句话：任务交互看映射表定 feedback/notify，命令名即标记名，接收方据标记判断是否回执——无人值守兜底靠"沉默即故障"人工察觉。
+- **环节→命令映射（D10，唯一权威）**：命令名即语义（=标记名）——`coherd feedback` 注入 `[<role>|feedback]:` 标记（收方据标记需回执）、`coherd notify` 注入 `[<role>|notify]:` 标记（单向不回）；两者均写 session `events.log` 精简审计（`type` 字段标识类型，`body` 字段记原始正文，**无后台待回执登记/判定**；无 session 目录的冷启动回退全局 `events.log` 兜底）。环节映射表是唯一权威（coordinator 分派 / 讨论 / exec→rev 交审 / rev revise 退回 / coordinator→reviewer spec/plan 预审抛审 / 预审 revise 退回 coordinator 修订 / **executor 规约漂移回流** = `feedback`；approve 回流 coordinator（单收件人；含可执行 nit 才另发 executor）/ spec/plan 预审 approve 回流放行 / 改完重交 / 开工 ack / standby 握手 / **环境、依赖、门禁定义类阻塞上报** / 纯通知 = `notify`）。**阻塞归属（本处是归属判定唯一权威）**：环境/依赖/门禁定义类阻塞、缺外部事实/生僻 API 的检索求助（授权形态见 §3 `允许检索:<主题>`）→ `notify`（无需回执）；规格假设失效的漂移 → `feedback` 回流（需回执）。按上述归属分流，不得混用，不得把检索求助当漂移。一句话：任务交互看映射表定 feedback/notify，命令名即标记名，接收方据标记判断是否回执——无人值守兜底靠"沉默即故障"人工察觉。
 - **批处理纪律（降唤醒次数）**：每条消息 = 一次 `herdr agent prompt` = 对端一次完整 agent turn（重载 system prompt + 契约）。故一次唤醒尽量只装一件事：
   1. **一批票据 = 一条分派消息**：分项列出（每票一行：任务名 + tracker 路径 + objective 一句），**禁止逐票分条发**。一条分派消息只发给一个执行者；同一执行者多票合并，不同执行者分别发。
   2. **批量审**：reviewer 在同一轮唤醒里收到 ≥2 票交审 → **一次审完、一条消息汇总逐票结论**（每票一行 `approve:` / `revise:`），禁止逐票各发一条。
