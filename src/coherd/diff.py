@@ -20,8 +20,11 @@ from . import tracker as T
 
 # 归属标签规范词法 exec-<n>；紧凑复合形 exec-2/3 按前缀展开为独立标签（FR4）
 _TAG_RE = re.compile(r"exec-(\d+(?:/\d+)*)")
-# markdown 表格分隔行单元格（--- / :---: 等）
-_SEP_CELL_RE = re.compile(r"^:?-{3,}:?$")
+# markdown 表格分隔行单元格：GFM 允许单连字符（`| - |`），故不用 {3,}
+_SEP_CELL_RE = re.compile(r"^:?-+:?$")
+# 白名单表头精确匹配（高度可辨列）：`文件` / `改动文件`；不做子串匹配，
+# 否则「参考文件」「变更文件列表」等前置描述表会被误当白名单吞掉
+_FILE_HEADERS = ("文件", "改动文件")
 
 _EMPTY_CELLS = {"", "-", "—", "|"}
 
@@ -89,7 +92,9 @@ def parse_plan_whitelist(plan_text: str) -> tuple[dict[str, set[str]], set[str]]
     path_to_owners: dict[str, set[str]] = {}
     all_tags: set[str] = set()
     for header, rows in _tables(plan_text.splitlines()):
-        file_col = next((i for i, c in enumerate(header) if "文件" in c), None)
+        file_col = next(
+            (i for i, c in enumerate(header) if c.strip(" `") in _FILE_HEADERS), None
+        )
         if file_col is None:
             continue  # 非白名单表（如现状差异分析表）
         owner_col = next((i for i, c in enumerate(header) if "归属" in c), None)

@@ -157,6 +157,40 @@ class ParseWhitelistTest(DiffCase):
         self.assertEqual(owners["src/three.py"], set())  # 无标签单元格
         self.assertEqual(tags, {"exec-1", "exec-2", "exec-3"})
 
+    def test_compact_single_hyphen_separator(self):
+        # GFM 紧凑型 `| - |` 分隔线同样成立（旧正则 {3,} 会整表跳过 → 报无白名单表）
+        text = "| # | 文件 | 归属 |\n| - | - | - |\n| 1 | `a.py` | exec-1 |\n"
+        owners, tags = D.parse_plan_whitelist(text)
+        self.assertEqual(owners, {"a.py": {"exec-1"}})
+        self.assertEqual(tags, {"exec-1"})
+
+    def test_file_header_alias_and_backtick_wrapped(self):
+        # 表头精确白名单：`文件` / `改动文件`，容忍行内代码包裹
+        for header_cell in ("文件", "改动文件", "`文件`"):
+            with self.subTest(header=header_cell):
+                text = (
+                    f"| # | {header_cell} | 归属 |\n| --- | --- | --- |\n"
+                    "| 1 | `a.py` | exec-1 |\n"
+                )
+                owners, _ = D.parse_plan_whitelist(text)
+                self.assertEqual(owners, {"a.py": {"exec-1"}})
+
+    def test_file_like_header_is_not_whitelist(self):
+        # 「参考文件」等含「文件」子串的表头不得被当成白名单（旧子串匹配会吞掉它）
+        text = "| 参考文件 | 说明 |\n| --- | --- |\n| `a.py` | 参考 |\n"
+        with self.assertRaises(D.DiffError):
+            D.parse_plan_whitelist(text)
+
+    def test_file_like_table_skipped_when_real_table_follows(self):
+        text = (
+            "| 参考文件 | 说明 |\n| --- | --- |\n| `a.py` | 参考 |\n"
+            "\n"
+            "| # | 文件 | 归属 |\n| - | - | - |\n| 1 | `ok.py` | exec-2 |\n"
+        )
+        owners, tags = D.parse_plan_whitelist(text)
+        self.assertEqual(owners, {"ok.py": {"exec-2"}})
+        self.assertEqual(tags, {"exec-2"})
+
     def test_owner_column_before_file_column(self):
         text = (
             "| # | 归属 | 文件 | 类型 |\n"
