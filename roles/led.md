@@ -29,7 +29,7 @@
 - **规格（What，`<id>.spec.md`）**：用户场景 / 功能需求 / 关键实体 / 边界与非目标 / 决策清单（命名引用 `D1`…）/ 验收标准；**不含文件路径、语言、库名**。
 - **方案（How，`<id>.plan.md`）**：与 spec 同标识 1:1；现状差异 / 架构 / **改动文件白名单** / 迁移与回滚。四键元数据（`id` / `kind` / `created_at` / `parent_spec`）手写；骨架取 `~/.config/coherd/templates/`。
 - **spec/plan 自审（同批）**（能力降级，R1）：四要素——**完整性**（结构 + 元数据 + 同标识 1:1）/ **可验证性**（每条决策可核可测，无"尽量/大概"式悬空；spec 无路径无库名）/ **死角与危险面**（补入边界字段；plan 白名单漏项补入）/ **决策命名引用**（正文点名引用）。高风险工件亦自持，**无独立 reviewer 预审**。
-- **工件变更归 led**：审出缺陷自行修订 spec/plan；spec 变更后旧 approve 作废，重新分派声明 `重审 <任务名>：旧 approve <结论文件绝对路径> 因规格 <标识> 变更作废` + 新路径；对外（用户）明示变更。
+- **工件变更归 led**：审出缺陷自行修订 spec/plan；规格或 DoD 变更后旧 approve 作废，重新分派声明 `重审 <任务名>：旧 approve <结论文件绝对路径> 因规格/DoD <标识或项> 变更作废` + 新路径；对外（用户）明示变更。
 - 拆 ticket：按 spec 垂直切片，每片 4 字段 + `parent_spec` FK + 可选 `gate`（`coherd task new --gate '<单行命令>'`；仓库根 + `bash -lc` + 继承环境，需净化自带 `env -u VAR ...`）。
 
 ## 审查（原 reviewer 最小审查集）
@@ -44,7 +44,7 @@
 
 结论二选一：`approve`（附理由要点）或 `revise`（位置 + 问题 + 修法，逐条可落地）；所选门禁分支与判据一句落结论文件。
 
-门禁失败三类分流（simple 无第三方，led 自行处置）：环境性失败 → 修环境后重跑（不计轮次）；门禁定义错误 → 修订 tracker 门禁后重跑（不计轮次）；代码性失败 → `revise` 并落盘 stdout/stderr。
+门禁失败三类分流（simple 无第三方，led 自行处置）：环境性失败 → 不自修宿主环境，下发前置修复分派后重跑（不计轮次；详 `CONTRACT-simple.md` §4）；门禁定义错误 → 修订 tracker 门禁后重跑（不计轮次）；代码性失败 → `revise` 并落盘 stdout/stderr。
 
 ## approve / revise 与交付
 
@@ -58,8 +58,8 @@
 led 既派工又审查，须守住信号边界：
 
 - 实现级缺陷 → `revise: <问题清单逐条>`，dev 视为修 bug。
-- **需求级变更（触及 DoD 语义）→ 不得用 `revise:`**；先更新 tracker，再以新分派（`coherd feedback`，正文 `分派`）明示 dev。
-- **规约漂移**：dev 以 `coherd feedback` 回传（受影响任务 + 现实阻碍 + 待修订假设）→ 冻结任务、修订 spec/plan，回应三选一（改规格重派 / 降级替代 / 终止），禁止只回「收到」；spec 变更后既有 approve 作废，重新分派须声明 `重审 <任务名>：旧 approve <结论文件绝对路径> 因规格 <标识> 变更作废` + 新工件路径。
+- **需求级变更（触及 DoD 语义）→ 不得用 `revise:`**；先更新 tracker，再以新分派（`coherd feedback`，正文 `分派`）明示 dev。旧 approve 按失效声明作废；在审 review 任务先 `coherd notify` 作废再重派（在审判据同「版本冻结」条：`CONTRACT-simple.md` §10 / `coordinator.md`「在审先挂起」）。
+- **规约漂移**：dev 以 `coherd feedback` 回传（受影响任务 + 现实阻碍 + 待修订假设）→ 冻结任务、修订 spec/plan，回应三选一（改规格重派 / 降级替代 / 终止），禁止只回「收到」；规格或 DoD 变更后既有 approve 作废，重新分派须声明 `重审 <任务名>：旧 approve <结论文件绝对路径> 因规格/DoD <标识或项> 变更作废` + 新工件路径。
 - 理由：dev 收到 `revise:` 只会照条修实现，动机不明的变更会被当 bug 修或遭质问——歧义在信号层消除（见 `roles/dev.md` H2）。
 
 ## 工具白名单（R4）

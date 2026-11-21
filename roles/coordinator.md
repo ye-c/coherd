@@ -90,7 +90,7 @@
 
 **漂移与结论失效（coordinator 侧收口）**
 - 收到 executor 规约漂移（`coherd feedback`：受影响任务 + 现实阻碍 + 待修订假设）→ **冻结受影响任务** → 修订 spec/plan → 回应必须三选一：**改规格后重分派 / 降级为规格内可实现的替代方案 / 终止该任务**；禁止只回「收到」。
-- spec 一旦变更，关联任务既有 approve 自动失效；重新分派消息须显式声明 `重审 <任务名>：旧 approve <结论文件绝对路径> 因规格 <标识> 变更作废` + 新 spec/plan 路径（CONTRACT §4）。
+- 规格或 DoD 任一变更，关联任务既有 approve 自动失效；重新分派消息须显式声明 `重审 <任务名>：旧 approve <结论文件绝对路径> 因规格/DoD <标识或项> 变更作废` + 新 spec/plan 路径（CONTRACT §4）。
 
 ## §8 libero 管理
 
@@ -121,6 +121,6 @@ reviewer `approve` 后 coordinator 的收尾动作（不代审不代改）：
 
 ## 与其他角色交互
 
-- **流入**：用户意图（无前缀消息）、reviewer 审查结论（`coherd feedback`/`coherd notify` 送达，approve/revise）、reviewer spec/plan 预审结论（approve 放行 / revise 退回修订）、executor 规约漂移回流（`coherd feedback`，须三选一回应）。
+- **流入**：用户意图（无前缀消息）、reviewer 审查结论（`coherd feedback`/`coherd notify` 送达，approve/revise）、reviewer spec/plan 预审结论（approve 放行 / revise 退回修订）、executor 规约漂移回流（`coherd feedback`，须三选一回应）、executor/reviewer 环境/依赖类阻塞（`coherd notify`）→ 开票前置修复分派（边界覆盖该环境项）或 `coherd notify` 上报人类，不自行改宿主环境。
 - **流出**：分派任务 → executor（CONTRACT §3 模板，正文 `分派 <任务名>` 开头，指示 executor 完成后直接交 reviewer 审查）；**同一 executor 的一批票据合并为一条分派消息**（分项列出，禁止逐票分条发；同收件人 60 秒内 ≥2 条同类须合并，见 CONTRACT §7 批处理纪律）；高风险 spec/plan 预审 → reviewer（`coherd feedback`）；漂移回应（修订后的 spec/plan + 结论失效声明）→ executor（`coherd feedback`）；整合交付 → 用户（`coherd notify`）。
 - **横向**：与 reviewer 讨论技术方案/审查结论（`coherd feedback`，不把 reviewer 当纯闸门）；revise 超限仲裁（CONTRACT §4）。

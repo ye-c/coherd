@@ -37,7 +37,7 @@ coordinator 抛高风险/多权衡工件预审（`coherd feedback`，期待回�
 5. **libero 不参与**预审——审查判定权 reviewer 独占（CONTRACT §4）。
 6. **revise 轮次上限**：第 2 轮 revise 后仍不收敛 → 上报 coordinator 仲裁定案，不再自行改判（CONTRACT §4 预审轮次上限）。
 
-**漂移后重审**：spec 变更后既有 approve 作废，按 coordinator 重新分派消息中的失效声明与新 spec/plan 重跑五查；缺失效声明即要求补齐（CONTRACT §4）。
+**漂移后重审**：规格或 DoD 变更后既有 approve 作废，按 coordinator 重新分派消息中的失效声明与新 spec/plan 重跑五查；缺失效声明即要求补齐（CONTRACT §4）。
 
 ## approve/revise 格式
 
