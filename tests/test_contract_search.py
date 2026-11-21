@@ -80,6 +80,12 @@ class SimpleDevAuthorityTest(unittest.TestCase):
         self.assertIn("允许检索:", sec3)
         self.assertIn("未写=默认禁查", sec3)
 
+    def test_dev_blocking_has_search_delegation(self):
+        # dev.md 阻塞节对齐 executor.md，具备检索求助通道
+        sec = _section(_read("dev.md"), "## H3 — 单对象上报")
+        self.assertIn("缺外部事实", sec)
+        self.assertIn("代查或追加授权", sec)
+
     def test_dev_row_does_not_reenumerate_tool_set(self):
         # 反向守护：把工具集重新抄回 dev 行 = 事实源漂移复现，必须转红
         sec5 = _section(_read("CONTRACT-simple.md"), "## 5.")
@@ -101,6 +107,11 @@ class ExecutorWhitelistRowTest(unittest.TestCase):
         row = _table_row(sec5, "executor")
         self.assertIn("§3", row)
         self.assertIn("coordinator.md", row)
+
+    def test_coordinator_marks_definition_place(self):
+        # coordinator.md Step 0 显式标明为场景定义处
+        sec = _section(_read("coordinator.md"), "## spec 环节")
+        self.assertIn("主动调研（定义处）", sec)
 
 
 if __name__ == "__main__":

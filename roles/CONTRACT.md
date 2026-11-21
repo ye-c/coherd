@@ -87,7 +87,7 @@ coordinator→executor 每条任务**必须**包含以下 4 字段，缺失即�
 
 约定：字段缺失 → executor 先向 coordinator 补齐再动工；模糊分派导致的重复/遗漏由分派方负责。
 
-- **外部事实检索授权（本处是与 `CONTRACT.md` §5 executor 行配套的授权入口定义处）**：边界字段的默认值是**不查**；分派确需外部事实（官方文档、协议/格式规范、生僻 API 行为、报错诊断）时，在「边界」内显式写 `允许检索:<主题>`（可多条，主题写具体对象而非「随便查」）。**未写=默认禁查**，executor 不得擅自发散检索。executor 缺事实且未获授权时不自查也不猜——按 `executor.md`「阻塞上报与漂移回流」走 `notify` 请 coordinator 代查或追加授权后重派。哪些场景值得查，定义处见 `coordinator.md` Step 0 与 `reviewer.md` 五查第 5 条，本处不复述。
+- **外部事实检索授权（本处是与 §5 executor 行配套的授权入口定义处）**：边界字段的默认值是**不查**；分派确需外部事实（官方文档、协议/格式规范、生僻 API 行为、报错诊断）时，在「边界」内显式写 `允许检索:<主题>`（可多条，主题写具体对象而非「随便查」）。**未写=默认禁查**，executor 不得擅自发散检索。executor 缺事实且未获授权时不自查也不猜——按 `executor.md`「阻塞上报与漂移回流」走 `notify` 请 coordinator 代查或追加授权后重派。哪些场景值得查，定义处见 `coordinator.md` Step 0、`reviewer.md` 预审第 3 查与五查第 5 条，本处不复述。
 
 - **工件四层与上游权威**：意图澄清 → 规格（What）→ 方案（How）→ 任务（Action），层层有门禁：无规格不做方案，无方案不拆票，无票据不写码。规格与方案**一一对应且共用同一标识**，落平铺 `<id>.spec.md` / `<id>.plan.md`（id 同 task id 格式）；任务只持 `parent_spec` 一个上游指针，不新增方案指针。spec/plan 是 executor 实现与 reviewer 审查的共同事实源；ticket = 4 字段垂直切片（可独立验证），与 spec/plan 冲突或超出处**以 spec 为准**（工件变更归 coordinator，见 §4）。触发判据与产物结构见 coordinator.md「spec 环节」。
 
