@@ -12,6 +12,7 @@ from pathlib import Path
 
 import typer
 
+from . import diff as _diff
 from . import push as _push
 from . import tracker as T
 from .id_gen import next_id
@@ -290,6 +291,36 @@ def status(
     except (FileNotFoundError, ValueError) as e:
         _fatal(str(e))
     typer.echo(f"{task_id} -> {new_status}")
+
+
+@app.command(name="diff")
+def diff_cmd(
+    task_id: str = typer.Argument(
+        ..., help="tracker id（取其 parent_spec 对应的方案白名单）"
+    ),
+    paths: bool = typer.Option(
+        False,
+        "--paths",
+        help="显式声明输出路径分类报表（缺省亦输出该报表，本开关为显式冗余项）",
+    ),
+    base: str = typer.Option(
+        None, "--base", help="比对基准版本；缺省比对工作区未提交改动（含未跟踪叶子文件）"
+    ),
+    executor: str = typer.Option(
+        None, "--executor", help="执行者标签（如 exec-1）；方案含多个标签时必填"
+    ),
+) -> None:
+    """核验改动面：输出「白名单内 / 他人域内 / 白名单外」三组事实（不含任何审查判定）。
+
+    只读：不写工作树、不暂存、不切分支；退出码只反映命令是否执行成功（有越界文件也退 0）。
+    """
+    _ = paths  # 路径分类是唯一输出模式，--paths 为显式冗余项（spec FR1）
+    try:
+        result = _diff.collect(task_id, base=base, executor=executor)
+    except ValueError as e:
+        _fatal(str(e))
+    else:
+        typer.echo(_diff.render_report(task_id, result), nl=False)
 
 
 if __name__ == "__main__":

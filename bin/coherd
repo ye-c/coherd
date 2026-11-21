@@ -38,12 +38,12 @@ bash -n "$0" # 启动自检: 本脚本语法错误即由 set -e 早退, 避免�
 HERE_BIN="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")" && pwd)"
 # case 保留 push/watch token：两者已废弃（push→feedback/notify；watch→消息自描述软方案），
 # 但经此路由到 venv CLI 报干净的 "No such command 'push'/'watch'"（否则 fallthrough 当 REPO 目录 cd 误导）。
-# feedback/notify 为现行命令。
+# feedback/notify/diff 为现行命令（diff = 分域改动机械核验，只读）。
 case "${1:-}" in
-  task|push|watch|feedback|notify)
+  task|push|watch|feedback|notify|diff)
     VENV_COHERD="$HERE_BIN/../.venv/bin/coherd"
     if [ ! -x "$VENV_COHERD" ]; then
-      echo "coherd: 未找到 .venv/bin/coherd — 先跑 install.sh (装 coherd task/feedback/notify CLI)" >&2
+      echo "coherd: 未找到 .venv/bin/coherd — 先跑 install.sh (装 coherd task/feedback/notify/diff CLI)" >&2
     fi
     exec "$VENV_COHERD" "$@"
     ;;
