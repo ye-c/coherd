@@ -1,6 +1,6 @@
-"""守护: 契约最小优化集（环境失败执行方、DoD变更失效、dev措辞、模板字面）。
+"""守护: 契约最小优化集（环境失败执行方、DoD变更失效、dev措辞、模板字面、超限判据统一）。
 
-对应 tracker `wb8-20261121080423-01` DoD 2（四条约束各一条断言，锚点用短语不复制整句：
+对应 tracker `wb8-20261121080423-01` 与 `wb8-20261121083424-01`（各条约束一条断言，锚点用短语不复制整句：
 合法微调措辞不应转红，删条款/改语义必须转红）。只查文档措辞，不解析语义：
 
     PYTHONPATH=src .venv/bin/python3 -m unittest tests.test_contract_gaps -q
@@ -69,6 +69,23 @@ class InvalidationTemplateLiteralTest(unittest.TestCase):
                 doc = _read(name)
                 self.assertIn("因规格/DoD", doc)
                 self.assertNotIn("因规格 <标识>", doc)
+
+
+class ReviseLimitCriterionMechanicalTest(unittest.TestCase):
+    """AC5: 超限判据机械可判（仍未 `approve`），遍历 3 份预审/超限相关文档。"""
+
+    def test_revise_limit_criterion_is_mechanical(self):
+        target_files = [
+            "CONTRACT.md",
+            "coordinator.md",
+            "reviewer.md",
+        ]
+        for name in target_files:
+            with self.subTest(file=name):
+                doc = _read(name)
+                self.assertNotIn("仍不收敛", doc)
+                self.assertNotIn("仍有分歧", doc)
+                self.assertIn("仍未 `approve`", doc)
 
 
 if __name__ == "__main__":
