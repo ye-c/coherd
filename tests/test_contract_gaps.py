@@ -88,5 +88,47 @@ class ReviseLimitCriterionMechanicalTest(unittest.TestCase):
                 self.assertIn("仍未 `approve`", doc)
 
 
+class ExternalDiscussionSilentAbsorptionTest(unittest.TestCase):
+    """AC6: 外部讨论方与旁路输入默认静默吸收（零打扰原则），严禁无动作诉求通知 peer。"""
+
+    def test_contract_silent_absorption(self):
+        doc = _read("CONTRACT.md")
+        self.assertIn("静默吸收（零打扰原则）", doc)
+        self.assertIn("严禁通知 executor 与 reviewer", doc)
+        self.assertNotIn("对端感知", doc)
+
+    def test_coordinator_silent_absorption(self):
+        doc = _read("coordinator.md")
+        self.assertIn("静默吸收（零打扰）", doc)
+        self.assertIn("不得向 executor 或 reviewer 转发旁路知会通知", doc)
+        self.assertNotIn("告知对端", doc)
+
+    def test_contract_simple_silent_absorption(self):
+        doc = _read("CONTRACT-simple.md")
+        self.assertIn("静默吸收（零打扰原则）", doc)
+        self.assertIn("严禁通知 dev", doc)
+        self.assertNotIn("对端感知", doc)
+
+
+class DeliveryNoPeerBroadcastTest(unittest.TestCase):
+    """AC7: 整合交付与合并闭环单向只对用户，严禁向 peer 广播完工通知。"""
+
+    def test_coordinator_delivery_no_peer_broadcast(self):
+        doc = _read("coordinator.md")
+        self.assertIn("交付即待机，严禁广播 peer", doc)
+        self.assertIn("严禁向 executor / reviewer / libero 发送任何", doc)
+
+    def test_contract_delivery_no_peer_broadcast(self):
+        doc = _read("CONTRACT.md")
+        self.assertIn("单向只对用户，严禁广播 peer", doc)
+        self.assertIn("严禁向 executor / reviewer / libero 补发完工知会", doc)
+
+    def test_simple_delivery_no_peer_broadcast(self):
+        doc_led = _read("led.md")
+        doc_simple = _read("CONTRACT-simple.md")
+        self.assertIn("严禁向 dev 补发完工知会", doc_led)
+        self.assertIn("严禁向 dev 补发完工知会", doc_simple)
+
+
 if __name__ == "__main__":
     unittest.main()

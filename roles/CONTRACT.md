@@ -48,7 +48,7 @@
 - 每个集群的 herdr agent 名是 `${WS_SLUG}-<role>`（workspace 短号小写，如 `w1p-coordinator`；多实例命名为 `${WS_SLUG}-<role>-<n>`，n ≥ 1，n=1 可省），非裸单词；各角色从自身 agent 名前缀（`${WS_SLUG}-`）派生 peer 名互寻址，用完整名。display（如 `executor#2`）仅供展示与标记装饰，非 canonical 标识。
 - 消息标记 `[<role>|<type>]:`（可选 `#<n>`，接收端只匹配 role）由 CLI 注入（命令名即标记名）；agent 只写 body，不手写前缀（见上文 body 格式）。无标记消息的来源判定见本节「消息来源判定」条；检测到正文自造前缀 → CLI 拒发。
 - 每个 pane 自动注入 `HERDR_WORKSPACE_ID` / `HERDR_TAB_ID` / `HERDR_PANE_ID`。
-- 汇报对称义务：executor 完成后以 `coherd feedback` 直接提交 reviewer 审查（附 DoD + 输出路径，不转发产物正文），交审后即转 idle，**不再另发交审预告上报**（coordinator 从 reviewer 的结论回流得知结果，第二份预告无新信息）；阻塞以 `coherd notify` 上报 coordinator（原因 + 已尝试手段）；reviewer 审查结论（**approve = `coherd notify` 只发 coordinator（单收件人，唯一权威回流）；revise = `coherd feedback` 退回 executor 修订 + `coherd notify` 回流 coordinator**）；approve 若附带**需要 executor 动手的可执行 nit**，把该 nit 用 `coherd feedback` 单独发 executor，**不重发第二条 approve**；executor 收到 approve 后**不回 ack**（下一步是等下一票分派，ack 无新信息）；spec/plan 预审回流同实现审查（**approve = `coherd notify` 回流 coordinator 放行；revise = `coherd feedback` 退回 coordinator 修订**，spec 变更归 coordinator，见 §4）；coordinator 整合交付以 `coherd notify` 上报用户。
+- 汇报对称义务：executor 完成后以 `coherd feedback` 直接提交 reviewer 审查（附 DoD + 输出路径，不转发产物正文），交审后即转 idle，**不再另发交审预告上报**（coordinator 从 reviewer 的结论回流得知结果，第二份预告无新信息）；阻塞以 `coherd notify` 上报 coordinator（原因 + 已尝试手段）；reviewer 审查结论（**approve = `coherd notify` 只发 coordinator（单收件人，唯一权威回流）；revise = `coherd feedback` 退回 executor 修订 + `coherd notify` 回流 coordinator**）；approve 若附带**需要 executor 动手的可执行 nit**，把该 nit 用 `coherd feedback` 单独发 executor，**不重发第二条 approve**；executor 收到 approve 后**不回 ack**（下一步是等下一票分派，ack 无新信息）；spec/plan 预审回流同实现审查（**approve = `coherd notify` 回流 coordinator 放行；revise = `coherd feedback` 退回 coordinator 修订**，spec 变更归 coordinator，见 §4）；coordinator 整合交付以 `coherd notify` 上报用户（**单向只对用户，严禁广播 peer**：交付完成或合并后严禁向 executor / reviewer / libero 补发完工知会，防全员无意义唤醒）。
 - **token 控制**：① 通信精简——结论结构化 `approve: <要点>` / `revise: <问题清单逐条>`，要点式不叙述；executor 交审消息**正文 ≤ 400 字**（不含 DoD 逐条勾选清单——每条一行 `✓/✗` 不展开），必含 `交审 <任务名>` + DoD 逐条 ✓/✗ + 产物绝对路径 + `git diff` 范围 + 关键取舍**一句**；超出 400 字的内容**必须落文件**，消息只送路径指针。**合并 N 票时按票计：每票 ≤400 字，合并消息总上限 = 400 × N**（DoD 勾选清单同样不计入）；reviewer 批量审汇总消息同理：每票一行，按票计。② 输入端控制——消息引用路径不贴大文件正文，交审附 git diff 范围 reviewer 只读变更行，长任务串轮换 session。③ revise 循环最贵：一次返工 > 一切通信压缩，投资分派质量优先。
 
 **通道作用域**：通道按对端身份确定。
@@ -200,7 +200,7 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 ## 7. 事件驱动交接
 
 - 基于 herdr idle/done 事件交接：上一环完成 → 由**发起方以 `coherd feedback` 推送唤醒**下一环（内部经 `herdr agent prompt` 送达并唤醒 idle 待机者），下一环自己不去捞；读取能力的许可与配额见 §0 `pull` 条。
-- **待机动作界外声明**：任一环执行完毕、无下一环时（如 executor 交审且 reviewer approve 后、coordinator 交付后），直接 **转 idle 待机**；`herdr agent prompt` 会自动唤醒 idle 待机者，peer 无需 sleep 阻塞或轮询消息。`herdr agent read` 的许可与配额见 §0 `pull` 条，**不作轮询等待**（待机的 agent 侧定义见 §0 `idle` 条；详见 executor.md「待机」节）。
+- **待机动作界外声明**：任一环执行完毕、无下一环时（如 executor 交审且 reviewer approve 后、coordinator 交付后），直接 **转 idle 待机**；无下一环严禁补发无动作诉求的完工知会；`herdr agent prompt` 会自动唤醒 idle 待机者，peer 无需 sleep 阻塞或轮询消息。`herdr agent read` 的许可与配额见 §0 `pull` 条，**不作轮询等待**（待机的 agent 侧定义见 §0 `idle` 条；详见 executor.md「待机」节）。
 - executor/reviewer 启动后读 CONTRACT.md 确认身份, 以 `coherd notify` 向 coordinator 发一次 `standby` 上报（§0 standby/握手, notify 单向不回; 环节映射见 §7 D10）, 随即**转 idle 待机**（herdr 层 pane 挂起; 非 agent CLI 层 hub-wait 等机制, 见 §0 idle）; coordinator 收到对应数量上报（N 个 executor + 1 个 reviewer，共 N+1 份）后判集群起步就绪, 自身转 idle 待机后开始按用户意图分派, 之后全程事件驱动(§7 下条)。**此握手单向、一次性、不触发 §2 回复义务**——coordinator 不回"收到", exec/rev 不等回复。coordinator 不轮询(§0)、不检测 exec/rev 状态; 未收到上报也不追究、不重发——沉默即故障信号, 用户自然察觉。
 - executor 完成 → 直接提交 reviewer 审查（reviewer 读产物验证），结论 approve/revise 回流 coordinator；环境/依赖类阻塞 → `coherd notify` 上报 coordinator（原因 + 已尝试手段）；规约漂移 → `coherd feedback` 回流 coordinator（见 §4）；revise 循环 rev→exe→rev 不经 coordinator，超 §4 上限（2 轮）才介入仲裁。
 - feedback/notify 遵循 §2 三铁律（见 §2）；pane 输出退化为辅助。
@@ -239,7 +239,7 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 - **定义**：人类在集群外另开的 session，与集群无角色关系：无 `[<role>|<type>]:` 标记、无 tracker、不在 §1 槽位表内。人类决定它是否存在、与谁对话。
 - **通道**：`intercom`（§2 通道作用域表第二行）；不注入 coherd 标记、不写 `events.log`。
 - **结论性质**：外部结论是**输入证据**，不构成 §4 的 `approve` / `revise` 判定，也不替代 reviewer 的独立审查——三角色模式下审查判定权仍由 reviewer 独占（本条不构成 §4 的先例）。
-- **对端感知**：引入外部讨论方时，coordinator 以**一条** `coherd notify` 告知 executor 与 reviewer：谁、讨论什么工件、是否触及当前任务边界。外部结论影响后续动作时走既有通道（新分派或 §4 漂移回应），**不直接改 executor 产出**。
+- **静默吸收（零打扰原则）**：旁路输入与外部讨论由 coordinator 独占吸收，**默认静默**。未产生实质任务变更（规格修订、任务挂起、作废重审）前，**严禁通知 executor 与 reviewer**，禁止发无动作诉求的知会通知（防误唤醒待机 agent 与 context 污染）。外部结论若影响后续动作，仅在定案后走既有通道（挂起任务、新分派或 §4 漂移回应/作废重审），**不直接改 executor 产出**。
 - **版本冻结（机检判据）**：某工件「在审中」= 在 `~/.config/coherd/sessions/**/*.task.md` 中搜该工件路径，命中文件的 frontmatter `status` 为 `pending` 或 `active`。在审期间该工件只读：coordinator 若需修订，先 `coherd notify` 作废/挂起该 review 任务，落盘新版本后重新下派，**禁止就地并发篡改**；改动后以一条 `notify` 报 delta（文件 + 行号 + 一句原因）。
 - **冲突处置**：外部结论与集群内审结论相反时，不自行取舍，一条消息报人类裁决。
 

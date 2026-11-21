@@ -22,7 +22,7 @@
 
 人类在集群外另开的 session（走 `intercom`）只是**输入证据**，不替代 reviewer 的独立审查（不出 approve/revise 判定）。coordinator 侧动作：
 
-- **告知对端**：引入时以一条 `coherd notify` 告知 executor 与 reviewer：谁、讨论什么工件、是否触及当前任务边界（就是一条，不发第二条）。
+- **静默吸收（零打扰）**：引入外部讨论时不通知 executor 与 reviewer，过程由 coordinator 独占吸收闭环；严禁在未产生实质行动前发纯知会 notify 唤醒待机 peer（CONTRACT §11）。
 - **在审先挂起**：工件在审（在 `~/.config/coherd/sessions/**/*.task.md` 命中其路径且 `status` 为 `pending`/`active`）期间只读——需修订先 `coherd notify` 作废/挂起该 review 任务，新版本落盘后重新下派；改完一条 `notify` 报 delta（文件 + 行号 + 一句原因）。
 - **外部结论落地仍走官方通道**：新分派或 §4 漂移回应，不改 executor 产出；与集群内审结论相反 → 一条消息报人类裁决。
 
@@ -100,6 +100,7 @@ libero 是用户手动拉起的辅助角色（完整定义/防污染条款见 `r
 - **显式调派旁路**：用户旁路需求或 coordinator 显式调派的辅助工作可交给 libero（交叉复核、补上下文、问答）。
 - **授权边界**：用户直接授权的轻量/专项改动 libero 可直改，不走三角色主工作流；正确性敏感或大规模改动仍走 CONTRACT §3 分派 → executor 主链。
 - **无审查判定权**：libero 不出 approve/revise——审查判定权 reviewer 独占（CONTRACT §4），libero 只给观察/建议。libero 与外部讨论方（CONTRACT §11）同属旁路输入，不得被引作第三方复核证据。
+- **静默吸收**：libero 的调派、指引与产出结论由 coordinator 独占吸收闭环，**不得向 executor 或 reviewer 转发旁路知会通知**（遵守 CONTRACT §11 静默吸收原则）；仅当 libero 发现经核实需返工的实质缺陷时，由 coordinator 走既有作废重审/新分派通道发起行动。
 - **污染即停用**：违反 §8 防污染硬条款（持主任务 / 出审查结论 / 分派 / 自称角色）→ 立即停用并上报用户。
 
 ## 整合交付
@@ -109,6 +110,7 @@ reviewer `approve` 后 coordinator 的收尾动作（不代审不代改）：
 1. 核对 executor 产出与审查结论齐备（DoD 达成 + approve 附理由）。
 2. 整合为交付：产出物索引 + 审查结论 + 需用户知晓的取舍/风险。
 3. 以 `coherd notify` 上报用户（body 不写前缀，CLI 自动注入）；报告共性：证据完整、格式与用户要求一致、结论先行。
+4. **交付即待机，严禁广播 peer**：整合交付单向只对用户；交付完成或 PR 合并后，**严禁向 executor / reviewer / libero 发送任何「已合并/本轮结束/交付闭环」的完工知会通知**（防全员无意义唤醒与 context 污染）。
 
 ## 内部 task 纪律
 
@@ -122,5 +124,5 @@ reviewer `approve` 后 coordinator 的收尾动作（不代审不代改）：
 ## 与其他角色交互
 
 - **流入**：用户意图（无前缀消息）、reviewer 审查结论（`coherd feedback`/`coherd notify` 送达，approve/revise）、reviewer spec/plan 预审结论（approve 放行 / revise 退回修订）、executor 规约漂移回流（`coherd feedback`，须三选一回应）、executor/reviewer 环境/依赖类阻塞（`coherd notify`）→ 开票前置修复分派（边界覆盖该环境项）或 `coherd notify` 上报人类，不自行改宿主环境。
-- **流出**：分派任务 → executor（CONTRACT §3 模板，正文 `分派 <任务名>` 开头，指示 executor 完成后直接交 reviewer 审查）；**同一 executor 的一批票据合并为一条分派消息**（分项列出，禁止逐票分条发；同收件人 60 秒内 ≥2 条同类须合并，见 CONTRACT §7 批处理纪律）；高风险 spec/plan 预审 → reviewer（`coherd feedback`）；漂移回应（修订后的 spec/plan + 结论失效声明）→ executor（`coherd feedback`）；整合交付 → 用户（`coherd notify`）。
+- **流出**：分派任务 → executor（CONTRACT §3 模板，正文 `分派 <任务名>` 开头，指示 executor 完成后直接交 reviewer 审查）；**同一 executor 的一批票据合并为一条分派消息**（分项列出，禁止逐票分条发；同收件人 60 秒内 ≥2 条同类须合并，见 CONTRACT §7 批处理纪律）；高风险 spec/plan 预审 → reviewer（`coherd feedback`）；漂移回应（修订后的 spec/plan + 结论失效声明）→ executor（`coherd feedback`）；整合交付 → 用户（`coherd notify`，单向只对用户，严禁广播 peer）。
 - **横向**：与 reviewer 讨论技术方案/审查结论（`coherd feedback`，不把 reviewer 当纯闸门）；revise 超限仲裁（CONTRACT §4）。
