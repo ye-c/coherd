@@ -156,9 +156,9 @@ reviewer **最小审查集**（每次审查必做，顺序固定 = 五查）：
 
 | 槽位 | 允许 | 禁止 |
 | ------ | ------ | ------ |
-| coordinator | 只读/检索类工具（拆解、分派、讨论、整合所需）；只读 git 命令（带 `GIT_OPTIONAL_LOCKS=0`）；写 session 协作元数据（spec / plan / tracker）；**一次性运维动作**（`git status --porcelain` 输出为空时，清单见 §12） | 直接编辑代码/写仓库文件（人类明确指派除外，见 §12）；未在 §12 放开的仓库级 git 写操作 |
-| executor | 完整代码编辑与运行工具；独占 git 写操作与 `index.lock` 治理 | 越出任务工具边界的写操作；改动配置/秘密文件 |
-| reviewer | 只读审查 + 跑验证；只读 git 命令（带 `GIT_OPTIONAL_LOCKS=0`）；写审查结论（verdict）；**一次性运维动作**（`git status --porcelain` 输出为空时，清单见 §12） | 直接修改被审产出（须退回 executor）；越过自己工具边界的操作；编辑仓库代码与改动配置；未在 §12 放开的仓库级 git 写操作 |
+| coordinator | 只读/检索类工具（含 web_search 调研开源先例与权威文档；拆解、分派、讨论、整合所需）；只读 git 命令（带 `GIT_OPTIONAL_LOCKS=0`）；写 session 协作元数据（spec / plan / tracker）；**一次性运维动作**（`git status --porcelain` 输出为空时，清单见 §12） | 直接编辑代码/写仓库文件（人类明确指派除外，见 §12）；未在 §12 放开的仓库级 git 写操作 |
+| executor | 完整代码编辑与运行工具；独占 git 写操作与 `index.lock` 治理（网络搜索仅限分派明确要求的专项调研，常规编码禁发散检索） | 越出任务工具边界的写操作；改动配置/秘密文件 |
+| reviewer | 只读审查 + 跑验证；只读/检索类工具（含 web_search 独立核验外部规范、先例死角与漏洞风险）；只读 git 命令（带 `GIT_OPTIONAL_LOCKS=0`）；写审查结论（verdict）；**一次性运维动作**（`git status --porcelain` 输出为空时，清单见 §12） | 直接修改被审产出（须退回 executor）；越过自己工具边界的操作；编辑仓库代码与改动配置；未在 §12 放开的仓库级 git 写操作 |
 
 executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限收紧由用户 CLI 配置负责（同 reviewer 见 roles/reviewer.md）。
 
