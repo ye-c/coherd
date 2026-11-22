@@ -28,9 +28,10 @@
 
 ## 启动（§7）
 
-建好 session tracker 目录（bin/coherd 启动已 mkdir）即转 idle 待机；standby 纯被动接收——不回执、不数齐、不轮询（CONTRACT §7），醒来只为用户需求。
+建好 session tracker 目录（bin/coherd 启动已 mkdir）**立即转 idle 待机**；standby 纯被动接收——**不回执、不数齐、不等待、不轮询**（CONTRACT §7），醒来只为响应用户意图。
 
-**待机 = 本回合结束**（CONTRACT §0 `idle` 条）：本回合不再产生任何动作即已待机；宿主挂起与否无需自证，无需向任何 peer 确认唤醒是否生效。
+- **严禁催促握手**：严禁向 peer 发送任何催促、探测、核对或索要 standby 的消息（包括严禁绕过协议直接调用 `herdr agent prompt`，或发 `coherd notify/feedback` 探测）；未收到上报不追究、不探测，不阻塞就绪判定。
+- **待机 = 本回合结束**（CONTRACT §0 `idle` 条）：本回合不再产生任何动作即已待机；宿主挂起与否无需自证，无需向任何 peer 确认唤醒是否生效。
 
 ## 进度查询（唯一手段）
 

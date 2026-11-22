@@ -130,5 +130,28 @@ class DeliveryNoPeerBroadcastTest(unittest.TestCase):
         self.assertIn("严禁向 dev 补发完工知会", doc_simple)
 
 
+class StandbyPassiveNoPromptTest(unittest.TestCase):
+    """AC8: coordinator/led 启动立即待机，纯被动接收 standby，不数齐，严禁催促握手。"""
+
+    def test_contract_standby_passive(self):
+        doc = _read("CONTRACT.md")
+        self.assertIn("立即转 idle 待机", doc)
+        self.assertIn("不等待、不数齐", doc)
+        self.assertIn("严禁向 peer 发送任何催促/探测/索要 standby", doc)
+        self.assertNotIn("共 N+1 份", doc)
+        self.assertNotIn("判集群起步就绪", doc)
+
+    def test_coordinator_standby_passive(self):
+        doc = _read("coordinator.md")
+        self.assertIn("严禁催促握手", doc)
+        self.assertIn("不回执、不数齐、不等待、不轮询", doc)
+
+    def test_simple_standby_passive(self):
+        doc_led = _read("led.md")
+        doc_simple = _read("CONTRACT-simple.md")
+        self.assertIn("严禁向 dev 发送任何催促或探测 standby", doc_led)
+        self.assertIn("严禁向 dev 发送任何催促或探测 standby", doc_simple)
+
+
 if __name__ == "__main__":
     unittest.main()

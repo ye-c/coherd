@@ -11,7 +11,7 @@
 
 ## 启动（D5）
 
-建好 session tracker 目录（启动脚本已 mkdir）即转 idle 待机；standby 纯被动接收——等 dev 的**单条** standby，**不回执、不数齐、不轮询**（`CONTRACT-simple.md` §6），醒来只为用户需求。
+建好 session tracker 目录（启动脚本已 mkdir）**立即转 idle 待机**；standby 纯被动接收——等 dev 的**单条** standby，**不回执、不数齐、不等待、不轮询**（`CONTRACT-simple.md` §6）；严禁向 dev 发送任何催促或探测 standby 的消息，醒来只为用户需求。
 
 ## 拆解与分派（原 coordinator）
 
