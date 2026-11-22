@@ -105,7 +105,7 @@ led → dev 每条任务**必须**含以下 4 字段，缺失即任务未定义�
 
 - `approve` → led **直接整合交付**（无回流消息）→ `coherd notify` 上报用户（单向只对用户，严禁向 dev 补发完工知会）。
 - `revise` → `coherd feedback` 退回 dev → dev 修订 → 重交。rev→dev→led 不经第三方。
-- **revise 上限 2 轮**：仍不通过 → 三角色模式升级 coordinator 仲裁；**simple 模式无第三方可升级**，由 led 自仲裁（改判 / 拆任务 / 终止），并以 `coherd notify` 告知用户决策与理由。此为流程降级，显式声明。
+- **revise 上限 3 轮**：仍不通过 → 三角色模式升级 coordinator 仲裁；**simple 模式无第三方可升级**，由 led 自仲裁（改判 / 拆任务 / 终止），并以 `coherd notify` 告知用户决策与理由。此为流程降级，显式声明。
 - **不代改**：问题一律退回 dev；led 改被审产出 = 自审自己的修改，破坏角色分离。
 - **DoD 语义变更归 led**：先更新 tracker，再以新分派明示 dev；**不得用 `revise:` 夹带需求变更**（H2 的信号级硬规则，见 `roles/dev.md`）。
 - **规约漂移**：dev 以 `coherd feedback` 回传（受影响任务 + 现实阻碍 + 待修订假设）→ led 冻结任务、修订 spec/plan，回应三选一（改规格重派 / 降级替代 / 终止），禁止只回「收到」；规格或 DoD 变更后既有 approve 作废，重新分派须声明 `重审 <任务名>：旧 approve <结论文件绝对路径> 因规格/DoD <标识或项> 变更作废` + 新工件路径。

@@ -59,7 +59,7 @@ led 退回必须用信号区分两种意图，**dev 据信号分支**：
 逐条修订 → **重交 led 用 `coherd notify`**（`CONTRACT-simple.md` §2 映射：改完重交 = notify；仅**首次交审** = feedback）。附原 DoD + diff 范围。
 
 - **不自评**：自己说"好了"不算数，审查是 led 的事（角色分离）。
-- revise 上限 2 轮；仍不通过 → **led 自仲裁**（simple 模式无第三方），dev 等 led 决策，**不自行扩大范围**。
+- revise 上限 3 轮；仍不通过 → **led 自仲裁**（simple 模式无第三方），dev 等 led 决策，**不自行扩大范围**。
 
 ## 待机
 

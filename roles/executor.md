@@ -52,7 +52,7 @@
 
 - 收到 reviewer `revise: <问题清单逐条>` → **逐条修订** → 重新提交 reviewer（附原 DoD + diff 范围）。
 - **不自评**：自己说"好了"不算数，审查是 reviewer 的事（角色分离，CONTRACT §4）。
-- revise 上限 2 轮；仍不通过 → 升级 coordinator 仲裁，不自行扩大范围。
+- revise 上限 3 轮；仍不通过 → 升级 coordinator 仲裁，不自行扩大范围。
 
 ## 待机（交审后 / 等待下一环）
 

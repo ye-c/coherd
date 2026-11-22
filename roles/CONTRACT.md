@@ -133,7 +133,7 @@ reviewer **最小审查集**（每次审查必做，顺序固定 = 五查）：
 
 **spec/plan 预审（工件审查）**：高风险/多权衡工件由 coordinator 抛 reviewer 预审（`coherd feedback`，期待回执）——查**完整性 / 可验证性 / 死角与危险面入边界字段 / 决策命名引用**（spec 另查无路径无库名；plan 另查白名单与迁移回滚齐备；多执行者（N≥2）另查共享面冻结清单齐备）；**N≥2 的方案必抛预审，不得跳过**；审不代改，`revise` 以 `coherd feedback` 退回 coordinator 修订（工件变更归 coordinator），`approve` 以 `coherd notify` 回流放行；libero 不参与预审（审查判定权 reviewer 独占）。
 
-**预审同样受 revise ≤ 2 轮约束**：第 2 轮 revise 后仍未 `approve` 工件，升级 coordinator 仲裁（改规格定案 / 降级替代 / 终止分派），避免无休止推敲；仲裁结论即定案，不再继续抛审。
+**预审同样受 revise ≤ 3 轮约束**：第 3 轮 revise 后仍未 `approve` 工件，升级 coordinator 仲裁（改规格定案 / 降级替代 / 终止分派），避免无休止推敲；仲裁结论即定案，不再继续抛审。
 
 **规约漂移与结论失效**：
 
@@ -145,7 +145,7 @@ reviewer **最小审查集**（每次审查必做，顺序固定 = 五查）：
 
 - `approve` → coordinator 整合交付。
 - `revise` → 退回 executor 修订 → 重新提交 reviewer。
-- **revise 上限 2 轮**：仍不通过 → 升级 coordinator 仲裁（改判 / 拆任务 / 终止）。
+- **revise 上限 3 轮**：仍不通过 → 升级 coordinator 仲裁（改判 / 拆任务 / 终止）。
 - reviewer 不得代改被审产出（= 自审自己的修改），问题一律退回 executor（角色分离见 §1）。
 - **DoD 语义变更归 coordinator**：revise 若改动 DoD 验收标准（非实现级修订），必经 coordinator 更新 tracker，不走 rev→exe→rev 直通绕过。
 - **归档视图**：无独立归档——历史任务文件永久平铺留在 `sessions/<ws>-<TASK_TS>-$$/` session 目录，归档视图 = `coherd task list --status done`（CLI 无 archive 命令）。
@@ -200,7 +200,7 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 - 基于 herdr idle/done 事件交接：上一环完成 → 由**发起方以 `coherd feedback` 推送唤醒**下一环（内部经 `herdr agent prompt` 送达并唤醒 idle 待机者），下一环自己不去捞；读取能力的许可与配额见 §0 `pull` 条。
 - **待机动作界外声明**：任一环执行完毕、无下一环时（如 executor 交审且 reviewer approve 后、coordinator 交付后），直接 **转 idle 待机**；无下一环严禁补发无动作诉求的完工知会；`herdr agent prompt` 会自动唤醒 idle 待机者，peer 无需 sleep 阻塞或轮询消息。`herdr agent read` 的许可与配额见 §0 `pull` 条，**不作轮询等待**（待机的 agent 侧定义见 §0 `idle` 条；详见 executor.md「待机」节）。
 - executor/reviewer 启动后读 CONTRACT.md 确认身份, 以 `coherd notify` 向 coordinator 发一次 `standby` 上报（§0 standby/握手, notify 单向不回; 环节映射见 §7 D10）, 随即**转 idle 待机**（herdr 层 pane 挂起; 非 agent CLI 层 hub-wait 等机制, 见 §0 idle）。coordinator 启动确认身份后**立即转 idle 待机**，standby **纯被动接收**，全程事件驱动(§7 下条)。**此握手单向、一次性、不触发 §2 回复义务**——coordinator 不回"收到"，exec/rev 不等回复；coordinator **不等待、不数齐、不轮询(§0)、严禁向 peer 发送任何催促/探测/索要 standby 的消息（包括严禁使用 `herdr agent prompt` 或 `coherd notify/feedback`）**；未收到上报不追究、不探测——沉默即故障信号，用户自然察觉，coordinator 醒来只为响应用户意图。
-- executor 完成 → 直接提交 reviewer 审查（reviewer 读产物验证），结论 approve/revise 回流 coordinator；环境/依赖类阻塞 → `coherd notify` 上报 coordinator（原因 + 已尝试手段）；规约漂移 → `coherd feedback` 回流 coordinator（见 §4）；revise 循环 rev→exe→rev 不经 coordinator，超 §4 上限（2 轮）才介入仲裁。
+- executor 完成 → 直接提交 reviewer 审查（reviewer 读产物验证），结论 approve/revise 回流 coordinator；环境/依赖类阻塞 → `coherd notify` 上报 coordinator（原因 + 已尝试手段）；规约漂移 → `coherd feedback` 回流 coordinator（见 §4）；revise 循环 rev→exe→rev 不经 coordinator，超 §4 上限（3 轮）才介入仲裁。
 - feedback/notify 遵循 §2 三铁律（见 §2）；pane 输出退化为辅助。
 - **环节→命令映射（D10，唯一权威）**：命令名即语义（=标记名）——`coherd feedback` 注入 `[<role>|feedback]:` 标记（收方据标记需回执）、`coherd notify` 注入 `[<role>|notify]:` 标记（单向不回）；两者均写 session `events.log` 精简审计（`type` 字段标识类型，`body` 字段记原始正文，**无后台待回执登记/判定**；无 session 目录的冷启动回退全局 `events.log` 兜底）。环节映射表是唯一权威（coordinator 分派 / 讨论 / exec→rev 交审 / rev revise 退回 / coordinator→reviewer spec/plan 预审抛审 / 预审 revise 退回 coordinator 修订 / **executor 规约漂移回流** = `feedback`；approve 回流 coordinator（单收件人；含可执行 nit 才另发 executor）/ **revise 回流 coordinator**（与退回 executor 的 feedback 同发）/ spec/plan 预审 approve 回流放行 / 改完重交 / 开工 ack / standby 握手 / **环境、依赖、门禁定义类阻塞上报** / 纯通知 = `notify`）。**阻塞归属（本处是归属判定唯一权威）**：环境/依赖/门禁定义类阻塞、缺外部事实/生僻 API 的检索求助（授权形态见 §3 `允许检索:<主题>`）→ `notify`（无需回执）；规格假设失效的漂移 → `feedback` 回流（需回执）。按上述归属分流，不得混用，不得把检索求助当漂移。一句话：任务交互看映射表定 feedback/notify，命令名即标记名，接收方据标记判断是否回执——无人值守兜底靠"沉默即故障"人工察觉。
 - **批处理纪律（降唤醒次数）**：每条消息 = 一次 `herdr agent prompt` = 对端一次完整 agent turn（重载 system prompt + 契约）。故一次唤醒尽量只装一件事：

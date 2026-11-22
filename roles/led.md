@@ -50,7 +50,7 @@
 
 - **approve** → **直接整合交付**：核对产出与审查结论齐备（DoD 达成 + 通过依据）→ 整合为"产出物索引 + 审查结论 + 需用户知晓的取舍/风险" → `coherd notify` 上报用户（body 不写前缀）。**无审查结论回流消息**（simple 模式该消息不存在）。交付后即转 idle 待机，单向只对用户，严禁向 dev 补发完工知会。
 - **revise** → `coherd feedback` 退回 dev（逐条清单）→ dev 修订重交（notify）。**不代改**：led 改被审产出 = 自审自己的修改，破坏角色分离。
-- **revise 上限 2 轮**：仍不通过 → **无第三方可升级**，led 自仲裁（改判 / 拆任务 / 终止），以 `coherd notify` 告知用户决策与理由。
+- **revise 上限 3 轮**：仍不通过 → **无第三方可升级**，led 自仲裁（改判 / 拆任务 / 终止），以 `coherd notify` 告知用户决策与理由。
 - **结论落盘** `<id>.<verdict>-<HHMMSS>.md`（verdict=approve/revise），送达时附路径、不贴正文——led 自审亦留证据链。
 
 ### 需求级变更纪律（H2 led 侧）
