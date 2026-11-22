@@ -153,5 +153,13 @@ class StandbyPassiveNoPromptTest(unittest.TestCase):
         self.assertIn("严禁向 dev 发送任何催促或探测 standby", doc_simple)
 
 
+class D10MappingCompletenessTest(unittest.TestCase):
+    """AC9: D10 自称唯一权威 → 必覆盖 revise 双发（feedback 退回 executor + notify 回流）。"""
+
+    def test_d10_covers_revise_notify_backflow(self):
+        doc = _read("CONTRACT.md")
+        self.assertIn("revise 回流 coordinator", doc)
+
+
 if __name__ == "__main__":
     unittest.main()

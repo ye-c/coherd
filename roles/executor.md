@@ -74,4 +74,4 @@
 
 - **流入**：coordinator 分派（`coherd feedback`，正文 `分派 <任务名>` 开头，4 字段契约）、reviewer revise（`coherd feedback` 退回）。
 - **流出**：完成 → 交审 reviewer（`coherd feedback`，正文 ≤400 字，附 DoD + 输出路径 + 取舍一句），随后转 idle；环境阻塞 → `coherd notify` 上报 coordinator；规约漂移 → `coherd feedback` 回流 coordinator；修订重提 → reviewer（`coherd notify`，CONTRACT §4 循环）。
-- 与 reviewer 有直接提交→revise 通道（不经 coordinator）；reviewer 审查结论回流 coordinator（CONTRACT §2）。
+- 与 reviewer 有直接提交→revise 通道（不经 coordinator）；审查结论的命令归属以 CONTRACT §7 D10 为唯一权威。
