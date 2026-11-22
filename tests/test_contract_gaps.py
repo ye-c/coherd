@@ -153,12 +153,19 @@ class StandbyPassiveNoPromptTest(unittest.TestCase):
         self.assertIn("严禁向 dev 发送任何催促或探测 standby", doc_simple)
 
 
+def _d10_line() -> str:
+    """取 D10 映射条单行——扫全文会把 §7:203「approve/revise 回流 coordinator」误当命中。"""
+    for line in _read("CONTRACT.md").splitlines():
+        if line.startswith("- **环节→命令映射（D10，唯一权威）**"):
+            return line
+    raise AssertionError("CONTRACT.md 未找到 D10 映射条")
+
+
 class D10MappingCompletenessTest(unittest.TestCase):
-    """AC9: D10 自称唯一权威 → 必覆盖 revise 双发（feedback 退回 executor + notify 回流）。"""
+    """AC9: D10 自称唯一权威 → notify 分支必覆盖 revise 回流，锚在 D10 单行内。"""
 
     def test_d10_covers_revise_notify_backflow(self):
-        doc = _read("CONTRACT.md")
-        self.assertIn("revise 回流 coordinator", doc)
+        self.assertIn("revise 回流 coordinator", _d10_line())
 
 
 if __name__ == "__main__":
