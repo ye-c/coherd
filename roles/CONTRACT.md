@@ -21,7 +21,7 @@
 | 审查 (review) | reviewer 对 executor 产出按固定顺序做五查（门禁 → 越界 → 忠实度 → 正确性、安全与可维护性），给 approve/revise 二选一结论 | §4 |
 | spec / 规格 | coordinator 产的 What 层权威工件，落平铺 `<id>.spec.md`：行为契约、领域模型、不变量、边界与非目标、决策清单（命名引用，如 D1）、验收标准；**不含文件路径、语言、库名**。与 plan 一一对应且共用同一标识；executor 实现与 reviewer 审查的共同事实源，tracker 以 `parent_spec` FK 追溯 | §3 |
 | plan / 方案 | spec 对应的唯一 How 层工件（1:1，共用同一标识，落平铺 `<id>.plan.md`）：现状差异分析、架构调整、**改动文件白名单**、迁移与回滚；executor 改动面的唯一权威 | §3 |
-| gate / 门禁 | 任务记录可携带的**单行**验证命令（非必填）；执行语义固定为仓库根 + `bash -lc` + 继承环境，只承诺本机可执行。reviewer 审查第一步先跑，非零退出按三类分流 | §3/§4 |
+| gate / 门禁 | 任务记录可携带的**单行**验证命令（非必填）；执行语义、三类分流与执行边界见 §3 / §4 | §3/§4 |
 | drift / 规约漂移 | executor 发现 plan 的假设不成立（非环境问题）时回传的**需回执**信号（受影响任务 + 现实阻碍 + 待修订假设）；coordinator 必须三选一回应：改规格重派 / 降级替代 / 终止 | §4 |
 | 共享面 / 并行判定 | 见 §3「共享面与并行判定」——本行仅索引，定义与判据正文只在该处 | §3 |
 
@@ -39,17 +39,16 @@
 
 - 有来有往: 收到 peer 消息（带 `[<role>|<type>]:` 标记）即判断回执义务——`[feedback]` 期待回执必回、`[notify]` 单向不回；回复走 `coherd feedback`/`coherd notify`（按环节映射表 §7 D10 选命令），非 pane 内自答; pane 内答了不走 wrapper = 未完成。问询/讨论型消息同样触发, 调查中可回状态级（"收到, 调查中"）, 不必等结论齐。回复义务按任务闭环计, 不按消息条数计; 同一任务重发或纯 ack 不产生新义务。**作用域: 任务交互过程（分派→执行→交审→结论回流）; 启动 standby 握手不在内（见 §7）。**
 - **事件驱动铁律**：做事的 agent 完成动作后，主动 `coherd feedback`/`coherd notify` 对端。**不等待、不轮询、不靠对端 read 探活；不反馈 = 任务未完成。**
-- **内容/信号分离**：prompt 只送短结构化信号 + 路径指针（approve 要点 / revise 摘要 ≤ 一句），结论正文与完整论证落文件。文件是内容载体（持久锚点、天然 EOF、可校验），prompt 是事件信号。完整结论格式见 §9 ①。
-- **消息正文（body）格式**：`<信号> <任务名> — 详见 <文件绝对路径>`（信号如 `分派`/`交审`/`approve:`/`revise:`）。agent 只写 body，**前缀 `[<role>|<type>]:` 是 CLI 私有注入物，agent 不得手写**——正文以 `[` 开头一律视为自造前缀，CLI 直接拒绝。所见消息形如 `[executor|notify]: 交审 x — 详见 /path`，是注入后的最终形态，非写作模板
+- **内容/信号分离**：prompt 只送短结构化信号 + 路径指针（approve 要点 / revise 摘要 ≤ 一句），结论正文与完整论证落文件（持久锚点、可校验）。完整结论格式见 §9 ①。
+- **消息正文（body）格式**：`<信号> <任务名> — 详见 <文件绝对路径>`（信号如 `分派`/`交审`/`approve:`/`revise:`）。agent 只写 body，**前缀 `[<role>|<type>]:` 是 CLI 私有注入物，agent 不得手写**（可选 `#<n>` 如 `[executor#2|feedback]:`，接收端只匹配 role）；正文以 `[` 开头一律视为自造前缀，CLI 直接拒发。所见消息形如 `[executor|notify]: 交审 x — 详见 /path`，是注入后的最终形态，非写作模板；无标记消息的来源判定见本节末「消息来源判定」条。
 - agent 间任务交互消息：期待回执用 `coherd feedback <name> "<消息>"`、单向上报/回流/握手用 `coherd notify <name> "<消息>"`——两者 CLI 注入 `[<role>|<type>]:` 标记，接收方据标记判断是否回执；内部均调 `herdr agent prompt <name>` 送达 + 唤醒。读取能力见 §0 `pull` 条（唯一许可处 + 配额），本处不复述、不另授权。
-- 发 prompt 不用 --wait/--timeout: 分派即发(fire-and-forget), 转 idle 等 peer 主动上报(§7)。--wait 超时路径会 abort-but-delivered, 重发致消息堆积/死循环; 需确认是否已送达按 §0 `pull` 条核对（唯一许可处 + 配额），不重发。
-- 防重复成环: 疑似未达按 §0 `pull` 条核对证据（唯一许可处 + 配额：同一 peer 同一任务生命周期 ≤1 次）; 有证据即停; 无证据或配额已用尽 → 重发 1 次 或 上报 coordinator 仲裁，不再读。
+- 发 prompt 不用 `--wait/--timeout`（§0 `fire-and-forget`）：`--wait` 超时路径会 abort-but-delivered，重发致消息堆积/死循环；需确认是否已送达按 §0 `pull` 条核对（唯一许可处 + 配额），不重发。
+- 防重复成环：疑似未达按 §0 `pull` 条核对证据（同一 peer 同一任务生命周期 ≤1 次）；证据在手即停；配额用尽或证据缺失走该条二选一（重发 1 次 或 上报 coordinator 仲裁），不再读。
 - 用户可能用自定义昵称称呼各 agent; 遇未定义别名按上下文推断或询问, 不假设亦不硬编码映射。
 - 每个集群的 herdr agent 名是 `${WS_SLUG}-<role>`（workspace 短号小写，如 `w1p-coordinator`；多实例命名为 `${WS_SLUG}-<role>-<n>`，n ≥ 1，n=1 可省），非裸单词；各角色从自身 agent 名前缀（`${WS_SLUG}-`）派生 peer 名互寻址，用完整名。display（如 `executor#2`）仅供展示与标记装饰，非 canonical 标识。
-- 消息标记 `[<role>|<type>]:`（可选 `#<n>`，接收端只匹配 role）由 CLI 注入（命令名即标记名）；agent 只写 body，不手写前缀（见上文 body 格式）。无标记消息的来源判定见本节「消息来源判定」条；检测到正文自造前缀 → CLI 拒发。
 - 每个 pane 自动注入 `HERDR_WORKSPACE_ID` / `HERDR_TAB_ID` / `HERDR_PANE_ID`。
-- 汇报对称义务：executor 完成后以 `coherd feedback` 直接提交 reviewer 审查（附 DoD + 输出路径，不转发产物正文），交审后即转 idle，**不再另发交审预告上报**（coordinator 从 reviewer 的结论回流得知结果，第二份预告无新信息）；阻塞以 `coherd notify` 上报 coordinator（原因 + 已尝试手段）；reviewer 审查结论（**approve = `coherd notify` 只发 coordinator（单收件人，唯一权威回流）；revise = `coherd feedback` 退回 executor 修订 + `coherd notify` 回流 coordinator**）；approve 若附带**需要 executor 动手的可执行 nit**，把该 nit 用 `coherd feedback` 单独发 executor，**不重发第二条 approve**；executor 收到 approve 后**不回 ack**（下一步是等下一票分派，ack 无新信息）；spec/plan 预审回流同实现审查（**approve = `coherd notify` 回流 coordinator 放行；revise = `coherd feedback` 退回 coordinator 修订**，spec 变更归 coordinator，见 §4）；coordinator 整合交付以 `coherd notify` 上报用户（**单向只对用户，严禁广播 peer**：交付完成或合并后严禁向 executor / reviewer / libero 补发完工知会，防全员无意义唤醒）。
-- **token 控制**：① 通信精简——结论结构化 `approve: <要点>` / `revise: <问题清单逐条>`，要点式不叙述；executor 交审消息**正文 ≤ 400 字**（不含 DoD 逐条勾选清单——每条一行 `✓/✗` 不展开），必含 `交审 <任务名>` + DoD 逐条 ✓/✗ + 产物绝对路径 + `git diff` 范围 + 关键取舍**一句**；超出 400 字的内容**必须落文件**，消息只送路径指针。**合并 N 票时按票计：每票 ≤400 字，合并消息总上限 = 400 × N**（DoD 勾选清单同样不计入）；reviewer 批量审汇总消息同理：每票一行，按票计。② 输入端控制——消息引用路径不贴大文件正文，交审附 git diff 范围 reviewer 只读变更行，长任务串轮换 session。③ revise 循环最贵：一次返工 > 一切通信压缩，投资分派质量优先。
+- **汇报义务（命令选择唯一权威见 §7 D10）**：交审后即转 idle，**不再另发交审预告**（第二份预告无新信息）；approve 附可执行 nit 用 `coherd feedback` 单独发 executor，**不重发第二条 approve**；收到 approve 后**不回 ack**（无新信息）；coordinator 整合交付以 `coherd notify` 上报用户（**单向只对用户，严禁广播 peer**：交付完成或合并后严禁向 executor / reviewer / libero 补发完工知会，防全员无意义唤醒）。
+- **token 控制**：全部细则（交审正文 ≤400 字与合并计票 / 输入端控制 / revise 成本优先）见 §9 ①–③，本条不复述。
 
 **通道作用域**：通道按对端身份确定。
 
@@ -61,8 +60,8 @@
 
 - **消息来源判定**（只取前缀/头，不取正文）：带 `[<role>|<type>]:` = 集群内 peer 任务消息；带 `**From <sender>**` 头 = 集群外 session 经 intercom 发来（来源是该 session，不是本地终端用户）；两者皆无 = 本地终端用户直接输入。
 - **跨通道发送的后果**：集群内 peer 消息走 intercom → 正文无标记，回执义务判定失效且 `events.log` 无该条记录；集群外 session 消息走 `coherd feedback` → 带标记但无 agent 按标记回执，审计行存在而回执不会出现。
-- **与外部规则的边界**：本契约的通道规定只覆盖集群内 peer。集群外对端的通道不在本契约范围内，由该 session 所在环境的规则决定（如全局 `AGENTS.md`）。集群内 peer 之间所有协作交互走 `coherd feedback` / `coherd notify`（无标记 = 回执义务丢失、审计断链）。
-- `intercom` 通道同样适用「内容/信号分离」：大段论证与草案正文落文件，消息只送路径与结论；不设 400 字上限（该上限属本节 token 控制条，只覆盖集群内交审消息）。
+- **与外部规则的边界**：本契约的通道规定只覆盖集群内 peer；集群外对端由该 session 所在环境的规则决定（如全局 `AGENTS.md`）。
+- `intercom` 通道同样适用「内容/信号分离」：大段论证与草案正文落文件，消息只送路径与结论；不设 400 字上限（400 字上限见 §9 ①，只覆盖集群内交审消息）。
 
 ## 3. 分派契约模板（A）
 
@@ -91,24 +90,23 @@ coordinator→executor 每条任务**必须**包含以下 4 字段，缺失即�
 
 - **工件四层与上游权威**：意图澄清 → 规格（What）→ 方案（How）→ 任务（Action），层层有门禁：无规格不做方案，无方案不拆票，无票据不写码。规格与方案**一一对应且共用同一标识**，落平铺 `<id>.spec.md` / `<id>.plan.md`（id 同 task id 格式）；任务只持 `parent_spec` 一个上游指针，不新增方案指针。spec/plan 是 executor 实现与 reviewer 审查的共同事实源；ticket = 4 字段垂直切片（可独立验证），与 spec/plan 冲突或超出处**以 spec 为准**（工件变更归 coordinator，见 §4）。触发判据与产物结构见 coordinator.md「spec 环节」。
 
-- **spec 内容红线**：规格只讲行为契约、领域模型、不变量、边界与非目标、决策清单、验收标准；**不得出现具体文件路径、编程语言、第三方库名**。路径唯一归属方案的白名单。
+- **spec 内容红线**：内容清单与「不得出现具体文件路径、编程语言、第三方库名」见 §0 `spec` 条；**路径唯一归属方案的白名单**。
 
 - **共享面与并行判定（本术语定义处——其余文档只引用，不复述定义 / 判据 / 三动作）**：
   - **共享面 = 多票的门禁结果共同依赖的东西**：被其他票 import / 引用的单源值、共享配置、公共接口、共享夹具。**改动文件白名单按文件归属切片，看不见 import / 引用关系，因此表达不了共享面**——白名单互不交叉 ≠ 可并行。
   - **并行判定（30 秒可答，不查代码）**：两票能否并行 = **各自能否在不看对方产出的前提下独立跑完自己的门禁且结果可信**。最小判定步骤：① 抄出两票的 `gate` 命令；② 各列「自己门禁会读到的共享输入」（被 import 的值 / 配置 / 公共接口 / 夹具）；③ **输入交集非空 → 判串行**，哪怕文件白名单不交叉。
   - **默认值（列不出即串行，不猜）**：任一票无 `gate`，或共享输入 30 秒内**列不全 → 判串行**。多等一晚 << 一票产出作废重跑，不确定时选便宜的那边。
-  - **冻结三动作（缺一即条款不成立）**：扇出前**定稿** → 并行窗口内共享面**只读** → 需变更 = **停扇出 → 重新定稿 → 重新扇出**（只停不定稿、或不定稿就重新扇出 = 无效）。**多执行者（N≥2）的方案必须列共享面冻结清单**（谁依赖什么 / 定稿值在哪，标题与格式自拟）——这是契约硬要求，不新增工具字段。**N≥2 一律产方案（`<id>.plan.md`），不得按轻任务跳步**——冻结清单与强制预审都挂在方案上，跳过即两道关同时真空。本句收窄 `coordinator.md`「spec 环节」触发判据的轻任务跳步权，且**不动 CONTRACT §9 ④ 审查链路的规模缩放**。
+  - **冻结三动作（缺一即条款不成立）**：扇出前**定稿** → 并行窗口内共享面**只读** → 需变更 = **停扇出 → 重新定稿 → 重新扇出**（只停不定稿、或不定稿就重新扇出 = 无效）。**多执行者（N≥2）的方案必须列共享面冻结清单**（谁依赖什么 / 定稿值在哪；标题格式自拟，不新增工具字段）。**N≥2 一律产方案（`<id>.plan.md`），不得按轻任务跳步**——冻结清单与强制预审都挂在方案上，跳过即两道关同时真空。本句收窄 `coordinator.md`「spec 环节」触发判据的轻任务跳步权，且**不动 CONTRACT §9 ④ 审查链路的规模缩放**。
   - **N=1 无操作**：单执行者时共享面 = 自己的域，无并行窗口——本条不产生任何填写项与额外消息，冻结清单不是单执行者必填项。
 
-- **plan 必填改动面**：现状差异分析（现有 vs 目标）、架构调整说明、**改动文件白名单**（新增/修改 + 影响范围）、迁移与回滚。多 executor 时方案白名单在表格「归属」列按执行者切片（N=1 免填），共享文件须指定唯一归属者。executor 只改白名单内文件，越界按 §4 以行为判定。
+- **plan 改动面**：必填项与定义见 §0 `plan` 条；多 executor 时方案白名单在表格「归属」列按执行者切片（N=1 免填），共享文件须指定唯一归属者。executor 只改白名单内文件，越界按 §4 以行为判定。
 
 - **工件元数据四键**：spec 与 plan 文件头固定四键——`id` / `kind`（`spec` 或 `plan`）/ `created_at`（`%Y-%m-%dT%H:%M:%SZ`）/ `parent_spec`（plan 填同标识 spec id，spec 留空串）。由 coordinator 手写遵守，**工具层不解析不校验**。
 
-- **tracker 权威副本**：分派前 coordinator 把 4 字段落盘 session 目录平铺 `~/.config/coherd/sessions/<ws>-<TASK_TS>-$$/<id>.task.md`（session 目录由 bin/coherd 每启动创建并写死进 brief），executor 契约上不可写（运行时不强制，靠流程保障 + 事后核对，见 §5）。
-- **CLI 数据路径**：tracker 以 session 目录平铺 `~/.config/coherd/sessions/<ws>-<TASK_TS>-$$/`，tracker 入口 `<id>.task.md`、reviewer 结论 `<id>.<verdict>-<HHMMSS>.md` 同目录（id 前缀防平铺撞名）；session 目录由 bin/coherd 启动 `mkdir -p` 创建（standalone CLI 由 `session_dir_for(create=True)` 自建）；tracker 入口与 id 由 `coherd task new` 生成（`next_id` 生成 `<id>`）。
-- **spec 文件与 FK**：spec 落平铺 `<id>.spec.md`、plan 落 `<id>.plan.md`（与 `<id>.task.md` 同目录共存，`task list` glob `*.task.md` 不误抓）；`coherd task new --parent-spec <id>` 写 frontmatter `parent_spec`（FK 追溯，值 = spec id，缺省空串）。
+- **session 目录与文件命名（单一权威）**：session 目录 `~/.config/coherd/sessions/<ws>-<TASK_TS>-$$/`，由 bin/coherd 每启动 `mkdir -p` 创建并写死进 brief（standalone CLI 由 `session_dir_for(create=True)` 自建）；其下平铺 `<id>.task.md`（tracker 入口，id 由 `coherd task new` / `next_id` 生成）、`<id>.spec.md`、`<id>.plan.md`、reviewer 结论 `<id>.<verdict>-<HHMMSS>.md`——id 前缀防平铺撞名，`task list` glob `*.task.md` 不误抓。
+- **tracker 权威副本与 FK**：分派前 coordinator 把 4 字段落盘 `<id>.task.md`，executor 契约上不可写（运行时不强制，靠流程保障 + 事后核对，见 §5）；`coherd task new --parent-spec <id>` 写 frontmatter `parent_spec`（FK 追溯，值 = spec id，缺省空串）。
 - **门禁字段（gate）**：tracker 可选 `gate`（单行字符串，**非必填**，历史记录缺省合法）；`coherd task new --gate '<命令>'` 写入。执行语义固定：**仓库根 + `bash -lc` + 继承环境**，需净化环境的命令自带 `env -u VAR ...` 前缀，不依赖审查者侧处理；只承诺本机可执行，**不承诺跨机一致**。工具层只校验格式（拒换行、拒单字 `|`），不判断命令含义、不决定跑不跑。**tracker `gate` 是执行权威**；plan「门禁与验证」里的命令只是初稿，二者不一致时以 tracker 为准（改 tracker 归 coordinator）。
-- **依赖留正文**：任务间依赖以任务正文手记表达，不进记录结构、不进 CLI 参数——工具层不做拓扑编排或阻塞判定（CLI 不做编排，守滑坡护栏）。
+- **依赖留正文**：任务间依赖以任务正文手记表达，不进记录结构、不进 CLI 参数——工具层不做拓扑编排或阻塞判定。
 - executor **先读 tracker + spec/plan 再动工**；产出写 tracker「输出」字段指定路径，改动限 plan 白名单。
 
 ## 4. 审查义务与循环（B）
@@ -129,7 +127,7 @@ reviewer **最小审查集**（每次审查必做，顺序固定 = 五查）：
 2. **门禁定义错误**（命令引用的路径不存在、测试目标拼错、命令本身不可执行）→ `coherd notify` 上报 coordinator 修订门禁，**不计返工轮次**。
 3. **代码性失败**（命令可跑、语义正确、产出不满足）→ 判 `revise`，标准输出与错误输出落盘为证据。
 
-**门禁执行边界**：工作目录固定为仓库根；reviewer 发现门禁与交审声明不一致时拒跑并上报。**字符串级判据**：命令含 `|`、`;`、`&`、`>`、`<`、`$(` 或反引号任一 → 判为复合命令，拒跑并上报（不靠肉眼判断）。**诚实条款**：拒绝复合命令只挡明显的链式注入，**不构成沙箱**——目标仓库代码与其测试夹具本身即任意代码执行面，报工单即信任 coordinator。此句随条款生效，不得被下游误读为「已安全」。
+**门禁执行边界**：工作目录固定为仓库根；reviewer 发现门禁与交审声明不一致时拒跑并上报。**字符串级判据**：命令含 `|`、`;`、`&`、`>`、`<`、`$(` 或反引号任一 → 判为复合命令，拒跑并上报（不靠肉眼判断）。**诚实条款**：拒绝复合命令只挡明显的链式注入，**不构成沙箱**——目标仓库代码与其测试夹具本身即任意代码执行面，报工单即信任 coordinator，**不得被下游误读为「已安全」**。
 
 **越界判定以行为为准**：改动超出白名单但无行为变更（纯新增测试文件、机械性 import 修正等）且已在交审消息中声明者，放行；仅在改动改变行为时判返工。
 
@@ -148,7 +146,7 @@ reviewer **最小审查集**（每次审查必做，顺序固定 = 五查）：
 - `approve` → coordinator 整合交付。
 - `revise` → 退回 executor 修订 → 重新提交 reviewer。
 - **revise 上限 2 轮**：仍不通过 → 升级 coordinator 仲裁（改判 / 拆任务 / 终止）。
-- 角色分离是架构核心：同一推理路径既写码又自评必失败，reviewer 不得代改被审产出，问题一律退回 executor。
+- reviewer 不得代改被审产出（= 自审自己的修改），问题一律退回 executor（角色分离见 §1）。
 - **DoD 语义变更归 coordinator**：revise 若改动 DoD 验收标准（非实现级修订），必经 coordinator 更新 tracker，不走 rev→exe→rev 直通绕过。
 - **归档视图**：无独立归档——历史任务文件永久平铺留在 `sessions/<ws>-<TASK_TS>-$$/` session 目录，归档视图 = `coherd task list --status done`（CLI 无 archive 命令）。
 
@@ -159,7 +157,7 @@ reviewer **最小审查集**（每次审查必做，顺序固定 = 五查）：
 | 槽位 | 允许 | 禁止 |
 | ------ | ------ | ------ |
 | coordinator | 只读/检索类工具（含 web_search 调研开源先例与权威文档；拆解、分派、讨论、整合所需）；只读 git 命令（带 `GIT_OPTIONAL_LOCKS=0`）；写 session 协作元数据（spec / plan / tracker）；**一次性运维动作**（`git status --porcelain` 输出为空时，清单见 §12） | 直接编辑代码/写仓库文件（人类明确指派除外，见 §12）；未在 §12 放开的仓库级 git 写操作 |
-| executor | 完整代码编辑与运行工具；独占 git 写操作与 `index.lock` 治理；网络检索**仅按 §3 分派边界显式授权**（授权形态与默认值见 §3；哪些场景值得查的定义处见 `coordinator.md` Step 0，本处不复述） | 越出任务工具边界的写操作；改动配置/秘密文件；常规编码禁发散检索（显式授权除外） |
+| executor | 完整代码编辑与运行工具；独占 git 写操作与 `index.lock` 治理；网络检索**仅按 §3 边界显式授权**（授权形态见 §3；默认不查；场景定义处见 `coordinator.md`） | 越出任务工具边界的写操作；改动配置/秘密文件；常规编码禁发散检索（显式授权除外） |
 | reviewer | 只读审查 + 跑验证；只读/检索类工具（含 web_search 独立核验外部规范、先例死角与漏洞风险）；只读 git 命令（带 `GIT_OPTIONAL_LOCKS=0`）；写审查结论（verdict）；**一次性运维动作**（`git status --porcelain` 输出为空时，清单见 §12） | 直接修改被审产出（须退回 executor）；越过自己工具边界的操作；编辑仓库代码与改动配置；未在 §12 放开的仓库级 git 写操作 |
 
 executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限收紧由用户 CLI 配置负责（同 reviewer 见 roles/reviewer.md）。
@@ -204,7 +202,7 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 - executor/reviewer 启动后读 CONTRACT.md 确认身份, 以 `coherd notify` 向 coordinator 发一次 `standby` 上报（§0 standby/握手, notify 单向不回; 环节映射见 §7 D10）, 随即**转 idle 待机**（herdr 层 pane 挂起; 非 agent CLI 层 hub-wait 等机制, 见 §0 idle）。coordinator 启动确认身份后**立即转 idle 待机**，standby **纯被动接收**，全程事件驱动(§7 下条)。**此握手单向、一次性、不触发 §2 回复义务**——coordinator 不回"收到"，exec/rev 不等回复；coordinator **不等待、不数齐、不轮询(§0)、严禁向 peer 发送任何催促/探测/索要 standby 的消息（包括严禁使用 `herdr agent prompt` 或 `coherd notify/feedback`）**；未收到上报不追究、不探测——沉默即故障信号，用户自然察觉，coordinator 醒来只为响应用户意图。
 - executor 完成 → 直接提交 reviewer 审查（reviewer 读产物验证），结论 approve/revise 回流 coordinator；环境/依赖类阻塞 → `coherd notify` 上报 coordinator（原因 + 已尝试手段）；规约漂移 → `coherd feedback` 回流 coordinator（见 §4）；revise 循环 rev→exe→rev 不经 coordinator，超 §4 上限（2 轮）才介入仲裁。
 - feedback/notify 遵循 §2 三铁律（见 §2）；pane 输出退化为辅助。
-- **环节→命令映射（D10，唯一权威）**：命令名即语义（=标记名）——`coherd feedback` 注入 `[<role>|feedback]:` 标记（收方据标记需回执）、`coherd notify` 注入 `[<role>|notify]:` 标记（单向不回）；两者均写 session `events.log` 精简审计（`type` 字段标识类型，`body` 字段记原始正文，**无后台待回执登记/判定**；无 session 目录的冷启动回退全局 `events.log` 兜底）。环节映射表是唯一权威（coordinator 分派 / 讨论 / exec→rev 交审 / rev revise 退回 / coordinator→reviewer spec/plan 预审抛审 / 预审 revise 退回 coordinator 修订 / **executor 规约漂移回流** = `feedback`；approve 回流 coordinator（单收件人；含可执行 nit 才另发 executor）/ spec/plan 预审 approve 回流放行 / 改完重交 / 开工 ack / standby 握手 / **环境、依赖、门禁定义类阻塞上报** / 纯通知 = `notify`）。**阻塞归属（本处是归属判定唯一权威）**：环境/依赖/门禁定义类阻塞、缺外部事实/生僻 API 的检索求助（授权形态见 §3 `允许检索:<主题>`）→ `notify`（无需回执）；规格假设失效的漂移 → `feedback` 回流（需回执）。按上述归属分流，不得混用，不得把检索求助当漂移。一句话：任务交互看映射表定 feedback/notify，命令名即标记名，接收方据标记判断是否回执——无人值守兜底靠"沉默即故障"人工察觉。
+- **环节→命令映射（D10，唯一权威）**：命令名即语义（=标记名）——`coherd feedback` 注入 `[<role>|feedback]:` 标记（收方据标记需回执）、`coherd notify` 注入 `[<role>|notify]:` 标记（单向不回）；两者均写 session `events.log` 精简审计（`type` 字段标识类型，`body` 字段记原始正文，**无后台待回执登记/判定**；无 session 目录的冷启动回退全局 `events.log` 兜底）。环节映射表是唯一权威（coordinator 分派 / 讨论 / exec→rev 交审 / rev revise 退回 / coordinator→reviewer spec/plan 预审抛审 / 预审 revise 退回 coordinator 修订 / **executor 规约漂移回流** = `feedback`；approve 回流 coordinator（单收件人；含可执行 nit 才另发 executor）/ **revise 回流 coordinator**（与退回 executor 的 feedback 同发）/ spec/plan 预审 approve 回流放行 / 改完重交 / 开工 ack / standby 握手 / **环境、依赖、门禁定义类阻塞上报** / 纯通知 = `notify`）。**阻塞归属（本处是归属判定唯一权威）**：环境/依赖/门禁定义类阻塞、缺外部事实/生僻 API 的检索求助（授权形态见 §3 `允许检索:<主题>`）→ `notify`（无需回执）；规格假设失效的漂移 → `feedback` 回流（需回执）。按上述归属分流，不得混用，不得把检索求助当漂移。一句话：任务交互看映射表定 feedback/notify，命令名即标记名，接收方据标记判断是否回执——无人值守兜底靠"沉默即故障"人工察觉。
 - **批处理纪律（降唤醒次数）**：每条消息 = 一次 `herdr agent prompt` = 对端一次完整 agent turn（重载 system prompt + 契约）。故一次唤醒尽量只装一件事：
   1. **一批票据 = 一条分派消息**：分项列出（每票一行：任务名 + tracker 路径 + objective 一句），**禁止逐票分条发**。一条分派消息只发给一个执行者；同一执行者多票合并，不同执行者分别发。
   2. **批量审**：reviewer 在同一轮唤醒里收到 ≥2 票交审 → **一次审完、一条消息汇总逐票结论**（每票一行 `approve:` / `revise:`），禁止逐票各发一条。
@@ -223,7 +221,7 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 
 - **① 通信精简**：结论结构化——`approve: <理由要点>` / `revise: <问题清单逐条>`；agent 间消息用要点式，避免叙述铺陈。executor 交审消息**正文 ≤ 400 字**（不含 DoD 逐条勾选清单——每条一行 `✓/✗` 不展开）。必含：`交审 <任务名>` + DoD 逐条 ✓/✗ + 产物绝对路径 + `git diff` 范围 + 关键取舍**一句**。超出 400 字的内容**必须落文件**，消息只送路径指针。**合并 N 票时按票计：每票 ≤400 字，合并消息总上限 = 400 × N**（DoD 勾选清单同样不计入）；reviewer 批量审汇总消息同理：每票一行，按票计。
 - **② 输入端控制**（token 大头）：消息引用路径不贴大文件正文；交审附 `git diff` 范围，reviewer 只读变更行；长任务串轮换 session，防上下文膨胀。**文件交互降 token**：结论/产物落文件，feedback/notify 只送路径指针，peer 按需读，避免整段折入消息。
-- **③ revise 循环最贵**：一次返工消耗 > 一切通信压缩的收益；投资分派质量（清晰 objective / 可测 DoD / 精确边界）优先于压缩单条消息。
+- **③ revise 循环成本最高**：一次返工 > 一切通信压缩收益，故分派质量（4 字段，见 §3）优先于压缩单条消息。
 - **④ 规模缩放判据**：简单任务跳过 reviewer 全链路须**同时满足** ≤2 文件改动 + 无安全/正确性敏感面；任一不满足 → 必走 executor → reviewer → coordinator 全链路（判据出处与决策细节见 coordinator.md `§6`）。
 
 ## 10. 事实源与同步（契约文档自身的治理）

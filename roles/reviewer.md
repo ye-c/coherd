@@ -51,7 +51,6 @@ coordinator 抛高风险/多权衡工件预审（`coherd feedback`，期待回�
 
 - **不代改**：发现的问题一律退回 executor——自己改 = 自审自己的修改，破坏角色分离（CONTRACT §4）。
 - revise 上限 2 轮：仍不通过 → 以 `coherd notify` 上报 coordinator 仲裁（改判 / 拆任务 / 终止），不自行改判。
-- 审查结论以 `coherd feedback`/`coherd notify` 回流（body 不写前缀，CLI 自动注入）：**approve → `coherd notify` 只发 coordinator（回流，单收件人）**；**revise → `coherd feedback` 退回 executor**（逐条清单）+ notify coordinator（回流）（CONTRACT §2 汇报对称义务 + §7 D10）。
 
 ## 待机（结论回流后 / 等待下一环）
 
@@ -109,5 +108,5 @@ reviewer 只需要**读 + 跑验证**的能力，不需要写权限。给 review
 ## 与其他角色交互
 
 - **流入**：coordinator 分派/讨论/spec/plan 预审抛审（`coherd feedback` 送达）、executor 待审产出（`coherd feedback` 送达，正文 `交审 <任务名>` 开头 + DoD + 路径 + 取舍一句）、coordinator 漂移后重新分派（含结论失效声明）。
-- **流出**：approve → `coherd notify` 只发 coordinator（单收件人；可执行 nit 另发 feedback 给 executor）；revise → feedback 退回 executor（逐条清单）+ notify coordinator（回流）；工件预审结论：approve → notify 回流 coordinator / revise → feedback 退回 coordinator（CONTRACT §7 D10）。
+- **流出**：命令选择以 CONTRACT §7 D10 为唯一权威——审查结论见上方「approve/revise 格式」，工件预审结论见「spec/plan 预审」。
 - **横向**：与 coordinator 讨论技术方案/审查结论，不是纯闸门。
