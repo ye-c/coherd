@@ -11,7 +11,7 @@
 | ------ | ------ | ------ |
 | feedback / 期待回执 | `coherd feedback <name> "<消息>"`：期待回执的消息——CLI 注入 `[<role> | feedback]: ` 标记前缀（可选 `#<n>` 如 `[executor#2|feedback]: `，接收端只匹配 role）并投递（内部调 `herdr agent prompt <name>` 送达，**自动唤醒 idle 待机者**）+ 写 session `events.log`精简审计（`type=feedback`，`body`=原始正文）。收方据标记知需回执，应回一条 feedback/notify。关键交接（分派/交审/revise/讨论）用它；命令名即语义（=标记名），无缺省值陷阱 | §2/§7 |
 | notify / 单向 | `coherd notify <name> "<消息>"`：纯单向知会——CLI 注入 `[<role> | notify]: ` 标记前缀（可选 `#<n>` 如 `[executor#2|notify]: `，接收端只匹配 role）并投递（同经 `herdr agent prompt <name>` 送达），写 session `events.log`精简审计（`type=notify`，`body`=原始正文），**单向无需回执**。单向上报/回流/ack/握手用它；delivered 假 → 非零退出提示转 feedback 重发 | §2/§7 |
-| pull / 拉取 | `herdr agent read <name>`：被动读 peer 最新内容。**全仓唯一许可处**（其余文档一律只引用本条，不复制授权文字）：**仅用于重发前证据核对**，同一 peer 同一任务生命周期 **≤1 次**；用尽后只能二选一——重发一次 或 上报协调者，**不得再读**。活性判定与进度查询**不消耗该配额，一次也不许**（活性归人类，见 `docs/activity.md`；进度查询唯一 = `coherd task list`，见 `coordinator.md`）。不是等待手段 | §2 |
+| pull / 拉取 | `herdr agent read <name>`：被动读 peer 最新内容。**全仓唯一许可处**（其余文档一律只引用本条，不复制授权文字）：**仅用于重发前证据核对**，同一 peer 同一任务生命周期 **≤1 次**；用尽后只能二选一——重发一次 或 上报协调者，**不得再读**。活性判定与进度查询**不消耗该配额，一次也不许**（活性归用户，见 `docs/activity.md`；进度查询唯一 = `coherd task list`，见 `coordinator.md`）。不是等待手段 | §2 |
 | fire-and-forget / 即发即走 | 发 prompt 不带 `--wait/--timeout`，发出即止、不等回复 | §2 |
 | event / 事件 | herdr 生命周期事件（如 idle/done），契约交接的触发信号 | §7 |
 | idle / 待机 | herdr 层 pane 挂起态：不运行、等待 feedback/notify 唤醒。**agent 侧可执行定义 = 结束本回合即待机**：发出最后一条消息后本回合不再产生任何动作，宿主挂起与否无需自证、无需向任何 peer 确认唤醒是否生效（唤醒由 `coherd feedback`/`notify` 投递保证）。**≠ agent CLI 层（如 pi hub-wait）的空闲表示**（后者不阻塞 ≠ pane 挂起，不可用作等待或状态检查手段）；**"等待下一环" = 转 idle，不是轮询** | §7 |
@@ -156,7 +156,7 @@ reviewer **最小审查集**（每次审查必做，顺序固定 = 五查）：
 
 | 槽位 | 允许 | 禁止 |
 | ------ | ------ | ------ |
-| coordinator | 只读/检索类工具（含 web_search 调研开源先例与权威文档；拆解、分派、讨论、整合所需）；只读 git 命令（带 `GIT_OPTIONAL_LOCKS=0`）；写 session 协作元数据（spec / plan / tracker）；**一次性运维动作**（`git status --porcelain` 输出为空时，清单见 §12） | 直接编辑代码/写仓库文件（人类明确指派除外，见 §12）；未在 §12 放开的仓库级 git 写操作 |
+| coordinator | 只读/检索类工具（含 web_search 调研开源先例与权威文档；拆解、分派、讨论、整合所需）；只读 git 命令（带 `GIT_OPTIONAL_LOCKS=0`）；写 session 协作元数据（spec / plan / tracker）；**一次性运维动作**（`git status --porcelain` 输出为空时，清单见 §12） | 直接编辑代码/写仓库文件（用户明确指派除外，见 §12）；未在 §12 放开的仓库级 git 写操作 |
 | executor | 完整代码编辑与运行工具；独占 git 写操作与 `index.lock` 治理；网络检索**仅按 §3 边界显式授权**（授权形态见 §3；默认不查；场景定义处见 `coordinator.md`） | 越出任务工具边界的写操作；改动配置/秘密文件；常规编码禁发散检索（显式授权除外） |
 | reviewer | 只读审查 + 跑验证；只读/检索类工具（含 web_search 独立核验外部规范、先例死角与漏洞风险）；只读 git 命令（带 `GIT_OPTIONAL_LOCKS=0`）；写审查结论（verdict）；**一次性运维动作**（`git status --porcelain` 输出为空时，清单见 §12） | 直接修改被审产出（须退回 executor）；越过自己工具边界的操作；编辑仓库代码与改动配置；未在 §12 放开的仓库级 git 写操作 |
 
@@ -211,7 +211,7 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 - **回执语义**：`coherd feedback` = `[feedback]` 标记期待回执，收方据标记应回一条；`coherd notify` = `[notify]` 标记纯单向，不回。命令名即语义（=标记名），无缺省值陷阱。notify 送达失败 → CLI 非零退出提示转 feedback 重发，关键交接用 feedback 期望回执。
 - **无后台待回执**：无程序化待回执登记与清除；回执义务由接收方据消息标记自觉履行，靠"沉默即故障、人自察觉"兜底。
 - **活性/断链排查**：用 `docs/activity.md` 的 jq 配方看 session 时间线与静默时长（人工按需跑，**不进 brief、不注入 agent context**）。
-- **环节时效（软条款，无硬时限）**：分派后 executor 宜尽速开工 ack（notify）或阻塞上报；交审后 reviewer 宜在合理时限内（参考 ≤2h，按任务规模自定）出结论或上报进度。超时无任何信号 = 断链候选，**由人类**按 `docs/activity.md` 的时间线配方排查（该文档人类专用，不进 agent context、不注入 agent context）；**agent 不得为活性判定读 peer 状态或 session `events.log`**。
+- **环节时效（软条款，无硬时限）**：分派后 executor 宜尽速开工 ack（notify）或阻塞上报；交审后 reviewer 宜在合理时限内（参考 ≤2h，按任务规模自定）出结论或上报进度。超时无任何信号 = 断链候选，**由用户**按 `docs/activity.md` 的时间线配方排查（该文档用户专用，不进 agent context、不注入 agent context）；**agent 不得为活性判定读 peer 状态或 session `events.log`**。
 
 ## 9. token 控制
 
@@ -232,18 +232,18 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 - **brief 不重述**：启动 brief（`bin/coherd` `_brief`）只引 CONTRACT §7 D10（唯一权威映射），不重述环节→命令归组。
 - **tracker 边界**：分派 tracker「边界」字段写 `roles/<doc>.md`，不写 `~/.config/coherd/<doc>.md`。
 
-## 11. 外部讨论方（人类临时开的外部 session）
+## 11. 外部讨论方（用户临时开的外部 session）
 
-- **定义**：人类在集群外另开的 session，与集群无角色关系：无 `[<role>|<type>]:` 标记、无 tracker、不在 §1 槽位表内。人类决定它是否存在、与谁对话。
+- **定义**：用户在集群外另开的 session，与集群无角色关系：无 `[<role>|<type>]:` 标记、无 tracker、不在 §1 槽位表内。用户决定它是否存在、与谁对话。
 - **通道**：`intercom`（§2 通道作用域表第二行）；不注入 coherd 标记、不写 `events.log`。
 - **结论性质**：外部结论是**输入证据**，不构成 §4 的 `approve` / `revise` 判定，也不替代 reviewer 的独立审查——三角色模式下审查判定权仍由 reviewer 独占（本条不构成 §4 的先例）。
 - **静默吸收（零打扰原则）**：旁路输入与外部讨论由 coordinator 独占吸收，**默认静默**。未产生实质任务变更（规格修订、任务挂起、作废重审）前，**严禁通知 executor 与 reviewer**，禁止发无动作诉求的知会通知（防误唤醒待机 agent 与 context 污染）。外部结论若影响后续动作，仅在定案后走既有通道（挂起任务、新分派或 §4 漂移回应/作废重审），**不直接改 executor 产出**。
 - **版本冻结（机检判据）**：某工件「在审中」= 在 `~/.config/coherd/sessions/**/*.task.md` 中搜该工件路径，命中文件的 frontmatter `status` 为 `pending` 或 `active`。在审期间该工件只读：coordinator 若需修订，先 `coherd notify` 作废/挂起该 review 任务，落盘新版本后重新下派，**禁止就地并发篡改**；改动后以一条 `notify` 报 delta（文件 + 行号 + 一句原因）。
-- **冲突处置**：外部结论与集群内审结论相反时，不自行取舍，一条消息报人类裁决。
+- **冲突处置**：外部结论与集群内审结论相反时，不自行取舍，一条消息报用户裁决。
 
 ## 12. 操作分类（coordinator 自判）
 
-人类**未**指定时，用 `git status --porcelain` 判，不看动作大小：
+用户**未**指定时，用 `git status --porcelain` 判，不看动作大小：
 
 | `git status --porcelain` | 覆盖 | 谁做 |
 | ------ | ------ | ------ |
@@ -251,8 +251,8 @@ executor 槽位天然带写权限，建议在受控仓库/沙箱运行；权限�
 | 命中**仓库**内路径 | 源码、测试、工程配置（`.gitignore` / `pyproject.toml` / CI）、文档、`roles/` 契约 | executor（开票分派） |
 | 只命中 session 协作元数据 | `~/.config/coherd/sessions/**` 下的 spec / plan / tracker / verdict | coordinator / reviewer 直接写 |
 | 判不准 | — | 归入「仓库内路径」→ executor |
-| 人类指定 coordinator 改仓库文件 | 情形与上表同，执行方改由人类定 | coordinator 直接做：commit body 记一行 `人类直接指派：<人类原话>`；审查权归人类，不开 tracker、不入 §4、**不设反向复核**；目标文件在 executor active 任务内时先 `coherd notify` 停机再动手 |
+| 用户指定 coordinator 改仓库文件 | 情形与上表同，执行方改由用户定 | coordinator 直接做：commit body 记一行 `用户直接指派：<用户原话>`；审查权归用户，不开 tracker、不入 §4、**不设反向复核**；目标文件在 executor active 任务内时先 `coherd notify` 停机再动手 |
 
 - 只读 git 命令带 `GIT_OPTIONAL_LOCKS=0`（§5 锁争用）。
 - **一次性运维动作的界碑**：不产生工作区内容差异。产生了 diff 的动作（改文件、改配置）不属于本类，回到上表按路径归属判。
-- **人类明确指派时不构成角色分离违例**：coordinator 直改仓库文件由人类担审查，但**不产生 executor/reviewer → coordinator 的反向复核链**（防止循环与角色颠倒）；目标文件若在 executor 的 active 任务内，须先停机（`coherd notify` 让其丢弃当前改动）再动手，**不得并发改同一文件**。
+- **用户明确指派时不构成角色分离违例**：coordinator 直改仓库文件由用户担审查，但**不产生 executor/reviewer → coordinator 的反向复核链**（防止循环与角色颠倒）；目标文件若在 executor 的 active 任务内，须先停机（`coherd notify` 让其丢弃当前改动）再动手，**不得并发改同一文件**。

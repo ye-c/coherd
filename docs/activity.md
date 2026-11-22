@@ -4,7 +4,7 @@
 > 需要判断"卡住了还是在干活"时，用下面几条配方看 session 审计日志。
 > **这些配方不注入 agent context、不进 brief、不产生任何消息**——纯本地读文件。
 >
-> ⚠️ **人类专用：agent 侧无等价授权。** 活性与断链判定不归 agent——不得为活性判定读 peer 状态或 `events.log`；agent 侧的读取能力只按 `CONTRACT.md` §0 `pull` 条（仅重发前证据核对，同一 peer 同一任务生命周期 ≤1 次）。
+> ⚠️ **用户专用：agent 侧无等价授权。** 活性与断链判定不归 agent——不得为活性判定读 peer 状态或 `events.log`；agent 侧的读取能力只按 `CONTRACT.md` §0 `pull` 条（仅重发前证据核对，同一 peer 同一任务生命周期 ≤1 次）。
 
 ## 0. 找到要看哪个 session
 

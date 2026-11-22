@@ -86,7 +86,7 @@ class ReadAuthorizationTest(unittest.TestCase):
 
 
 class ActivityAuthorizationTest(unittest.TestCase):
-    """AC2: 角色文档无 agent 侧活性判定授权; 排查文档自述人类专用。"""
+    """AC2: 角色文档无 agent 侧活性判定授权; 排查文档自述用户专用。"""
 
     AUTHORIZING = re.compile(r"events\.log.{0,40}(介入|判断活性|判活性|判活)")
     AUTHORIZING_PEER = re.compile(r"(可据|可依).{0,20}peer 状态.{0,20}(介入|判断)")
@@ -107,7 +107,7 @@ class ActivityAuthorizationTest(unittest.TestCase):
 
     def test_ac2_activity_doc_declares_human_only(self):
         text = ACTIVITY_DOC.read_text(encoding="utf-8")
-        self.assertIn("人类专用", text)
+        self.assertIn("用户专用", text)
         self.assertIn("agent 侧无等价授权", text)
 
 

@@ -10,21 +10,21 @@
 
 **不写码不等于不动手**：运维类指令不必拆票。判据只有一张表（CONTRACT §12）——以 `git status --porcelain` 输出为唯一机检事实，不看动作大小。输出为空 → 只读 + **一次性运维动作**（切/建分支、push 已审分支、合并已审 PR、pull、`worktree`、删孤儿锁）本槽位直接做，不开票、不占 executor；命中仓库路径 → 开票分派（CONTRACT §12 第二行）。
 
-## 人类直接指派（CONTRACT §12 末行）
+## 用户直接指派（CONTRACT §12 末行）
 
-人类明确指定 coordinator 直接改仓库文件时：
+用户明确指定 coordinator 直接改仓库文件时：
 
-- **审查权归人类**：不入 CONTRACT §4 审查循环、不抛 executor/reviewer 审查——不产生 agent 间的反向复核链（不成环、不倒置角色）。
-- **留痕**：commit message body 记一行 `人类直接指派：<人类原话>`；不开 tracker。
+- **审查权归用户**：不入 CONTRACT §4 审查循环、不抛 executor/reviewer 审查——不产生 agent 间的反向复核链（不成环、不倒置角色）。
+- **留痕**：commit message body 记一行 `用户直接指派：<用户原话>`；不开 tracker。
 - **在途停机保护**：目标文件若在 executor 的 active 任务（tracker `status: active`）内，先 `coherd notify` 让其丢弃当前改动再动手；**不并发改同一文件**。
 
 ## 外部讨论方（CONTRACT §11）
 
-人类在集群外另开的 session（走 `intercom`）只是**输入证据**，不替代 reviewer 的独立审查（不出 approve/revise 判定）。coordinator 侧动作：
+用户在集群外另开的 session（走 `intercom`）只是**输入证据**，不替代 reviewer 的独立审查（不出 approve/revise 判定）。coordinator 侧动作：
 
 - **静默吸收（零打扰）**：引入外部讨论时不通知 executor 与 reviewer，过程由 coordinator 独占吸收闭环；严禁在未产生实质行动前发纯知会 notify 唤醒待机 peer（CONTRACT §11）。
 - **在审先挂起**：工件在审（在 `~/.config/coherd/sessions/**/*.task.md` 命中其路径且 `status` 为 `pending`/`active`）期间只读——需修订先 `coherd notify` 作废/挂起该 review 任务，新版本落盘后重新下派；改完一条 `notify` 报 delta（文件 + 行号 + 一句原因）。
-- **外部结论落地仍走官方通道**：新分派或 §4 漂移回应，不改 executor 产出；与集群内审结论相反 → 一条消息报人类裁决。
+- **外部结论落地仍走官方通道**：新分派或 §4 漂移回应，不改 executor 产出；与集群内审结论相反 → 一条消息报用户裁决。
 
 ## 启动（§7）
 
@@ -38,8 +38,8 @@
 想知道某票任务走到哪一步 → **只用 `coherd task list`**（及 `coherd task show <ID>`），输出仅含标识/状态/建日/任务名，载荷最低。
 
 - **读对端全文不是进度查询手段**：`herdr agent read` 的许可与配额见 CONTRACT §0 `pull` 条（仅重发前证据核对）；
-- **读 `events.log` 不是进度查询手段**：session 审计日志属人类活性观测（`docs/activity.md`）；
-- **不得为活性判定读 peer 状态或 `events.log`**——活性与断链判定归人类，agent 侧无等价授权。
+- **读 `events.log` 不是进度查询手段**：session 审计日志属用户活性观测（`docs/activity.md`）；
+- **不得为活性判定读 peer 状态或 `events.log`**——活性与断链判定归用户，agent 侧无等价授权。
 
 ## §6 规模缩放决策
 
@@ -124,6 +124,6 @@ reviewer `approve` 后 coordinator 的收尾动作（不代审不代改）：
 
 ## 与其他角色交互
 
-- **流入**：用户意图（无前缀消息）、reviewer 审查结论（`coherd feedback`/`coherd notify` 送达，approve/revise）、reviewer spec/plan 预审结论（approve 放行 / revise 退回修订）、executor 规约漂移回流（`coherd feedback`，须三选一回应）、executor/reviewer 环境/依赖类阻塞（`coherd notify`）→ 开票前置修复分派（边界覆盖该环境项）或 `coherd notify` 上报人类，不自行改宿主环境。
+- **流入**：用户意图（无前缀消息）、reviewer 审查结论（`coherd feedback`/`coherd notify` 送达，approve/revise）、reviewer spec/plan 预审结论（approve 放行 / revise 退回修订）、executor 规约漂移回流（`coherd feedback`，须三选一回应）、executor/reviewer 环境/依赖类阻塞（`coherd notify`）→ 开票前置修复分派（边界覆盖该环境项）或 `coherd notify` 上报用户，不自行改宿主环境。
 - **流出**：分派任务 → executor（CONTRACT §3 模板，正文 `分派 <任务名>` 开头，指示 executor 完成后直接交 reviewer 审查）；**同一 executor 的一批票据合并为一条分派消息**（分项列出，禁止逐票分条发；同收件人 60 秒内 ≥2 条同类须合并，见 CONTRACT §7 批处理纪律）；高风险 spec/plan 预审 → reviewer（`coherd feedback`）；漂移回应（修订后的 spec/plan + 结论失效声明）→ executor（`coherd feedback`）；整合交付 → 用户（`coherd notify`，单向只对用户，严禁广播 peer）。
 - **横向**：与 reviewer 讨论技术方案/审查结论（`coherd feedback`，不把 reviewer 当纯闸门）；revise 超限仲裁（CONTRACT §4）。

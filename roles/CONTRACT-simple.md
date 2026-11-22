@@ -132,7 +132,7 @@ led → dev 每条任务**必须**含以下 4 字段，缺失即任务未定义�
 
 simple 模式以"少一个 agent、少一轮通信"换取简易，代价**必须显式**：
 
-- **R1 无独立第二意见**：无独立 reviewer —— spec/plan 预审、产出审查均由 led 自审。**不存在第三方复核**。用户选 simple 即接受此项；需要独立第二意见时切回三角色模式。（人类临时开的外部 session 不改变本条，见 §10。）
+- **R1 无独立第二意见**：无独立 reviewer —— spec/plan 预审、产出审查均由 led 自审。**不存在第三方复核**。用户选 simple 即接受此项；需要独立第二意见时切回三角色模式。（用户临时开的外部 session 不改变本条，见 §10。）
 - **R2 分派与审查同源**：led 既定 DoD 又判 DoD → 自证风险。缓解：DoD 必须可测（§3 硬要求不变）；dev 交审须附 DoD 自检，led 逐条核验（非凭感觉）。**软缓解，非硬隔离**。
 - **R3 单点**：led pane 挂 = 集群挂（与三角色模式 coordinator 挂同理，非新增风险）。
 - **R4 用户误用**：用户可能把 led 当"全能 agent"直接让其写码。**led 不写码**（§5，沿 `CONTRACT.md` §5 coordinator 行）。
@@ -150,17 +150,17 @@ simple 模式以"少一个 agent、少一轮通信"换取简易，代价**必须
 
 本文件与 `roles/led.md`、`roles/dev.md` 的**唯一事实源是 repo `roles/`**；repo → `~/.config/coherd/` 单向覆盖分发，禁止只改 `~/.config` 副本（`CONTRACT.md` §10）。镜像一致校验需含本模式 3 个文档 + `templates/` 目录逐文件。
 
-## 10. 外部讨论方（人类临时开的外部 session）
+## 10. 外部讨论方（用户临时开的外部 session）
 
-- **定义**：人类在集群外另开的 session，与集群无角色关系：无 `[<role>|<type>]:` 标记、无 tracker、不在 §1 槽位表内。人类决定它是否存在、与谁对话。
+- **定义**：用户在集群外另开的 session，与集群无角色关系：无 `[<role>|<type>]:` 标记、无 tracker、不在 §1 槽位表内。用户决定它是否存在、与谁对话。
 - **通道**：`intercom`（`CONTRACT.md` §2 通道作用域表第二行）。
 - **结论性质**：外部结论是**输入证据**，不构成 §4 的 `approve` / `revise` 判定，也不补齐 §7 R1 的独立第二意见缺口——不因开了外部 session 而获得「独立第二意见」；simple 模式仍按 R1 / R2 承担自证与单点风险。
 - **静默吸收（零打扰原则）**：外部讨论由 led 独占吸收，**默认静默**。未产生实质任务变更前，**严禁通知 dev**，禁止发无动作诉求的知会通知（防误唤醒待机 agent 与 context 污染）。外部结论若影响后续动作，仅在定案后走既有通道（挂起任务、新 `feedback` 分派或 `revise:` 退回），不直接改 dev 产出。
 - **版本冻结（机检判据）**：某工件「在审中」= 在 `~/.config/coherd/sessions/**/*.task.md` 中搜该工件路径，命中文件的 frontmatter `status` 为 `pending` 或 `active`。在审期间该工件只读：led 若需修订，先 `coherd notify` 作废/挂起该 review 任务，落盘新版本后重新下派，禁止就地并发篡改；改动后以一条 `notify` 报 delta（文件 + 行号 + 一句原因）。
-- **冲突处置**：外部结论与集群内审结论相反时，不自行取舍，一条消息报人类裁决。
+- **冲突处置**：外部结论与集群内审结论相反时，不自行取舍，一条消息报用户裁决。
 ## 11. 操作分类（led 自判）
 
-人类**未**指定时，用 `git status --porcelain` 判，不看动作大小：
+用户**未**指定时，用 `git status --porcelain` 判，不看动作大小：
 
 | `git status --porcelain` | 覆盖 | 谁做 |
 | ------ | ------ | ------ |
@@ -168,7 +168,7 @@ simple 模式以"少一个 agent、少一轮通信"换取简易，代价**必须
 | 命中**仓库**内路径 | 源码、测试、工程配置（`.gitignore` / `pyproject.toml` / CI）、文档、`roles/` 契约 | dev（开票分派） |
 | 只命中 session 协作元数据 | `~/.config/coherd/sessions/**` 下的 spec / plan / tracker / verdict | led 直接写 |
 | 判不准 | — | 归入「仓库内路径」→ dev |
-| 人类指定 led 改仓库文件 | 情形与上表同，执行方改由人类定 | led 直接做：commit body 记一行 `人类直接指派：<人类原话>`；审查权归人类，不开 tracker、不入 §4、不设 dev → led 反向复核；目标文件在 dev active 任务内时先 `coherd notify` 停机再动手 |
+| 用户指定 led 改仓库文件 | 情形与上表同，执行方改由用户定 | led 直接做：commit body 记一行 `用户直接指派：<用户原话>`；审查权归用户，不开 tracker、不入 §4、不设 dev → led 反向复核；目标文件在 dev active 任务内时先 `coherd notify` 停机再动手 |
 
 只读 git 命令带 `GIT_OPTIONAL_LOCKS=0`（见 `CONTRACT.md` §5）。
 

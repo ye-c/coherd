@@ -56,7 +56,7 @@ coordinator 抛高风险/多权衡工件预审（`coherd feedback`，期待回�
 
 - **待机 = 本回合结束**：发出审查结论（feedback/notify）后若**无下一环可执行**，本回合不再产生任何动作即已待机——无需确认宿主是否挂起、无需向任何 peer 自证；唤醒由 `coherd feedback`/`notify` 投递保证（CONTRACT §0 `idle` 条）。
 - `herdr agent read` 只按 CONTRACT §0 `pull` 条使用（唯一许可处 + 配额），**不用于活性判定**。
-- **不得为活性判定读 peer 状态或 `events.log`**：活性与断链判定归人类（CONTRACT §7），agent 侧无等价授权。
+- **不得为活性判定读 peer 状态或 `events.log`**：活性与断链判定归用户（CONTRACT §7），agent 侧无等价授权。
 
 ## 批量审（降唤醒次数）
 
