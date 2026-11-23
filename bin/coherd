@@ -40,6 +40,18 @@ HERE_BIN="$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")" && pw
 # 但经此路由到 venv CLI 报干净的 "No such command 'push'/'watch'"（否则 fallthrough 当 REPO 目录 cd 误导）。
 # feedback/notify/diff 为现行命令（diff = 分域改动机械核验，只读）。
 case "${1:-}" in
+  status)
+    herdr agent list 2>/dev/null | jq -c '.result.agents[]? | {name, agent_status, cwd}' || true
+    echo "coherd: 警告: 该命令不可用于轮询，违反契约（进度查询请用 coherd task list）" >&2
+    exit 0
+    ;;
+  agent)
+    if [ "${2:-}" = "status" ] || [ "${2:-}" = "list" ]; then
+      herdr agent list 2>/dev/null | jq -c '.result.agents[]? | {name, agent_status, cwd}' || true
+      echo "coherd: 警告: 该命令不可用于轮询，违反契约（进度查询请用 coherd task list）" >&2
+      exit 0
+    fi
+    ;;
   task|push|watch|feedback|notify|diff)
     VENV_COHERD="$HERE_BIN/../.venv/bin/coherd"
     if [ ! -x "$VENV_COHERD" ]; then
