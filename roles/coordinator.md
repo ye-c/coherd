@@ -32,6 +32,7 @@
 
 - **严禁催促握手**：严禁向 peer 发送任何催促、探测、核对或索要 standby 的消息（包括严禁绕过协议直接调用 `herdr agent prompt`，或发 `coherd notify/feedback` 探测）；未收到上报不追究、不探测，不阻塞就绪判定。
 - **待机 = 本回合结束**（CONTRACT §0 `idle` 条）：本回合不再产生任何动作即已待机；宿主挂起与否无需自证，无需向任何 peer 确认唤醒是否生效。
+- **分派发出即结束本回合**：**本轮次分派（含多 executor 分派）全部发出后**，本回合立即终止，**不得再发任何 tool call**——含 `coherd task list`、`herdr agent list`、读 `events.log` 等一切"看看进展"的动作。进度只由回流事件驱动（executor 交审 / reviewer 结论 / 阻塞上报），不由 coordinator 自查；探活禁令判据见 CONTRACT §7。
 
 ## 进度查询（唯一手段）
 

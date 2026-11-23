@@ -141,6 +141,32 @@ class ProgressQueryTest(unittest.TestCase):
         )
 
 
+class ProhibitedPollingHitsTest(unittest.TestCase):
+    """DoD3: 探活禁令以「目的禁止 + 例示」落 CONTRACT §7, 且 coordinator 写死分派后收回合。"""
+
+    def _contract_s7(self) -> str:
+        text = _read("CONTRACT.md")
+        start = text.index("## 7. 事件驱动交接")
+        end = text.index("## 9.", start)
+        return text[start:end]
+
+    def test_contract_s7_bans_by_purpose_not_by_command(self):
+        seg = self._contract_s7()
+        self.assertIn("判据是目的", seg, "§7 缺目的禁止判据, 命令名枚举会被换名绕过")
+        self.assertIn("非穷举", seg, "§7 例示须声明非穷举, 否则等于回到命令枚举")
+
+    def test_contract_s7_names_both_observed_bypasses(self):
+        seg = self._contract_s7()
+        self.assertIn("herdr agent list", seg, "§7 未点名 agent list 这条实际绕过路径")
+        self.assertIn("events.log", seg, "§7 未点名 events.log 这条实际绕过路径")
+
+    def test_coordinator_ends_turn_after_dispatch(self):
+        text = _read("coordinator.md")
+        self.assertIn("分派发出即结束本回合", text, "coordinator 缺分派后正向收回合动作")
+        self.assertIn("不得再发任何 tool call", text, "分派后收回合未写成可判动作")
+        self.assertIn("全部发出后", text, "分派后收回合缺『本轮次全部分派』限定, 多 executor 无法完成分派")
+
+
 class SimpleModeReferenceTest(unittest.TestCase):
     """AC5: simple 侧指向 CONTRACT §0 同一唯一许可处, 不复制授权文字。"""
 
